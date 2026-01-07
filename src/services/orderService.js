@@ -1,0 +1,279 @@
+const prisma = require('../lib/prisma');
+const cartService = require('./cartService');
+const productService = require('./productService');
+
+class OrderService {
+    /**
+     * Calculate total amount from cart items
+     * @param {Array} cartItems - Array of cart items with product information
+     * @returns {number} - Total amount
+     */
+    calculateOrderTotal(cartItems) {
+        if (!cartItems || cartItems.length === 0) {
+            return 0;
+        }
+
+        return cartItems.reduce((total, item) => {
+            const price = parseFloat(item.product.price);
+            const quantity = parseInt(item.quantity);
+            return total + (price * quantity);
+        }, 0);
+    }
+
+    /**
+     * Create order from user's cart
+     * @param {number} userId - User ID
+     * @returns {Object} - Created order with items
+     */
+    async createOrderFromCart(userId) {
+        const userIdInt = parseInt(userId);
+
+        // Get user's cart
+        const cartItems = await cartService.getCart(userIdInt);
+
+        if (!cartItems || cartItems.length === 0) {
+            const error = new Error('Cart is empty. Cannot create order.');
+            error.statusCode = 400;
+            throw error;
+        }
+
+        // Validate stock availability for all items before creating order
+        // This prevents partial order creation
+        for (const cartItem of cartItems) {
+            const stockCheck = await productService.checkStockAvailability(
+                cartItem.productId,
+                cartItem.quantity
+            );
+
+            if (!stockCheck.hasStock) {
+                const error = new Error(
+                    `Insufficient stock for product "${cartItem.product.name}". Available: ${stockCheck.product.stock}, Requested: ${cartItem.quantity}`
+                );
+                error.statusCode = 400;
+                throw error;
+            }
+        }
+
+        // Calculate total amount
+        const totalAmount = this.calculateOrderTotal(cartItems);
+
+        // Use transaction to ensure atomicity
+        // Create order, order items, reduce stock, and clear cart in one transaction
+        const order = await prisma.$transaction(async (tx) => {
+            // Create order
+            const newOrder = await tx.order.create({
+                data: {
+                    userId: userIdInt,
+                    totalAmount: totalAmount,
+                    status: 'COMPLETED'
+                }
+            });
+
+            // Create order items and reduce stock
+            const orderItems = [];
+            for (const cartItem of cartItems) {
+                // Create order item
+                const orderItem = await tx.orderItem.create({
+                    data: {
+                        orderId: newOrder.id,
+                        productId: cartItem.productId,
+                        quantity: cartItem.quantity,
+                        price: cartItem.product.price
+                    },
+                    include: {
+                        product: {
+                            include: {
+                                category: {
+                                    select: {
+                                        id: true,
+                                        name: true,
+                                        description: true
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+
+                // Reduce stock
+                await tx.product.update({
+                    where: { id: cartItem.productId },
+                    data: {
+                        stock: {
+                            decrement: cartItem.quantity
+                        }
+                    }
+                });
+
+                orderItems.push(orderItem);
+            }
+
+            // Clear cart after successful order creation
+            await tx.cartItem.deleteMany({
+                where: { userId: userIdInt }
+            });
+
+            // Return order with items
+            return {
+                ...newOrder,
+                items: orderItems
+            };
+        });
+
+        // Fetch order with full details including user
+        const orderWithDetails = await prisma.order.findUnique({
+            where: { id: order.id },
+            include: {
+                items: {
+                    include: {
+                        product: {
+                            include: {
+                                category: {
+                                    select: {
+                                        id: true,
+                                        name: true,
+                                        description: true
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                user: {
+                    select: {
+                        id: true,
+                        phoneNumber: true,
+                        name: true
+                    }
+                }
+            }
+        });
+
+        return orderWithDetails;
+    }
+
+    /**
+     * Get order by ID
+     * @param {number} orderId - Order ID
+     * @param {number} userId - User ID (for access control)
+     * @param {boolean} isAdmin - Whether user is admin
+     * @returns {Object} - Order with items
+     */
+    async getOrderById(orderId, userId, isAdmin = false) {
+        const order = await prisma.order.findUnique({
+            where: { id: parseInt(orderId) },
+            include: {
+                items: {
+                    include: {
+                        product: {
+                            include: {
+                                category: {
+                                    select: {
+                                        id: true,
+                                        name: true,
+                                        description: true
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                user: {
+                    select: {
+                        id: true,
+                        phoneNumber: true,
+                        name: true
+                    }
+                }
+            }
+        });
+
+        if (!order) {
+            const error = new Error('Order not found');
+            error.statusCode = 404;
+            throw error;
+        }
+
+        // Check access control: users can only see their own orders, admins can see all
+        if (!isAdmin && order.userId !== parseInt(userId)) {
+            const error = new Error('Access denied. You can only view your own orders.');
+            error.statusCode = 403;
+            throw error;
+        }
+
+        return order;
+    }
+
+    /**
+     * Get user's order history
+     * @param {number} userId - User ID
+     * @returns {Array} - List of orders
+     */
+    async getUserOrders(userId) {
+        const orders = await prisma.order.findMany({
+            where: { userId: parseInt(userId) },
+            include: {
+                items: {
+                    include: {
+                        product: {
+                            include: {
+                                category: {
+                                    select: {
+                                        id: true,
+                                        name: true,
+                                        description: true
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            orderBy: {
+                createdAt: 'desc'
+            }
+        });
+
+        return orders;
+    }
+
+    /**
+     * Get all orders (admin only)
+     * @returns {Array} - List of all orders
+     */
+    async getAllOrders() {
+        const orders = await prisma.order.findMany({
+            include: {
+                items: {
+                    include: {
+                        product: {
+                            include: {
+                                category: {
+                                    select: {
+                                        id: true,
+                                        name: true,
+                                        description: true
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                user: {
+                    select: {
+                        id: true,
+                        phoneNumber: true,
+                        name: true
+                    }
+                }
+            },
+            orderBy: {
+                createdAt: 'desc'
+            }
+        });
+
+        return orders;
+    }
+}
+
+module.exports = new OrderService();
