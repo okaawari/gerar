@@ -75,10 +75,20 @@ const validatePin = (pin) => {
 };
 
 /**
+ * Validate email format
+ * @param {string} email - Email to validate
+ */
+const validateEmail = (email) => {
+    if (!email) return false;
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+};
+
+/**
  * Validate user registration data
  */
 const validateUserRegistration = (req, res, next) => {
-    const { phoneNumber, pin, name } = req.body;
+    const { phoneNumber, pin, name, email } = req.body;
     const errors = [];
 
     // Check required fields
@@ -97,6 +107,15 @@ const validateUserRegistration = (req, res, next) => {
 
     if (name && (typeof name !== 'string' || name.trim().length === 0)) {
         errors.push('name must be a non-empty string');
+    }
+
+    // Email is optional, but if provided, must be valid format
+    if (email !== undefined && email !== null && email !== '') {
+        if (typeof email !== 'string' || email.trim().length === 0) {
+            errors.push('email must be a non-empty string');
+        } else if (!validateEmail(email)) {
+            errors.push('email must be a valid email address');
+        }
     }
 
     if (errors.length > 0) {
@@ -146,6 +165,7 @@ module.exports = {
     validateRequiredFields,
     validatePhoneNumber,
     validatePin,
+    validateEmail,
     validateUserRegistration,
     validateUserLogin
 };

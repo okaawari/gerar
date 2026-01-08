@@ -9,7 +9,8 @@
     "test": "jest --maxWorkers=2",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
-    "test:quick": "jest --maxWorkers=2 --testTimeout=5000"
+    "test:quick": "jest --maxWorkers=2 --testTimeout=5000",
+    "seed": "node prisma/seed.js"
   },
   "keywords": [],
   "author": "",

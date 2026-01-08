@@ -3,11 +3,13 @@ const categoryService = require('../services/categoryService');
 class CategoryController {
     /**
      * Get all categories
-     * GET /api/categories
+     * GET /api/categories?includeSubcategories=true
      */
     async getAllCategories(req, res, next) {
         try {
-            const categories = await categoryService.getAllCategories();
+            const { includeSubcategories } = req.query;
+            const includeSubcats = includeSubcategories !== 'false'; // Default to true if not specified
+            const categories = await categoryService.getAllCategories(includeSubcats);
 
             res.status(200).json({
                 success: true,
@@ -45,7 +47,9 @@ class CategoryController {
     async getCategoryProducts(req, res, next) {
         try {
             const { id } = req.params;
-            const products = await categoryService.getCategoryProducts(id);
+            const { includeSubcategories } = req.query;
+            const includeSubcats = includeSubcategories === 'true' || includeSubcategories === true;
+            const products = await categoryService.getCategoryProducts(id, includeSubcats);
 
             res.status(200).json({
                 success: true,
@@ -63,8 +67,8 @@ class CategoryController {
      */
     async createCategory(req, res, next) {
         try {
-            const { name, description } = req.body;
-            const category = await categoryService.createCategory({ name, description });
+            const { name, description, parentId } = req.body;
+            const category = await categoryService.createCategory({ name, description, parentId });
 
             res.status(201).json({
                 success: true,
@@ -83,8 +87,8 @@ class CategoryController {
     async updateCategory(req, res, next) {
         try {
             const { id } = req.params;
-            const { name, description } = req.body;
-            const category = await categoryService.updateCategory(id, { name, description });
+            const { name, description, parentId } = req.body;
+            const category = await categoryService.updateCategory(id, { name, description, parentId });
 
             res.status(200).json({
                 success: true,

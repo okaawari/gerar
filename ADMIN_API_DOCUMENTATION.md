@@ -1,0 +1,945 @@
+# Admin API Documentation
+
+This document provides comprehensive API documentation for admin endpoints to build the frontend admin dashboard.
+
+## Table of Contents
+
+- [Base Information](#base-information)
+- [Authentication](#authentication)
+- [Admin API Endpoints](#admin-api-endpoints)
+  - [Categories](#categories-endpoints)
+  - [Products](#products-endpoints)
+  - [Orders](#orders-endpoints)
+- [Data Models](#data-models)
+- [Error Handling](#error-handling)
+- [Example Requests](#example-requests)
+
+---
+
+## Base Information
+
+### Base URL
+```
+Development: http://localhost:3000/api/admin
+Production: [Your production URL]/api/admin
+```
+
+### Important Notes
+- **All admin endpoints require authentication and admin role**
+- Admin routes are prefixed with `/api/admin`
+- All requests must include JWT token in the `Authorization` header
+- User must have `role: "ADMIN"` to access these endpoints
+
+---
+
+## Authentication
+
+### Authentication Requirements
+All admin endpoints require:
+1. Valid JWT token in the `Authorization` header
+2. User role must be `ADMIN`
+
+### Request Headers
+```
+Authorization: Bearer <your-jwt-token>
+Content-Type: application/json
+```
+
+### Getting an Admin Token
+1. Register or login through `/api/auth/register` or `/api/auth/login`
+2. The user account must have `role: "ADMIN"` (typically set in database)
+3. Use the returned token in subsequent requests
+
+### Error Responses
+- `401 Unauthorized` - Missing or invalid token
+- `403 Forbidden` - User doesn't have admin privileges
+
+---
+
+## Admin API Endpoints
+
+## Categories Endpoints
+
+All category management endpoints are under `/api/admin/categories`.
+
+### Get All Categories (with Subcategories)
+
+Retrieve all categories with nested subcategories. This endpoint shows the hierarchical structure of categories.
+
+**Endpoint:** `GET /api/admin/categories`
+
+**Authentication:** Required (Admin only)
+
+**Query Parameters:**
+- `includeSubcategories` (optional) - Default is `true`. Set to `false` to get a flat list of all categories.
+
+**Response:** `200 OK`
+```json
+{
+  "success": true,
+  "message": "Categories retrieved successfully",
+  "data": [
+    {
+      "id": 1,
+      "name": "Гэр ахуйн бараа",
+      "description": "Гэр ахуйн бараа бүтээгдэхүүнүүд",
+      "parentId": null,
+      "createdAt": "2026-01-08T19:59:08.611Z",
+      "updatedAt": "2026-01-08T19:59:13.011Z",
+      "children": [
+        {
+          "id": 2,
+          "name": "Гал тогоо",
+          "description": "Гал тогооны хэрэгслүүд",
+          "parentId": 1,
+          "createdAt": "2026-01-08T19:59:26.106Z",
+          "updatedAt": "2026-01-08T19:59:26.106Z",
+          "children": []
+        }
+      ]
+    }
+  ]
+}
+```
+
+**Notes:**
+- Categories are returned with top-level categories first
+- Subcategories are nested inside the `children` array of their parent category
+- Each category object includes all its child categories recursively
+- Empty `children` arrays indicate categories with no subcategories
+- If `includeSubcategories=false`, returns a flat list of all categories (both parents and children)
+
+**Errors:**
+- `401` - Authentication required
+- `403` - Admin privileges required
+
+---
+
+### Create Category
+
+Create a new category or subcategory.
+
+**Endpoint:** `POST /api/admin/categories`
+
+**Authentication:** Required (Admin only)
+
+**Request Body:**
+```json
+{
+  "name": "Electronics",              // Required, string, unique per parent
+  "description": "Electronic devices", // Optional, string
+  "parentId": null                    // Optional, number | null (null for top-level categories)
+}
+```
+
+**Example - Top-level Category:**
+```json
+{
+  "name": "Electronics",
+  "description": "Electronic devices and gadgets"
+}
+```
+
+**Example - Subcategory:**
+```json
+{
+  "name": "Laptops",
+  "description": "Portable computers",
+  "parentId": 1
+}
+```
+
+**Response:** `201 Created`
+```json
+{
+  "success": true,
+  "message": "Category created successfully",
+  "data": {
+    "id": 1,
+    "name": "Electronics",
+    "description": "Electronic devices",
+    "parentId": null,
+    "createdAt": "2024-01-15T10:30:00.000Z",
+    "updatedAt": "2024-01-15T10:30:00.000Z"
+  }
+}
+```
+
+**Errors:**
+- `400` - Validation failed (invalid data format)
+- `401` - Authentication required
+- `403` - Admin privileges required
+- `404` - Parent category not found (if parentId provided)
+- `409` - Category with this name already exists under the same parent
+- `400` - Circular reference detected (category cannot be its own parent)
+
+---
+
+### Update Category
+
+Update an existing category.
+
+**Endpoint:** `PUT /api/admin/categories/:id`
+
+**Authentication:** Required (Admin only)
+
+**Parameters:**
+- `id` (path) - Category ID (integer)
+
+**Request Body:**
+```json
+{
+  "name": "Updated Electronics",      // Optional, string
+  "description": "Updated description", // Optional, string
+  "parentId": null                    // Optional, number | null
+}
+```
+
+**Response:** `200 OK`
+```json
+{
+  "success": true,
+  "message": "Category updated successfully",
+  "data": {
+    "id": 1,
+    "name": "Updated Electronics",
+    "description": "Updated description",
+    "parentId": null,
+    "createdAt": "2024-01-15T10:30:00.000Z",
+    "updatedAt": "2024-01-15T11:00:00.000Z"
+  }
+}
+```
+
+**Errors:**
+- `400` - Validation failed
+- `401` - Authentication required
+- `403` - Admin privileges required
+- `404` - Category not found
+- `404` - Parent category not found (if parentId provided)
+- `409` - Category with this name already exists under the same parent
+- `400` - Circular reference detected (cannot set category as its own parent)
+
+---
+
+### Delete Category
+
+Delete a category. Note: Categories with products or subcategories may have restrictions.
+
+**Endpoint:** `DELETE /api/admin/categories/:id`
+
+**Authentication:** Required (Admin only)
+
+**Parameters:**
+- `id` (path) - Category ID (integer)
+
+**Response:** `200 OK`
+```json
+{
+  "success": true,
+  "message": "Category deleted successfully",
+  "data": {
+    "id": 1,
+    "name": "Electronics",
+    "description": "Electronic devices",
+    "parentId": null,
+    "createdAt": "2024-01-15T10:30:00.000Z",
+    "updatedAt": "2024-01-15T10:30:00.000Z"
+  }
+}
+```
+
+**Errors:**
+- `401` - Authentication required
+- `403` - Admin privileges required
+- `404` - Category not found
+- `400` - Cannot delete category (may have products or subcategories)
+
+---
+
+## Products Endpoints
+
+All product management endpoints are under `/api/admin/products`.
+
+### Get All Products (Advanced Search)
+
+Retrieve all products with advanced filtering, sorting, and pagination. This endpoint includes all the same advanced search features as the public products endpoint.
+
+**Endpoint:** `GET /api/admin/products`
+
+**Authentication:** Required (Admin only)
+
+**Query Parameters:**
+
+#### Basic Filters
+- `categoryId` (optional) - Filter by single category ID (for backward compatibility)
+- `categoryIds[]` (optional) - Filter by multiple category IDs (array format: `categoryIds[]=1&categoryIds[]=2` or comma-separated: `categoryIds=1,2`)
+- `search` (optional) - Search products by name and/or description (case-insensitive)
+- `inStock` (optional) - Filter by stock availability (`true`/`false`)
+
+#### Price Filters
+- `minPrice` (optional) - Minimum price (decimal number, e.g., `100.00`)
+- `maxPrice` (optional) - Maximum price (decimal number, e.g., `1000.00`)
+
+#### Stock Range Filters
+- `minStock` (optional) - Minimum stock quantity (integer, e.g., `1`)
+- `maxStock` (optional) - Maximum stock quantity (integer, e.g., `100`)
+
+#### Date Range Filters
+- `createdAfter` (optional) - Filter products created after this date (ISO 8601 format: `2024-01-01` or `2024-01-01T00:00:00Z`)
+- `createdBefore` (optional) - Filter products created before this date (ISO 8601 format: `2024-12-31` or `2024-12-31T23:59:59Z`)
+
+#### Sorting
+- `sortBy` (optional) - Field to sort by. Valid values: `name`, `price`, `stock`, `createdAt`, `updatedAt`. Default: `createdAt`
+- `sortOrder` (optional) - Sort order. Valid values: `asc`, `desc`. Default: `desc`
+
+#### Pagination
+- `page` (optional) - Page number (integer, starts from 1). Default: `1`
+- `limit` (optional) - Number of items per page (integer, max 100). Default: `50`
+
+**Examples:**
+```
+# Basic search
+GET /api/admin/products
+GET /api/admin/products?categoryId=1
+GET /api/admin/products?search=laptop
+GET /api/admin/products?inStock=true
+
+# Advanced search with multiple filters
+GET /api/admin/products?categoryIds[]=1&categoryIds[]=2&search=laptop&inStock=true
+GET /api/admin/products?minPrice=100&maxPrice=1000&sortBy=price&sortOrder=asc
+GET /api/admin/products?categoryId=1&search=gaming&minStock=5&maxStock=50
+
+# Date range filtering
+GET /api/admin/products?createdAfter=2024-01-01&createdBefore=2024-12-31
+
+# With pagination
+GET /api/admin/products?page=1&limit=20&sortBy=name&sortOrder=asc
+
+# Complex query combining all filters
+GET /api/admin/products?categoryIds=1,2&search=laptop&minPrice=500&maxPrice=2000&minStock=1&inStock=true&sortBy=price&sortOrder=asc&page=1&limit=25
+```
+
+**Response:** `200 OK`
+```json
+{
+  "success": true,
+  "message": "Products retrieved successfully",
+  "data": [
+    {
+      "id": 1,
+      "name": "Laptop",
+      "description": "High-performance laptop",
+      "price": "999.99",
+      "stock": 50,
+      "categoryId": 1,
+      "category": {
+        "id": 1,
+        "name": "Electronics",
+        "description": "Electronic devices"
+      },
+      "createdAt": "2024-01-15T10:30:00.000Z",
+      "updatedAt": "2024-01-15T10:30:00.000Z"
+    }
+  ],
+  "pagination": {
+    "total": 150,
+    "page": 1,
+    "limit": 50,
+    "totalPages": 3
+  }
+}
+```
+
+**Response Fields:**
+- `data` - Array of product objects
+- `pagination.total` - Total number of products matching the filters
+- `pagination.page` - Current page number
+- `pagination.limit` - Number of items per page
+- `pagination.totalPages` - Total number of pages
+
+**Notes:**
+- All filters can be combined together
+- Search term searches in both product `name` and `description` fields
+- When using `categoryIds`, if you provide `categoryId` as well, only `categoryIds` will be used
+- Invalid filter values are ignored (e.g., non-numeric price values)
+- Date filters accept ISO 8601 format dates
+- Maximum limit per page is 100 items
+
+**Errors:**
+- `401` - Authentication required
+- `403` - Admin privileges required
+
+---
+
+### Create Product
+
+Create a new product.
+
+**Endpoint:** `POST /api/admin/products`
+
+**Authentication:** Required (Admin only)
+
+**Request Body:**
+```json
+{
+  "name": "Laptop",                    // Required, string
+  "description": "High-performance laptop", // Required, string
+  "price": 999.99,                     // Required, number (decimal)
+  "stock": 50,                         // Required, integer (>= 0)
+  "categoryId": 1                      // Required, integer (must exist)
+}
+```
+
+**Response:** `201 Created`
+```json
+{
+  "success": true,
+  "message": "Product created successfully",
+  "data": {
+    "id": 1,
+    "name": "Laptop",
+    "description": "High-performance laptop",
+    "price": "999.99",
+    "stock": 50,
+    "categoryId": 1,
+    "createdAt": "2024-01-15T10:30:00.000Z",
+    "updatedAt": "2024-01-15T10:30:00.000Z"
+  }
+}
+```
+
+**Errors:**
+- `400` - Validation failed (missing required fields, invalid data types)
+- `401` - Authentication required
+- `403` - Admin privileges required
+- `404` - Category not found
+- `400` - Invalid price (must be positive) or stock (must be >= 0)
+
+---
+
+### Update Product
+
+Update an existing product.
+
+**Endpoint:** `PUT /api/admin/products/:id`
+
+**Authentication:** Required (Admin only)
+
+**Parameters:**
+- `id` (path) - Product ID (integer)
+
+**Request Body:**
+```json
+{
+  "name": "Updated Laptop",            // Optional, string
+  "description": "Updated description", // Optional, string
+  "price": 899.99,                     // Optional, number (decimal)
+  "stock": 40,                         // Optional, integer (>= 0)
+  "categoryId": 1                      // Optional, integer (must exist)
+}
+```
+
+**Response:** `200 OK`
+```json
+{
+  "success": true,
+  "message": "Product updated successfully",
+  "data": {
+    "id": 1,
+    "name": "Updated Laptop",
+    "description": "Updated description",
+    "price": "899.99",
+    "stock": 40,
+    "categoryId": 1,
+    "createdAt": "2024-01-15T10:30:00.000Z",
+    "updatedAt": "2024-01-15T11:00:00.000Z"
+  }
+}
+```
+
+**Errors:**
+- `400` - Validation failed
+- `401` - Authentication required
+- `403` - Admin privileges required
+- `404` - Product not found
+- `404` - Category not found (if categoryId provided)
+- `400` - Invalid price or stock values
+
+---
+
+### Delete Product
+
+Delete a product.
+
+**Endpoint:** `DELETE /api/admin/products/:id`
+
+**Authentication:** Required (Admin only)
+
+**Parameters:**
+- `id` (path) - Product ID (integer)
+
+**Response:** `200 OK`
+```json
+{
+  "success": true,
+  "message": "Product deleted successfully",
+  "data": {
+    "id": 1,
+    "name": "Laptop",
+    "description": "High-performance laptop",
+    "price": "999.99",
+    "stock": 50,
+    "categoryId": 1,
+    "createdAt": "2024-01-15T10:30:00.000Z",
+    "updatedAt": "2024-01-15T10:30:00.000Z"
+  }
+}
+```
+
+**Errors:**
+- `401` - Authentication required
+- `403` - Admin privileges required
+- `404` - Product not found
+
+---
+
+## Orders Endpoints
+
+All order management endpoints are under `/api/admin/orders`.
+
+### Get All Orders
+
+Retrieve all orders from all users with full details.
+
+**Endpoint:** `GET /api/admin/orders/all`
+
+**Authentication:** Required (Admin only)
+
+**Response:** `200 OK`
+```json
+{
+  "success": true,
+  "message": "All orders retrieved successfully",
+  "data": [
+    {
+      "id": 1,
+      "userId": 1,
+      "addressId": 1,
+      "deliveryTimeSlot": "14-18",
+      "totalAmount": "1999.98",
+      "status": "PENDING",
+      "createdAt": "2024-01-15T10:30:00.000Z",
+      "updatedAt": "2024-01-15T10:30:00.000Z",
+      "user": {
+        "id": 1,
+        "phoneNumber": "12345678",
+        "email": "user@example.com",
+        "name": "John Doe"
+      },
+      "address": {
+        "id": 1,
+        "fullName": "John Doe",
+        "phoneNumber": "12345678",
+        "provinceOrDistrict": "Ulaanbaatar",
+        "khorooOrSoum": "Bayangol",
+        "street": "Peace Avenue",
+        "neighborhood": "Downtown",
+        "residentialComplex": "Green Complex",
+        "building": "Building 5",
+        "entrance": "Entrance A",
+        "apartmentNumber": "Apt 12B",
+        "addressNote": "Next to the blue gate, call when arrived",
+        "label": "Home"
+      },
+      "items": [
+        {
+          "id": 1,
+          "orderId": 1,
+          "productId": 1,
+          "quantity": 2,
+          "price": "999.99",
+          "product": {
+            "id": 1,
+            "name": "Laptop",
+            "description": "High-performance laptop",
+            "price": "999.99",
+            "stock": 50,
+            "categoryId": 1,
+            "category": {
+              "id": 1,
+              "name": "Electronics",
+              "description": "Electronic devices"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
+```
+
+**Notes:**
+- Orders are sorted by `createdAt` in descending order (newest first)
+- Each order includes full user information (with email if provided)
+- Each order includes delivery address information
+- Each order includes delivery time slot if selected (`"10-14"`, `"14-18"`, `"18-21"`, `"21-00"` or `null`)
+- Default order status is `"PENDING"` (can be `"PENDING"`, `"COMPLETED"`, `"CANCELLED"`, etc.)
+- Each order item includes full product and category information
+
+**Delivery Time Slot Format:**
+- `"10-14"` - 10:00 to 14:00
+- `"14-18"` - 14:00 to 18:00
+- `"18-21"` - 18:00 to 21:00
+- `"21-00"` - 21:00 to 00:00 (midnight)
+- `null` - No time slot selected
+
+**Errors:**
+- `401` - Authentication required
+- `403` - Admin privileges required
+
+---
+
+## Data Models
+
+### Category
+```typescript
+interface Category {
+  id: number;
+  name: string;              // Unique per parent category
+  description: string | null;
+  parentId: number | null;   // null for top-level categories
+  createdAt: string;         // ISO 8601 date string
+  updatedAt: string;         // ISO 8601 date string
+  children?: Category[];     // Subcategories nested in this field (NOT "subcategories")
+}
+```
+
+**Important:** When categories are fetched with subcategories, they appear in a `children` array field, not `subcategories`. For example:
+- Top-level category "Household goods" will have `children: [ { id: 2, name: "Kitchen", ... } ]`
+- The "Kitchen" subcategory will have `parentId: 1` and `children: []` (empty if no further subcategories)
+
+### Product
+```typescript
+interface Product {
+  id: number;
+  name: string;
+  description: string;
+  price: string;             // Decimal as string (e.g., "999.99")
+  stock: number;             // Integer, >= 0
+  categoryId: number;
+  createdAt: string;         // ISO 8601 date string
+  updatedAt: string;         // ISO 8601 date string
+  category?: Category;       // Included in some responses
+}
+```
+
+### Order
+```typescript
+interface Order {
+  id: number;
+  userId: number;
+  addressId: number | null;
+  deliveryTimeSlot: string | null; // "10-14" | "14-18" | "18-21" | "21-00" | null
+  totalAmount: string;       // Decimal as string
+  status: "PENDING" | "COMPLETED" | "CANCELLED" | string;
+  createdAt: string;         // ISO 8601 date string
+  updatedAt: string;         // ISO 8601 date string
+  address?: Address;         // Included in order responses
+  user?: {                   // Included in admin responses
+    id: number;
+    phoneNumber: string;
+    email: string | null;
+    name: string;
+  };
+  items: OrderItem[];        // Array of order items
+}
+
+interface OrderItem {
+  id: number;
+  orderId: number;
+  productId: number;
+  quantity: number;
+  price: string;             // Decimal as string
+  product?: Product;         // Included in order responses
+}
+
+interface Address {
+  id: number;
+  userId: number;
+  label: string | null;
+  fullName: string;
+  phoneNumber: string;
+  provinceOrDistrict: string;
+  khorooOrSoum: string;
+  street: string | null;
+  neighborhood: string | null;
+  residentialComplex: string | null;
+  building: string | null;
+  entrance: string | null;
+  apartmentNumber: string | null;
+  addressNote: string | null;
+  isDefault: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+```
+
+### User
+```typescript
+interface User {
+  id: number;
+  phoneNumber: string;       // 8 digits, unique
+  email: string | null;      // Optional, unique if provided
+  name: string;
+  role: "USER" | "ADMIN";
+  createdAt: string;         // ISO 8601 date string
+  updatedAt: string;         // ISO 8601 date string
+}
+```
+
+---
+
+## Error Handling
+
+All error responses follow this format:
+
+```json
+{
+  "success": false,
+  "message": "Error message description",
+  "error": {
+    "code": "ERROR_CODE",
+    "message": "Detailed error message",
+    "details": {} // Optional additional error details
+  },
+  "timestamp": "2024-01-15T10:30:00.000Z"
+}
+```
+
+### Common Error Codes
+
+| Status Code | Description |
+|------------|-------------|
+| `400` | Bad Request - Validation failed or invalid input |
+| `401` | Unauthorized - Missing or invalid authentication token |
+| `403` | Forbidden - User doesn't have admin privileges |
+| `404` | Not Found - Resource doesn't exist |
+| `409` | Conflict - Resource already exists (e.g., duplicate category name) |
+| `500` | Internal Server Error - Server-side error |
+
+---
+
+## Example Requests
+
+### Using cURL
+
+#### Create Category
+```bash
+curl -X POST http://localhost:3000/api/admin/categories \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Electronics",
+    "description": "Electronic devices"
+  }'
+```
+
+#### Update Product
+```bash
+curl -X PUT http://localhost:3000/api/admin/products/1 \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "price": 899.99,
+    "stock": 40
+  }'
+```
+
+#### Get All Categories (with Subcategories)
+```bash
+curl -X GET http://localhost:3000/api/admin/categories \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
+
+#### Get All Orders
+```bash
+curl -X GET http://localhost:3000/api/admin/orders/all \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
+
+### Using JavaScript (Fetch API)
+
+#### Create Product
+```javascript
+const createProduct = async (productData, token) => {
+  const response = await fetch('http://localhost:3000/api/admin/products', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(productData)
+  });
+  
+  const data = await response.json();
+  return data;
+};
+
+// Usage
+const product = await createProduct({
+  name: "Laptop",
+  description: "High-performance laptop",
+  price: 999.99,
+  stock: 50,
+  categoryId: 1
+}, 'YOUR_JWT_TOKEN');
+```
+
+#### Update Category
+```javascript
+const updateCategory = async (categoryId, updates, token) => {
+  const response = await fetch(`http://localhost:3000/api/admin/categories/${categoryId}`, {
+    method: 'PUT',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(updates)
+  });
+  
+  const data = await response.json();
+  return data;
+};
+```
+
+#### Get All Categories
+```javascript
+const getAllCategories = async (token) => {
+  const response = await fetch('http://localhost:3000/api/admin/categories', {
+    method: 'GET',
+    headers: {
+      'Authorization': `Bearer ${token}`
+    }
+  });
+  
+  const data = await response.json();
+  return data.data; // Returns array of categories with nested subcategories in 'children' field
+};
+```
+
+#### Get All Orders
+```javascript
+const getAllOrders = async (token) => {
+  const response = await fetch('http://localhost:3000/api/admin/orders/all', {
+    method: 'GET',
+    headers: {
+      'Authorization': `Bearer ${token}`
+    }
+  });
+  
+  const data = await response.json();
+  return data.data; // Returns array of orders
+};
+```
+
+### Using Axios
+
+```javascript
+import axios from 'axios';
+
+const api = axios.create({
+  baseURL: 'http://localhost:3000/api/admin',
+  headers: {
+    'Content-Type': 'application/json'
+  }
+});
+
+// Add token to requests
+api.interceptors.request.use(config => {
+  const token = localStorage.getItem('adminToken');
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
+// Get all categories (with nested subcategories)
+const getAllCategories = () => {
+  return api.get('/categories');
+};
+
+// Create category
+const createCategory = (categoryData) => {
+  return api.post('/categories', categoryData);
+};
+
+// Update product
+const updateProduct = (productId, updates) => {
+  return api.put(`/products/${productId}`, updates);
+};
+
+// Delete product
+const deleteProduct = (productId) => {
+  return api.delete(`/products/${productId}`);
+};
+
+// Get all orders
+const getAllOrders = () => {
+  return api.get('/orders/all');
+};
+```
+
+---
+
+## Public Endpoints Reference
+
+While not admin-specific, admins can also use these public endpoints for viewing data:
+
+- `GET /api/categories` - Get all categories (with nested subcategories in `children` field)
+- `GET /api/categories/:id` - Get category by ID (includes subcategories in `children` field)
+- `GET /api/products` - Get all products (with filters)
+- `GET /api/products/:id` - Get product by ID
+- `GET /api/orders/:id` - Get order by ID (admins can view any order)
+
+**Note:** The public `GET /api/categories` endpoint returns categories with subcategories nested in a `children` array. Subcategories are not shown as separate top-level items - they appear only inside their parent category's `children` array.
+
+---
+
+## Notes for Frontend Development
+
+1. **Token Management**: Store JWT token securely (e.g., localStorage, httpOnly cookie)
+2. **Error Handling**: Always check `success` field in responses and handle errors appropriately
+3. **Loading States**: Show loading indicators during API calls
+4. **Validation**: Implement client-side validation before API calls
+5. **Refresh Token**: Consider implementing token refresh logic if tokens expire
+6. **Category Hierarchy**: When displaying categories, handle nested subcategories properly. Subcategories are returned in the `children` field (not `subcategories`). Display them as nested/indented under their parent categories in the UI.
+7. **Price Formatting**: Prices are returned as strings, format them for display
+8. **Date Formatting**: All dates are ISO 8601 strings, format them for display
+9. **Stock Management**: Show stock alerts when stock is low (e.g., < 10)
+10. **Order Status**: Display order status with appropriate colors/badges (default is "PENDING")
+11. **Delivery Time Slots**: Format time slots for display (e.g., "10:00 - 14:00" instead of "10-14")
+12. **Address Display**: Show full delivery address in order details, handle null/optional fields gracefully
+13. **Email Display**: Handle optional email field - may be null for users who didn't provide email during registration
+
+---
+
+## Quick Reference
+
+### Category Endpoints
+- `GET /api/admin/categories` - Get all categories with nested subcategories
+- `POST /api/admin/categories` - Create category
+- `PUT /api/admin/categories/:id` - Update category
+- `DELETE /api/admin/categories/:id` - Delete category
+
+### Product Endpoints
+- `POST /api/admin/products` - Create product
+- `PUT /api/admin/products/:id` - Update product
+- `DELETE /api/admin/products/:id` - Delete product
+
+### Order Endpoints
+- `GET /api/admin/orders/all` - Get all orders
+
+---
+
+*Last Updated: January 2025*

@@ -1,6 +1,8 @@
 const prisma = require('../lib/prisma');
 const cartService = require('./cartService');
 const productService = require('./productService');
+const addressService = require('./addressService');
+const { isValidDeliveryTimeSlot } = require('../constants/deliveryTimeSlots');
 
 class OrderService {
     /**
@@ -21,12 +23,46 @@ class OrderService {
     }
 
     /**
+     * Validate delivery time slot
+     * @param {string} timeSlot - Delivery time slot
+     * @returns {boolean} - True if valid
+     */
+    validateDeliveryTimeSlot(timeSlot) {
+        if (!timeSlot) return true; // Optional field
+        return isValidDeliveryTimeSlot(timeSlot);
+    }
+
+    /**
      * Create order from user's cart
      * @param {number} userId - User ID
+     * @param {number} addressId - Delivery address ID (required)
+     * @param {string} deliveryTimeSlot - Delivery time slot (optional)
      * @returns {Object} - Created order with items
      */
-    async createOrderFromCart(userId) {
+    async createOrderFromCart(userId, addressId, deliveryTimeSlot = null) {
         const userIdInt = parseInt(userId);
+
+        // Validate addressId is provided
+        if (!addressId) {
+            const error = new Error('Address ID is required for delivery');
+            error.statusCode = 400;
+            throw error;
+        }
+
+        // Validate address belongs to user
+        const addressExists = await addressService.validateAddressOwnership(addressId, userIdInt);
+        if (!addressExists) {
+            const error = new Error('Address not found or does not belong to user');
+            error.statusCode = 404;
+            throw error;
+        }
+
+        // Validate delivery time slot if provided
+        if (deliveryTimeSlot && !this.validateDeliveryTimeSlot(deliveryTimeSlot)) {
+            const error = new Error('Invalid delivery time slot. Must be one of: "10-14", "14-18", "18-21", "21-00"');
+            error.statusCode = 400;
+            throw error;
+        }
 
         // Get user's cart
         const cartItems = await cartService.getCart(userIdInt);
@@ -64,8 +100,10 @@ class OrderService {
             const newOrder = await tx.order.create({
                 data: {
                     userId: userIdInt,
+                    addressId: parseInt(addressId),
+                    deliveryTimeSlot: deliveryTimeSlot || null,
                     totalAmount: totalAmount,
-                    status: 'COMPLETED'
+                    status: 'PENDING'
                 }
             });
 
@@ -120,7 +158,7 @@ class OrderService {
             };
         });
 
-        // Fetch order with full details including user
+        // Fetch order with full details including user and address
         const orderWithDetails = await prisma.order.findUnique({
             where: { id: order.id },
             include: {
@@ -139,6 +177,7 @@ class OrderService {
                         }
                     }
                 },
+                address: true,
                 user: {
                     select: {
                         id: true,
@@ -178,6 +217,7 @@ class OrderService {
                         }
                     }
                 },
+                address: true,
                 user: {
                     select: {
                         id: true,
@@ -227,7 +267,8 @@ class OrderService {
                             }
                         }
                     }
-                }
+                },
+                address: true
             },
             orderBy: {
                 createdAt: 'desc'
@@ -259,6 +300,7 @@ class OrderService {
                         }
                     }
                 },
+                address: true,
                 user: {
                     select: {
                         id: true,

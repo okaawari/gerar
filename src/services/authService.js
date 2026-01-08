@@ -1,14 +1,15 @@
 const prisma = require('../lib/prisma');
 const { hashPin, comparePin, validatePin, validatePhoneNumber } = require('../utils/hashUtils');
 const { generateToken } = require('../utils/jwtUtils');
+const { validateEmail } = require('../middleware/validation');
 
 class AuthService {
     /**
      * Register a new user
-     * @param {Object} userData - { phoneNumber, pin, name }
+     * @param {Object} userData - { phoneNumber, pin, name, email? }
      * @returns {Object} - { user, token }
      */
-    async register({ phoneNumber, pin, name }) {
+    async register({ phoneNumber, pin, name, email }) {
         // 1. Validation
         if (!phoneNumber || !pin || !name) {
             const error = new Error('Phone number, PIN, and name are required');
@@ -28,24 +29,47 @@ class AuthService {
             throw error;
         }
 
-        // 2. Check if user already exists
-        const existingUser = await prisma.user.findUnique({
+        // Validate email if provided
+        if (email !== undefined && email !== null && email !== '') {
+            if (!validateEmail(email)) {
+                const error = new Error('Invalid email format');
+                error.statusCode = 400;
+                throw error;
+            }
+        }
+
+        // 2. Check if user already exists by phone number
+        const existingUserByPhone = await prisma.user.findUnique({
             where: { phoneNumber },
         });
 
-        if (existingUser) {
+        if (existingUserByPhone) {
             const error = new Error('User with this phone number already exists');
             error.statusCode = 409;
             throw error;
         }
 
-        // 3. Hash PIN
+        // 3. Check if email is already taken (if provided)
+        if (email) {
+            const existingUserByEmail = await prisma.user.findUnique({
+                where: { email },
+            });
+
+            if (existingUserByEmail) {
+                const error = new Error('User with this email already exists');
+                error.statusCode = 409;
+                throw error;
+            }
+        }
+
+        // 4. Hash PIN
         const hashedPin = await hashPin(pin);
 
-        // 4. Create User
+        // 5. Create User
         const user = await prisma.user.create({
             data: {
                 phoneNumber,
+                email: email || null,
                 pin: hashedPin,
                 name,
                 role: 'USER', // Default role

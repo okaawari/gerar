@@ -1341,4 +1341,3 @@ For questions or issues, please contact the backend development team or refer to
 
 **API Version:** 1.0.0  
 **Last Updated:** 2024-01-15
-

@@ -53,35 +53,153 @@ class ProductService {
     }
 
     /**
-     * Get all products with optional filters
-     * @param {Object} filters - { categoryId?, search?, inStock? }
-     * @returns {Array} - List of products
+     * Get all products with optional filters (Advanced Search)
+     * @param {Object} filters - { 
+     *   categoryId?, categoryIds[], search?, inStock?, 
+     *   minPrice?, maxPrice?, minStock?, maxStock?,
+     *   createdAfter?, createdBefore?,
+     *   sortBy?, sortOrder?, page?, limit?
+     * }
+     * @returns {Object} - { products, pagination: { total, page, limit, totalPages } }
      */
     async getAllProducts(filters = {}) {
         const where = {};
 
-        // Filter by category
-        if (filters.categoryId) {
+        // Filter by single category or multiple categories
+        if (filters.categoryIds && Array.isArray(filters.categoryIds)) {
+            // Multiple categories
+            const categoryIds = filters.categoryIds
+                .map(id => parseInt(id))
+                .filter(id => !isNaN(id) && id > 0);
+            if (categoryIds.length > 0) {
+                where.categoryId = {
+                    in: categoryIds
+                };
+            }
+        } else if (filters.categoryId) {
+            // Single category (backward compatibility)
             where.categoryId = parseInt(filters.categoryId);
         }
 
-        // Search by name (case-insensitive for MySQL)
+        // Advanced search: search in name and/or description
         if (filters.search) {
-            where.name = {
-                contains: filters.search
-            };
-        }
-
-        // Filter by stock availability
-        if (filters.inStock !== undefined) {
-            if (filters.inStock === 'true' || filters.inStock === true) {
-                where.stock = {
-                    gt: 0
-                };
+            const searchTerm = filters.search.trim();
+            if (searchTerm.length > 0) {
+                where.OR = [
+                    {
+                        name: {
+                            contains: searchTerm
+                        }
+                    },
+                    {
+                        description: {
+                            contains: searchTerm
+                        }
+                    }
+                ];
             }
         }
 
-        return await prisma.product.findMany({
+        // Price range filtering
+        if (filters.minPrice !== undefined) {
+            const minPrice = parseFloat(filters.minPrice);
+            if (!isNaN(minPrice) && minPrice >= 0) {
+                where.price = where.price || {};
+                where.price.gte = minPrice;
+            }
+        }
+
+        if (filters.maxPrice !== undefined) {
+            const maxPrice = parseFloat(filters.maxPrice);
+            if (!isNaN(maxPrice) && maxPrice >= 0) {
+                where.price = where.price || {};
+                where.price.lte = maxPrice;
+            }
+        }
+
+        // Stock filtering - handle inStock and minStock/maxStock together
+        // Priority: minStock/maxStock > inStock > no filter
+        const hasStockRange = filters.minStock !== undefined || filters.maxStock !== undefined;
+        
+        if (hasStockRange) {
+            // Stock range filtering takes precedence
+            const stockFilter = {};
+            
+            if (filters.minStock !== undefined) {
+                const minStock = parseInt(filters.minStock);
+                if (!isNaN(minStock) && minStock >= 0) {
+                    // If inStock is true and minStock is specified, ensure minStock is at least 1
+                    const effectiveMinStock = (filters.inStock === 'true' || filters.inStock === true) 
+                        ? Math.max(minStock, 1) 
+                        : minStock;
+                    stockFilter.gte = effectiveMinStock;
+                }
+            } else if (filters.inStock === 'true' || filters.inStock === true) {
+                // No minStock but inStock=true, so stock must be > 0
+                stockFilter.gt = 0;
+            }
+            
+            if (filters.maxStock !== undefined) {
+                const maxStock = parseInt(filters.maxStock);
+                if (!isNaN(maxStock) && maxStock >= 0) {
+                    stockFilter.lte = maxStock;
+                }
+            }
+            
+            if (Object.keys(stockFilter).length > 0) {
+                where.stock = stockFilter;
+            }
+        } else if (filters.inStock !== undefined) {
+            // Only inStock filter (no range)
+            if (filters.inStock === 'true' || filters.inStock === true) {
+                where.stock = { gt: 0 };
+            } else if (filters.inStock === 'false' || filters.inStock === false) {
+                where.stock = 0;
+            }
+        }
+
+        // Date range filtering
+        if (filters.createdAfter) {
+            const createdAfter = new Date(filters.createdAfter);
+            if (!isNaN(createdAfter.getTime())) {
+                where.createdAt = where.createdAt || {};
+                where.createdAt.gte = createdAfter;
+            }
+        }
+
+        if (filters.createdBefore) {
+            const createdBefore = new Date(filters.createdBefore);
+            if (!isNaN(createdBefore.getTime())) {
+                where.createdAt = where.createdAt || {};
+                where.createdAt.lte = createdBefore;
+            }
+        }
+
+        // Sorting options
+        const sortBy = filters.sortBy || 'createdAt';
+        const validSortFields = ['name', 'price', 'stock', 'createdAt', 'updatedAt'];
+        const sortField = validSortFields.includes(sortBy) ? sortBy : 'createdAt';
+        
+        const sortOrder = (filters.sortOrder === 'asc' || filters.sortOrder === 'ASC') ? 'asc' : 'desc';
+        
+        const orderBy = {
+            [sortField]: sortOrder
+        };
+
+        // Pagination
+        const page = parseInt(filters.page) || 1;
+        const limit = parseInt(filters.limit) || 50;
+        const skip = (page - 1) * limit;
+
+        // Ensure page and limit are valid
+        const validPage = page > 0 ? page : 1;
+        const validLimit = limit > 0 && limit <= 100 ? limit : 50; // Max 100 items per page
+
+        // Get total count for pagination
+        const total = await prisma.product.count({ where });
+
+        // Get products with pagination
+        const products = await prisma.product.findMany({
             where,
             include: {
                 category: {
@@ -92,10 +210,22 @@ class ProductService {
                     }
                 }
             },
-            orderBy: {
-                createdAt: 'desc'
-            }
+            orderBy,
+            skip: (validPage - 1) * validLimit,
+            take: validLimit
         });
+
+        const totalPages = Math.ceil(total / validLimit);
+
+        return {
+            products,
+            pagination: {
+                total,
+                page: validPage,
+                limit: validLimit,
+                totalPages
+            }
+        };
     }
 
     /**

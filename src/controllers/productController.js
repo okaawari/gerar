@@ -2,15 +2,49 @@ const productService = require('../services/productService');
 
 class ProductController {
     /**
-     * Get all products with optional filters
-     * GET /api/products?categoryId=1&search=laptop&inStock=true
+     * Get all products with advanced search and filtering
+     * GET /api/products?
+     *   categoryId=1
+     *   &categoryIds[]=1&categoryIds[]=2
+     *   &search=laptop
+     *   &inStock=true
+     *   &minPrice=100&maxPrice=1000
+     *   &minStock=1&maxStock=100
+     *   &createdAfter=2024-01-01&createdBefore=2024-12-31
+     *   &sortBy=price&sortOrder=asc
+     *   &page=1&limit=20
      */
     async getAllProducts(req, res, next) {
         try {
-            const { categoryId, search, inStock } = req.query;
+            const { 
+                categoryId, 
+                categoryIds,
+                search, 
+                inStock,
+                minPrice,
+                maxPrice,
+                minStock,
+                maxStock,
+                createdAfter,
+                createdBefore,
+                sortBy,
+                sortOrder,
+                page,
+                limit
+            } = req.query;
+
             const filters = {};
 
-            if (categoryId) {
+            // Handle category filters (support both single and multiple)
+            if (categoryIds) {
+                // Handle array format: categoryIds[]=1&categoryIds[]=2 or categoryIds=1,2
+                if (Array.isArray(categoryIds)) {
+                    filters.categoryIds = categoryIds;
+                } else if (typeof categoryIds === 'string') {
+                    // Comma-separated list
+                    filters.categoryIds = categoryIds.split(',').map(id => id.trim());
+                }
+            } else if (categoryId) {
                 filters.categoryId = categoryId;
             }
 
@@ -22,12 +56,53 @@ class ProductController {
                 filters.inStock = inStock;
             }
 
-            const products = await productService.getAllProducts(filters);
+            if (minPrice !== undefined) {
+                filters.minPrice = minPrice;
+            }
+
+            if (maxPrice !== undefined) {
+                filters.maxPrice = maxPrice;
+            }
+
+            if (minStock !== undefined) {
+                filters.minStock = minStock;
+            }
+
+            if (maxStock !== undefined) {
+                filters.maxStock = maxStock;
+            }
+
+            if (createdAfter !== undefined) {
+                filters.createdAfter = createdAfter;
+            }
+
+            if (createdBefore !== undefined) {
+                filters.createdBefore = createdBefore;
+            }
+
+            if (sortBy) {
+                filters.sortBy = sortBy;
+            }
+
+            if (sortOrder) {
+                filters.sortOrder = sortOrder;
+            }
+
+            if (page !== undefined) {
+                filters.page = page;
+            }
+
+            if (limit !== undefined) {
+                filters.limit = limit;
+            }
+
+            const result = await productService.getAllProducts(filters);
 
             res.status(200).json({
                 success: true,
                 message: 'Products retrieved successfully',
-                data: products,
+                data: result.products,
+                pagination: result.pagination
             });
         } catch (error) {
             next(error);
