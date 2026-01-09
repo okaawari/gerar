@@ -536,7 +536,18 @@ GET /api/products?categoryIds=1,2&search=laptop&minPrice=500&maxPrice=2000&minSt
       "id": 1,
       "name": "Laptop",
       "description": "High-performance laptop",
-      "price": "999.99",
+      "price": "899.99",
+      "originalPrice": "999.99",
+      "images": [
+        "https://example.com/laptop-front.jpg",
+        "https://example.com/laptop-side.jpg",
+        "https://example.com/laptop-back.jpg"
+      ],
+      "firstImage": "https://example.com/laptop-front.jpg",
+      "hasDiscount": true,
+      "discountAmount": "100.00",
+      "discountPercentage": 10,
+      "isFavorite": false,
       "stock": 50,
       "categoryId": 1,
       "category": {
@@ -558,7 +569,23 @@ GET /api/products?categoryIds=1,2&search=laptop&minPrice=500&maxPrice=2000&minSt
 ```
 
 **Response Fields:**
-- `data` - Array of product objects
+- `data` - Array of product objects, each containing:
+  - `id` - Product ID
+  - `name` - Product name
+  - `description` - Product description
+  - `price` - Current selling price (string)
+  - `originalPrice` - Original price before discount (string or null)
+  - `images` - Array of image URLs (strings)
+  - `firstImage` - First image URL for easy access in listings (string or null)
+  - `hasDiscount` - Boolean indicating if product has a discount
+  - `discountAmount` - Discount amount saved (string or null)
+  - `discountPercentage` - Discount percentage (integer or null)
+  - `isFavorite` - Boolean indicating if product is favorited by authenticated user (only present if authenticated)
+  - `stock` - Stock quantity
+  - `categoryId` - Category ID
+  - `category` - Category object with id, name, description
+  - `createdAt` - Creation timestamp
+  - `updatedAt` - Last update timestamp
 - `pagination.total` - Total number of products matching the filters
 - `pagination.page` - Current page number
 - `pagination.limit` - Number of items per page
@@ -571,6 +598,9 @@ GET /api/products?categoryIds=1,2&search=laptop&minPrice=500&maxPrice=2000&minSt
 - Invalid filter values are ignored (e.g., non-numeric price values)
 - Date filters accept ISO 8601 format dates
 - Maximum limit per page is 100 items
+- Products include `firstImage` field for easy display of the first image in listings
+- Discount information is automatically calculated when `originalPrice` is provided and greater than `price`
+- `isFavorite` field is only included if user is authenticated (via Authorization header)
 
 ---
 
@@ -594,7 +624,18 @@ Retrieve a specific product by ID.
     "id": 1,
     "name": "Laptop",
     "description": "High-performance laptop",
-    "price": "999.99",
+    "price": "899.99",
+    "originalPrice": "999.99",
+    "images": [
+      "https://example.com/laptop-front.jpg",
+      "https://example.com/laptop-side.jpg",
+      "https://example.com/laptop-back.jpg"
+    ],
+    "firstImage": "https://example.com/laptop-front.jpg",
+    "hasDiscount": true,
+    "discountAmount": "100.00",
+    "discountPercentage": 10,
+    "isFavorite": false,
     "stock": 50,
     "categoryId": 1,
     "category": {
@@ -607,6 +648,10 @@ Retrieve a specific product by ID.
   }
 }
 ```
+
+**Notes:**
+- `isFavorite` field is only included if user is authenticated (via Authorization header)
+- Discount information is automatically calculated when `originalPrice` is provided and greater than `price`
 
 **Errors:**
 - `404` - Product not found
@@ -629,11 +674,17 @@ Authorization: Bearer <token>
 **Request Body:**
 ```json
 {
-  "name": "Laptop",              // Required
-  "description": "High-performance laptop", // Required
-  "price": 999.99,               // Required, decimal
-  "stock": 50,                   // Required, integer
-  "categoryId": 1                // Required, must exist
+  "name": "Laptop",              // Required, string
+  "description": "High-performance laptop", // Required, string
+  "price": 899.99,               // Required, decimal - current selling price
+  "originalPrice": 999.99,       // Optional, decimal - original price before discount
+  "images": [                    // Optional, array of image URLs (strings)
+    "https://example.com/laptop-front.jpg",
+    "https://example.com/laptop-side.jpg",
+    "https://example.com/laptop-back.jpg"
+  ],
+  "stock": 50,                   // Required, integer (>= 0)
+  "categoryId": 1                // Required, integer - must exist
 }
 ```
 
@@ -646,20 +697,44 @@ Authorization: Bearer <token>
     "id": 1,
     "name": "Laptop",
     "description": "High-performance laptop",
-    "price": "999.99",
+    "price": "899.99",
+    "originalPrice": "999.99",
+    "images": [
+      "https://example.com/laptop-front.jpg",
+      "https://example.com/laptop-side.jpg",
+      "https://example.com/laptop-back.jpg"
+    ],
+    "firstImage": "https://example.com/laptop-front.jpg",
+    "hasDiscount": true,
+    "discountAmount": "100.00",
+    "discountPercentage": 10,
     "stock": 50,
     "categoryId": 1,
+    "category": {
+      "id": 1,
+      "name": "Electronics",
+      "description": "Electronic devices"
+    },
     "createdAt": "2024-01-15T10:30:00.000Z",
     "updatedAt": "2024-01-15T10:30:00.000Z"
   }
 }
 ```
 
+**Notes:**
+- `price` is the current selling price (required)
+- `originalPrice` is optional - if provided and greater than `price`, discount will be automatically calculated
+- `images` is optional - provide an array of image URL strings
+- The first image in the array will be available as `firstImage` in the response for easy access in listings
+
 **Errors:**
 - `401` - Authentication required
 - `403` - Admin privileges required
-- `400` - Validation failed (e.g., category doesn't exist)
+- `400` - Validation failed (missing required fields, invalid data types)
 - `404` - Category not found
+- `400` - Invalid price (must be positive) or stock (must be >= 0)
+- `400` - Original price must be greater than or equal to current price
+- `400` - Images must be an array of non-empty string URLs
 
 ---
 
@@ -682,11 +757,16 @@ Authorization: Bearer <token>
 **Request Body:**
 ```json
 {
-  "name": "Updated Laptop",      // Optional
-  "description": "Updated description", // Optional
-  "price": 899.99,               // Optional
-  "stock": 40,                   // Optional
-  "categoryId": 1                // Optional
+  "name": "Updated Laptop",      // Optional, string
+  "description": "Updated description", // Optional, string
+  "price": 799.99,               // Optional, decimal - current selling price
+  "originalPrice": 899.99,       // Optional, decimal or null - original price before discount
+  "images": [                    // Optional, array of image URLs (strings) or null to clear
+    "https://example.com/updated-front.jpg",
+    "https://example.com/updated-back.jpg"
+  ],
+  "stock": 40,                   // Optional, integer (>= 0)
+  "categoryId": 1                // Optional, integer - must exist
 }
 ```
 
@@ -699,20 +779,42 @@ Authorization: Bearer <token>
     "id": 1,
     "name": "Updated Laptop",
     "description": "Updated description",
-    "price": "899.99",
+    "price": "799.99",
+    "originalPrice": "899.99",
+    "images": [
+      "https://example.com/updated-front.jpg",
+      "https://example.com/updated-back.jpg"
+    ],
+    "firstImage": "https://example.com/updated-front.jpg",
+    "hasDiscount": true,
+    "discountAmount": "100.00",
+    "discountPercentage": 11,
     "stock": 40,
     "categoryId": 1,
+    "category": {
+      "id": 1,
+      "name": "Electronics",
+      "description": "Electronic devices"
+    },
     "createdAt": "2024-01-15T10:30:00.000Z",
     "updatedAt": "2024-01-15T11:00:00.000Z"
   }
 }
 ```
 
+**Notes:**
+- All fields are optional - only include fields you want to update
+- `originalPrice` can be set to `null` to remove discount
+- `images` can be set to `null` or empty array `[]` to clear all images
+- If `originalPrice` is provided and greater than `price`, discount will be automatically calculated
+- To remove discount, set `originalPrice` to `null`
+
 **Errors:**
 - `401` - Authentication required
 - `403` - Admin privileges required
 - `404` - Product not found
 - `400` - Validation failed (e.g., category doesn't exist)
+- `400` - Original price must be greater than or equal to current price
 
 ---
 
@@ -754,6 +856,219 @@ Authorization: Bearer <token>
 - `401` - Authentication required
 - `403` - Admin privileges required
 - `404` - Product not found
+
+---
+
+## Favorites Endpoints
+
+All favorites endpoints require authentication.
+
+### Get Favorites
+
+Retrieve the authenticated user's favorite products.
+
+**Endpoint:** `GET /api/favorites`
+
+**Authentication:** Required
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Query Parameters:**
+- `page` (optional) - Page number (integer, starts from 1). Default: `1`
+- `limit` (optional) - Number of items per page (integer, max 100). Default: `50`
+
+**Response:** `200 OK`
+```json
+{
+  "success": true,
+  "message": "Favorites retrieved successfully",
+  "data": [
+    {
+      "id": 1,
+      "name": "Laptop",
+      "description": "High-performance laptop",
+      "price": "899.99",
+      "originalPrice": "999.99",
+      "images": [
+        "https://example.com/laptop-front.jpg",
+        "https://example.com/laptop-side.jpg"
+      ],
+      "firstImage": "https://example.com/laptop-front.jpg",
+      "hasDiscount": true,
+      "discountAmount": "100.00",
+      "discountPercentage": 10,
+      "isFavorite": true,
+      "favoritedAt": "2024-01-15T12:00:00.000Z",
+      "stock": 50,
+      "categoryId": 1,
+      "category": {
+        "id": 1,
+        "name": "Electronics",
+        "description": "Electronic devices"
+      },
+      "createdAt": "2024-01-15T10:30:00.000Z",
+      "updatedAt": "2024-01-15T10:30:00.000Z"
+    }
+  ],
+  "pagination": {
+    "total": 25,
+    "page": 1,
+    "limit": 50,
+    "totalPages": 1
+  }
+}
+```
+
+**Response Fields:**
+- `data` - Array of favorite product objects (includes all product fields plus `favoritedAt`)
+- `pagination.total` - Total number of favorite products
+- `pagination.page` - Current page number
+- `pagination.limit` - Number of items per page
+- `pagination.totalPages` - Total number of pages
+
+**Errors:**
+- `401` - Authentication required
+
+---
+
+### Add to Favorites
+
+Add a product to the authenticated user's favorites.
+
+**Endpoint:** `POST /api/favorites`
+
+**Authentication:** Required
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Request Body:**
+```json
+{
+  "productId": 1
+}
+```
+
+**Response:** `200 OK`
+```json
+{
+  "success": true,
+  "message": "Product added to favorites successfully",
+  "data": {
+    "id": 1,
+    "name": "Laptop",
+    "description": "High-performance laptop",
+    "price": "899.99",
+    "originalPrice": "999.99",
+    "images": [
+      "https://example.com/laptop-front.jpg",
+      "https://example.com/laptop-side.jpg"
+    ],
+    "firstImage": "https://example.com/laptop-front.jpg",
+    "hasDiscount": true,
+    "discountAmount": "100.00",
+    "discountPercentage": 10,
+    "favoritedAt": "2024-01-15T12:00:00.000Z",
+    "stock": 50,
+    "categoryId": 1,
+    "category": {
+      "id": 1,
+      "name": "Electronics",
+      "description": "Electronic devices"
+    }
+  }
+}
+```
+
+**Notes:**
+- If the product is already favorited, it returns the existing favorite (no error)
+
+**Errors:**
+- `401` - Authentication required
+- `400` - Product ID is required
+- `404` - Product not found
+
+---
+
+### Remove from Favorites
+
+Remove a product from the authenticated user's favorites.
+
+**Endpoint:** `DELETE /api/favorites/:productId`
+
+**Authentication:** Required
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Parameters:**
+- `productId` (path) - Product ID
+
+**Response:** `200 OK`
+```json
+{
+  "success": true,
+  "message": "Product removed from favorites successfully",
+  "data": {
+    "id": 1,
+    "name": "Laptop",
+    "description": "High-performance laptop",
+    "price": "899.99",
+    "favoritedAt": "2024-01-15T12:00:00.000Z",
+    "stock": 50,
+    "categoryId": 1,
+    "category": {
+      "id": 1,
+      "name": "Electronics",
+      "description": "Electronic devices"
+    }
+  }
+}
+```
+
+**Errors:**
+- `401` - Authentication required
+- `404` - Product is not in favorites
+
+---
+
+### Check Favorite Status
+
+Check if a specific product is favorited by the authenticated user.
+
+**Endpoint:** `GET /api/favorites/:productId/status`
+
+**Authentication:** Required
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Parameters:**
+- `productId` (path) - Product ID
+
+**Response:** `200 OK`
+```json
+{
+  "success": true,
+  "message": "Favorite status retrieved successfully",
+  "data": {
+    "productId": 1,
+    "isFavorited": true
+  }
+}
+```
+
+**Errors:**
+- `401` - Authentication required
 
 ---
 

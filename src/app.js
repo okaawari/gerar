@@ -9,6 +9,7 @@ const productRoutes = require('./routes/productRoutes');
 const cartRoutes = require('./routes/cartRoutes');
 const orderRoutes = require('./routes/orderRoutes');
 const addressRoutes = require('./routes/addressRoutes');
+const favoriteRoutes = require('./routes/favoriteRoutes');
 const adminRoutes = require('./routes/admin');
 const { notFoundHandler } = require('./middleware/errorMiddleware');
 
@@ -64,6 +65,7 @@ app.use('/api/products', productRoutes);
 app.use('/api/cart', cartRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/addresses', addressRoutes);
+app.use('/api/favorites', favoriteRoutes);
 
 // Admin API routes (requires authentication and admin role)
 app.use('/api/admin', adminRoutes);

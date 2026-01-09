@@ -3,7 +3,7 @@ const prisma = require('../lib/prisma');
 class ProductService {
     /**
      * Validate product data
-     * @param {Object} data - { name, description, price, stock, categoryId }
+     * @param {Object} data - { name, description, price, originalPrice, images, stock, categoryId }
      * @returns {Object} - { isValid, errors }
      */
     validateProduct(data) {
@@ -32,6 +32,33 @@ class ProductService {
             }
         }
 
+        if (data.originalPrice !== undefined && data.originalPrice !== null) {
+            const originalPrice = parseFloat(data.originalPrice);
+            if (isNaN(originalPrice) || originalPrice < 0) {
+                errors.push('Original price must be a valid non-negative number');
+            }
+            // If originalPrice is provided, it should be greater than or equal to price
+            if (data.price !== undefined) {
+                const price = parseFloat(data.price);
+                if (!isNaN(price) && !isNaN(originalPrice) && originalPrice < price) {
+                    errors.push('Original price must be greater than or equal to the current price');
+                }
+            }
+        }
+
+        if (data.images !== undefined && data.images !== null) {
+            if (!Array.isArray(data.images)) {
+                errors.push('Images must be an array of image URLs');
+            } else {
+                // Validate each image URL
+                data.images.forEach((image, index) => {
+                    if (typeof image !== 'string' || image.trim().length === 0) {
+                        errors.push(`Image at index ${index} must be a non-empty string URL`);
+                    }
+                });
+            }
+        }
+
         if (data.stock !== undefined) {
             const stock = parseInt(data.stock);
             if (isNaN(stock) || stock < 0) {
@@ -53,16 +80,59 @@ class ProductService {
     }
 
     /**
+     * Format product with discount information
+     * @param {Object} product - Product object from database
+     * @param {boolean} isFavorite - Optional favorite status
+     * @returns {Object} - Formatted product with discount info
+     */
+    formatProductWithDiscount(product, isFavorite = false) {
+        const formatted = { ...product };
+        const price = parseFloat(product.price);
+        const originalPrice = product.originalPrice ? parseFloat(product.originalPrice) : null;
+
+        // Ensure images is an array (Prisma Json type should already be parsed)
+        if (!formatted.images || !Array.isArray(formatted.images)) {
+            formatted.images = [];
+        }
+
+        // Add firstImage for easy access (useful for product listings)
+        formatted.firstImage = formatted.images.length > 0 ? formatted.images[0] : null;
+
+        // Calculate discount information
+        if (originalPrice && originalPrice > price) {
+            formatted.hasDiscount = true;
+            formatted.originalPrice = originalPrice.toString();
+            formatted.discountAmount = (originalPrice - price).toFixed(2);
+            formatted.discountPercentage = Math.round(((originalPrice - price) / originalPrice) * 100);
+        } else {
+            formatted.hasDiscount = false;
+            formatted.originalPrice = null;
+            formatted.discountAmount = null;
+            formatted.discountPercentage = null;
+        }
+
+        // Add favorite status
+        formatted.isFavorite = isFavorite;
+
+        // Ensure price is a string for consistency
+        formatted.price = price.toString();
+
+        return formatted;
+    }
+
+    /**
      * Get all products with optional filters (Advanced Search)
      * @param {Object} filters - { 
      *   categoryId?, categoryIds[], search?, inStock?, 
      *   minPrice?, maxPrice?, minStock?, maxStock?,
      *   createdAfter?, createdBefore?,
-     *   sortBy?, sortOrder?, page?, limit?
+     *   sortBy?, sortOrder?, page?, limit?,
+     *   userId? (optional - to include favorite status)
      * }
      * @returns {Object} - { products, pagination: { total, page, limit, totalPages } }
      */
     async getAllProducts(filters = {}) {
+        const userId = filters.userId;
         const where = {};
 
         // Filter by single category or multiple categories
@@ -217,8 +287,22 @@ class ProductService {
 
         const totalPages = Math.ceil(total / validLimit);
 
+        // Get favorite statuses if userId is provided
+        let favoriteStatuses = {};
+        if (userId) {
+            const favoriteService = require('./favoriteService');
+            const productIds = products.map(p => p.id);
+            favoriteStatuses = await favoriteService.getFavoriteStatuses(userId, productIds);
+        }
+
+        // Format products with discount information and favorite status
+        const formattedProducts = products.map(product => {
+            const isFavorite = favoriteStatuses[product.id] || false;
+            return this.formatProductWithDiscount(product, isFavorite);
+        });
+
         return {
-            products,
+            products: formattedProducts,
             pagination: {
                 total,
                 page: validPage,
@@ -231,9 +315,10 @@ class ProductService {
     /**
      * Get product by ID
      * @param {number} id - Product ID
+     * @param {number} userId - Optional user ID to include favorite status
      * @returns {Object} - Product with category
      */
-    async getProductById(id) {
+    async getProductById(id, userId = null) {
         const product = await prisma.product.findUnique({
             where: { id: parseInt(id) },
             include: {
@@ -253,7 +338,15 @@ class ProductService {
             throw error;
         }
 
-        return product;
+        // Get favorite status if userId is provided
+        let isFavorite = false;
+        if (userId) {
+            const favoriteService = require('./favoriteService');
+            isFavorite = await favoriteService.isFavorited(userId, id);
+        }
+
+        // Format product with discount information and favorite status
+        return this.formatProductWithDiscount(product, isFavorite);
     }
 
     /**
@@ -281,15 +374,30 @@ class ProductService {
             throw error;
         }
 
+        // Prepare product data
+        const productData = {
+            name: data.name.trim(),
+            description: data.description.trim(),
+            price: parseFloat(data.price),
+            stock: parseInt(data.stock),
+            categoryId: parseInt(data.categoryId)
+        };
+
+        // Add originalPrice if provided
+        if (data.originalPrice !== undefined && data.originalPrice !== null) {
+            productData.originalPrice = parseFloat(data.originalPrice);
+        }
+
+        // Add images if provided (store as JSON)
+        if (data.images !== undefined && data.images !== null) {
+            if (Array.isArray(data.images) && data.images.length > 0) {
+                productData.images = data.images;
+            }
+        }
+
         // Create product
         const product = await prisma.product.create({
-            data: {
-                name: data.name.trim(),
-                description: data.description.trim(),
-                price: parseFloat(data.price),
-                stock: parseInt(data.stock),
-                categoryId: parseInt(data.categoryId)
-            },
+            data: productData,
             include: {
                 category: {
                     select: {
@@ -301,7 +409,8 @@ class ProductService {
             }
         });
 
-        return product;
+        // Format product with discount information
+        return this.formatProductWithDiscount(product);
     }
 
     /**
@@ -354,6 +463,22 @@ class ProductService {
         if (data.price !== undefined) {
             updateData.price = parseFloat(data.price);
         }
+        if (data.originalPrice !== undefined) {
+            // Allow null to remove discount
+            if (data.originalPrice === null || data.originalPrice === '') {
+                updateData.originalPrice = null;
+            } else {
+                updateData.originalPrice = parseFloat(data.originalPrice);
+            }
+        }
+        if (data.images !== undefined) {
+            // Allow null to clear images, or set array of images
+            if (data.images === null || data.images === '') {
+                updateData.images = null;
+            } else if (Array.isArray(data.images)) {
+                updateData.images = data.images.length > 0 ? data.images : null;
+            }
+        }
         if (data.stock !== undefined) {
             updateData.stock = parseInt(data.stock);
         }
@@ -376,7 +501,8 @@ class ProductService {
             }
         });
 
-        return product;
+        // Format product with discount information
+        return this.formatProductWithDiscount(product);
     }
 
     /**

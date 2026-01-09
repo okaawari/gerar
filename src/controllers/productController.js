@@ -36,15 +36,28 @@ class ProductController {
             const filters = {};
 
             // Handle category filters (support both single and multiple)
-            if (categoryIds) {
+            // Check for categoryIds[] format (with brackets) first, then categoryIds (without brackets)
+            const categoryIdsArray = req.query['categoryIds[]'] || categoryIds;
+            
+            if (categoryIdsArray) {
                 // Handle array format: categoryIds[]=1&categoryIds[]=2 or categoryIds=1,2
-                if (Array.isArray(categoryIds)) {
-                    filters.categoryIds = categoryIds;
-                } else if (typeof categoryIds === 'string') {
+                if (Array.isArray(categoryIdsArray)) {
+                    // Filter out empty strings from array
+                    const validIds = categoryIdsArray.filter(id => id != null && String(id).trim().length > 0);
+                    if (validIds.length > 0) {
+                        filters.categoryIds = validIds;
+                    }
+                } else if (typeof categoryIdsArray === 'string') {
                     // Comma-separated list
-                    filters.categoryIds = categoryIds.split(',').map(id => id.trim());
+                    const validIds = categoryIdsArray.split(',').map(id => id.trim()).filter(id => id.length > 0);
+                    if (validIds.length > 0) {
+                        filters.categoryIds = validIds;
+                    }
                 }
-            } else if (categoryId) {
+            }
+            
+            // Only use categoryId if categoryIds is not set
+            if (!filters.categoryIds && categoryId) {
                 filters.categoryId = categoryId;
             }
 
@@ -96,6 +109,11 @@ class ProductController {
                 filters.limit = limit;
             }
 
+            // Include userId if user is authenticated (for favorite status)
+            if (req.user && req.user.id) {
+                filters.userId = req.user.id;
+            }
+
             const result = await productService.getAllProducts(filters);
 
             res.status(200).json({
@@ -116,7 +134,9 @@ class ProductController {
     async getProductById(req, res, next) {
         try {
             const { id } = req.params;
-            const product = await productService.getProductById(id);
+            // Include userId if user is authenticated (for favorite status)
+            const userId = req.user && req.user.id ? req.user.id : null;
+            const product = await productService.getProductById(id, userId);
 
             res.status(200).json({
                 success: true,
@@ -131,14 +151,17 @@ class ProductController {
     /**
      * Create a new product
      * POST /api/products
+     * Body: { name, description, price, originalPrice?, images?, stock, categoryId }
      */
     async createProduct(req, res, next) {
         try {
-            const { name, description, price, stock, categoryId } = req.body;
+            const { name, description, price, originalPrice, images, stock, categoryId } = req.body;
             const product = await productService.createProduct({
                 name,
                 description,
                 price,
+                originalPrice,
+                images,
                 stock,
                 categoryId
             });
@@ -156,15 +179,18 @@ class ProductController {
     /**
      * Update a product
      * PUT /api/products/:id
+     * Body: { name?, description?, price?, originalPrice?, images?, stock?, categoryId? }
      */
     async updateProduct(req, res, next) {
         try {
             const { id } = req.params;
-            const { name, description, price, stock, categoryId } = req.body;
+            const { name, description, price, originalPrice, images, stock, categoryId } = req.body;
             const product = await productService.updateProduct(id, {
                 name,
                 description,
                 price,
+                originalPrice,
+                images,
                 stock,
                 categoryId
             });
