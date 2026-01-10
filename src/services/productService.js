@@ -66,11 +66,30 @@ class ProductService {
             }
         }
 
-        if (data.categoryId !== undefined) {
+        // Validate categoryIds (array) - at least one category is required
+        if (data.categoryIds !== undefined && data.categoryIds !== null) {
+            if (!Array.isArray(data.categoryIds)) {
+                errors.push('Category IDs must be an array');
+            } else if (data.categoryIds.length === 0) {
+                errors.push('At least one category ID is required');
+            } else {
+                // Validate each category ID
+                data.categoryIds.forEach((categoryId, index) => {
+                    const id = parseInt(categoryId);
+                    if (isNaN(id) || id <= 0) {
+                        errors.push(`Category ID at index ${index} must be a valid positive integer`);
+                    }
+                });
+            }
+        } else if (data.categoryId !== undefined && data.categoryId !== null) {
+            // Backward compatibility: allow single categoryId and convert to array
             const categoryId = parseInt(data.categoryId);
             if (isNaN(categoryId) || categoryId <= 0) {
                 errors.push('Category ID must be a valid positive integer');
             }
+        } else if (data.categoryIds === undefined) {
+            // If neither categoryIds nor categoryId is provided during creation, it's an error
+            // But we'll check this in the create/update methods
         }
 
         return {
@@ -137,18 +156,26 @@ class ProductService {
 
         // Filter by single category or multiple categories
         if (filters.categoryIds && Array.isArray(filters.categoryIds)) {
-            // Multiple categories
+            // Multiple categories - filter products that have ANY of these categories
             const categoryIds = filters.categoryIds
                 .map(id => parseInt(id))
                 .filter(id => !isNaN(id) && id > 0);
             if (categoryIds.length > 0) {
-                where.categoryId = {
-                    in: categoryIds
+                where.categories = {
+                    some: {
+                        categoryId: {
+                            in: categoryIds
+                        }
+                    }
                 };
             }
         } else if (filters.categoryId) {
             // Single category (backward compatibility)
-            where.categoryId = parseInt(filters.categoryId);
+            where.categories = {
+                some: {
+                    categoryId: parseInt(filters.categoryId)
+                }
+            };
         }
 
         // Advanced search: search in name and/or description
@@ -272,11 +299,15 @@ class ProductService {
         const products = await prisma.product.findMany({
             where,
             include: {
-                category: {
-                    select: {
-                        id: true,
-                        name: true,
-                        description: true
+                categories: {
+                    include: {
+                        category: {
+                            select: {
+                                id: true,
+                                name: true,
+                                description: true
+                            }
+                        }
                     }
                 }
             },
@@ -298,7 +329,15 @@ class ProductService {
         // Format products with discount information and favorite status
         const formattedProducts = products.map(product => {
             const isFavorite = favoriteStatuses[product.id] || false;
-            return this.formatProductWithDiscount(product, isFavorite);
+            const formatted = this.formatProductWithDiscount(product, isFavorite);
+            // Extract categories from ProductCategory junction table
+            formatted.categories = product.categories
+                ? product.categories.map(pc => pc.category)
+                : [];
+            // For backward compatibility, keep categoryId as first category if exists
+            formatted.categoryId = formatted.categories.length > 0 ? formatted.categories[0].id : null;
+            formatted.category = formatted.categories.length > 0 ? formatted.categories[0] : null;
+            return formatted;
         });
 
         return {
@@ -322,11 +361,15 @@ class ProductService {
         const product = await prisma.product.findUnique({
             where: { id: parseInt(id) },
             include: {
-                category: {
-                    select: {
-                        id: true,
-                        name: true,
-                        description: true
+                categories: {
+                    include: {
+                        category: {
+                            select: {
+                                id: true,
+                                name: true,
+                                description: true
+                            }
+                        }
                     }
                 }
             }
@@ -346,12 +389,20 @@ class ProductService {
         }
 
         // Format product with discount information and favorite status
-        return this.formatProductWithDiscount(product, isFavorite);
+        const formatted = this.formatProductWithDiscount(product, isFavorite);
+        // Extract categories from ProductCategory junction table
+        formatted.categories = product.categories
+            ? product.categories.map(pc => pc.category)
+            : [];
+        // For backward compatibility, keep categoryId as first category if exists
+        formatted.categoryId = formatted.categories.length > 0 ? formatted.categories[0].id : null;
+        formatted.category = formatted.categories.length > 0 ? formatted.categories[0] : null;
+        return formatted;
     }
 
     /**
      * Create a new product
-     * @param {Object} data - { name, description, price, stock, categoryId }
+     * @param {Object} data - { name, description, price, stock, categoryIds[] or categoryId }
      * @returns {Object} - Created product
      */
     async createProduct(data) {
@@ -363,13 +414,32 @@ class ProductService {
             throw error;
         }
 
-        // Verify category exists
-        const category = await prisma.category.findUnique({
-            where: { id: parseInt(data.categoryId) }
+        // Get category IDs - support both categoryIds array and single categoryId (backward compatibility)
+        let categoryIds = [];
+        if (data.categoryIds && Array.isArray(data.categoryIds)) {
+            categoryIds = data.categoryIds.map(id => parseInt(id)).filter(id => !isNaN(id) && id > 0);
+        } else if (data.categoryId) {
+            // Backward compatibility: convert single categoryId to array
+            categoryIds = [parseInt(data.categoryId)];
+        }
+
+        if (categoryIds.length === 0) {
+            const error = new Error('At least one category ID is required');
+            error.statusCode = 400;
+            throw error;
+        }
+
+        // Verify all categories exist
+        const categories = await prisma.category.findMany({
+            where: {
+                id: {
+                    in: categoryIds
+                }
+            }
         });
 
-        if (!category) {
-            const error = new Error('Category not found');
+        if (categories.length !== categoryIds.length) {
+            const error = new Error('One or more categories not found');
             error.statusCode = 404;
             throw error;
         }
@@ -380,7 +450,11 @@ class ProductService {
             description: data.description.trim(),
             price: parseFloat(data.price),
             stock: parseInt(data.stock),
-            categoryId: parseInt(data.categoryId)
+            categories: {
+                create: categoryIds.map(categoryId => ({
+                    categoryId: categoryId
+                }))
+            }
         };
 
         // Add originalPrice if provided
@@ -399,18 +473,29 @@ class ProductService {
         const product = await prisma.product.create({
             data: productData,
             include: {
-                category: {
-                    select: {
-                        id: true,
-                        name: true,
-                        description: true
+                categories: {
+                    include: {
+                        category: {
+                            select: {
+                                id: true,
+                                name: true,
+                                description: true
+                            }
+                        }
                     }
                 }
             }
         });
 
         // Format product with discount information
-        return this.formatProductWithDiscount(product);
+        const formatted = this.formatProductWithDiscount(product);
+        // Extract categories from ProductCategory junction table
+        formatted.categories = product.categories
+            ? product.categories.map(pc => pc.category)
+            : [];
+        formatted.categoryId = formatted.categories.length > 0 ? formatted.categories[0].id : null;
+        formatted.category = formatted.categories.length > 0 ? formatted.categories[0] : null;
+        return formatted;
     }
 
     /**
@@ -439,14 +524,39 @@ class ProductService {
             throw error;
         }
 
-        // If categoryId is being updated, verify category exists
-        if (data.categoryId !== undefined && parseInt(data.categoryId) !== existingProduct.categoryId) {
-            const category = await prisma.category.findUnique({
-                where: { id: parseInt(data.categoryId) }
+        // Handle category updates
+        let categoryIds = null;
+        if (data.categoryIds !== undefined && data.categoryIds !== null) {
+            if (Array.isArray(data.categoryIds)) {
+                categoryIds = data.categoryIds.map(id => parseInt(id)).filter(id => !isNaN(id) && id > 0);
+            } else {
+                const error = new Error('Category IDs must be an array');
+                error.statusCode = 400;
+                throw error;
+            }
+        } else if (data.categoryId !== undefined && data.categoryId !== null) {
+            // Backward compatibility: convert single categoryId to array
+            categoryIds = [parseInt(data.categoryId)];
+        }
+
+        // Verify all categories exist if updating
+        if (categoryIds !== null) {
+            if (categoryIds.length === 0) {
+                const error = new Error('At least one category ID is required');
+                error.statusCode = 400;
+                throw error;
+            }
+
+            const categories = await prisma.category.findMany({
+                where: {
+                    id: {
+                        in: categoryIds
+                    }
+                }
             });
 
-            if (!category) {
-                const error = new Error('Category not found');
+            if (categories.length !== categoryIds.length) {
+                const error = new Error('One or more categories not found');
                 error.statusCode = 404;
                 throw error;
             }
@@ -482,8 +592,19 @@ class ProductService {
         if (data.stock !== undefined) {
             updateData.stock = parseInt(data.stock);
         }
-        if (data.categoryId !== undefined) {
-            updateData.categoryId = parseInt(data.categoryId);
+
+        // Handle category updates - delete existing and create new
+        if (categoryIds !== null) {
+            // Delete all existing category associations
+            await prisma.productCategory.deleteMany({
+                where: { productId: parseInt(id) }
+            });
+            // Add new category associations
+            updateData.categories = {
+                create: categoryIds.map(categoryId => ({
+                    categoryId: categoryId
+                }))
+            };
         }
 
         // Update product
@@ -491,18 +612,29 @@ class ProductService {
             where: { id: parseInt(id) },
             data: updateData,
             include: {
-                category: {
-                    select: {
-                        id: true,
-                        name: true,
-                        description: true
+                categories: {
+                    include: {
+                        category: {
+                            select: {
+                                id: true,
+                                name: true,
+                                description: true
+                            }
+                        }
                     }
                 }
             }
         });
 
         // Format product with discount information
-        return this.formatProductWithDiscount(product);
+        const formatted = this.formatProductWithDiscount(product);
+        // Extract categories from ProductCategory junction table
+        formatted.categories = product.categories
+            ? product.categories.map(pc => pc.category)
+            : [];
+        formatted.categoryId = formatted.categories.length > 0 ? formatted.categories[0].id : null;
+        formatted.category = formatted.categories.length > 0 ? formatted.categories[0] : null;
+        return formatted;
     }
 
     /**

@@ -151,11 +151,11 @@ class ProductController {
     /**
      * Create a new product
      * POST /api/products
-     * Body: { name, description, price, originalPrice?, images?, stock, categoryId }
+     * Body: { name, description, price, originalPrice?, images?, stock, categoryIds[] or categoryId }
      */
     async createProduct(req, res, next) {
         try {
-            const { name, description, price, originalPrice, images, stock, categoryId } = req.body;
+            const { name, description, price, originalPrice, images, stock, categoryIds, categoryId } = req.body;
             const product = await productService.createProduct({
                 name,
                 description,
@@ -163,7 +163,8 @@ class ProductController {
                 originalPrice,
                 images,
                 stock,
-                categoryId
+                categoryIds,  // Accept array of category IDs
+                categoryId    // Also accept single categoryId for backward compatibility
             });
 
             res.status(201).json({
@@ -179,12 +180,12 @@ class ProductController {
     /**
      * Update a product
      * PUT /api/products/:id
-     * Body: { name?, description?, price?, originalPrice?, images?, stock?, categoryId? }
+     * Body: { name?, description?, price?, originalPrice?, images?, stock?, categoryIds[] or categoryId? }
      */
     async updateProduct(req, res, next) {
         try {
             const { id } = req.params;
-            const { name, description, price, originalPrice, images, stock, categoryId } = req.body;
+            const { name, description, price, originalPrice, images, stock, categoryIds, categoryId } = req.body;
             const product = await productService.updateProduct(id, {
                 name,
                 description,
@@ -192,7 +193,8 @@ class ProductController {
                 originalPrice,
                 images,
                 stock,
-                categoryId
+                categoryIds,  // Accept array of category IDs
+                categoryId    // Also accept single categoryId for backward compatibility
             });
 
             res.status(200).json({

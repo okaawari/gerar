@@ -183,24 +183,43 @@ class CategoryService {
             });
         }
 
-        return await prisma.product.findMany({
+        const products = await prisma.product.findMany({
             where: {
-                categoryId: {
-                    in: categoryIds
+                categories: {
+                    some: {
+                        categoryId: {
+                            in: categoryIds
+                        }
+                    }
                 }
             },
             include: {
-                category: {
-                    select: {
-                        id: true,
-                        name: true,
-                        parentId: true
+                categories: {
+                    include: {
+                        category: {
+                            select: {
+                                id: true,
+                                name: true,
+                                description: true
+                            }
+                        }
                     }
                 }
             },
             orderBy: {
                 createdAt: 'desc'
             }
+        });
+
+        // Format products to extract categories
+        return products.map(product => {
+            const formatted = { ...product };
+            formatted.categories = product.categories
+                ? product.categories.map(pc => pc.category)
+                : [];
+            formatted.categoryId = formatted.categories.length > 0 ? formatted.categories[0].id : null;
+            formatted.category = formatted.categories.length > 0 ? formatted.categories[0] : null;
+            return formatted;
         });
     }
 

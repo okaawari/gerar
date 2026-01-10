@@ -121,11 +121,15 @@ class OrderService {
                     include: {
                         product: {
                             include: {
-                                category: {
-                                    select: {
-                                        id: true,
-                                        name: true,
-                                        description: true
+                                categories: {
+                                    include: {
+                                        category: {
+                                            select: {
+                                                id: true,
+                                                name: true,
+                                                description: true
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -151,10 +155,26 @@ class OrderService {
                 where: { userId: userIdInt }
             });
 
+            // Format order items to extract categories
+            const formattedItems = orderItems.map(item => {
+                const formatted = { ...item };
+                if (item.product && item.product.categories) {
+                    formatted.product = { ...item.product };
+                    formatted.product.categories = item.product.categories.map(pc => pc.category);
+                    formatted.product.categoryId = formatted.product.categories.length > 0 
+                        ? formatted.product.categories[0].id 
+                        : null;
+                    formatted.product.category = formatted.product.categories.length > 0 
+                        ? formatted.product.categories[0] 
+                        : null;
+                }
+                return formatted;
+            });
+
             // Return order with items
             return {
                 ...newOrder,
-                items: orderItems
+                items: formattedItems
             };
         });
 
@@ -166,11 +186,15 @@ class OrderService {
                     include: {
                         product: {
                             include: {
-                                category: {
-                                    select: {
-                                        id: true,
-                                        name: true,
-                                        description: true
+                                categories: {
+                                    include: {
+                                        category: {
+                                            select: {
+                                                id: true,
+                                                name: true,
+                                                description: true
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -187,6 +211,24 @@ class OrderService {
                 }
             }
         });
+
+        // Format products to extract categories
+        if (orderWithDetails && orderWithDetails.items) {
+            orderWithDetails.items = orderWithDetails.items.map(item => {
+                const formatted = { ...item };
+                if (item.product && item.product.categories) {
+                    formatted.product = { ...item.product };
+                    formatted.product.categories = item.product.categories.map(pc => pc.category);
+                    formatted.product.categoryId = formatted.product.categories.length > 0 
+                        ? formatted.product.categories[0].id 
+                        : null;
+                    formatted.product.category = formatted.product.categories.length > 0 
+                        ? formatted.product.categories[0] 
+                        : null;
+                }
+                return formatted;
+            });
+        }
 
         return orderWithDetails;
     }
@@ -206,11 +248,15 @@ class OrderService {
                     include: {
                         product: {
                             include: {
-                                category: {
-                                    select: {
-                                        id: true,
-                                        name: true,
-                                        description: true
+                                categories: {
+                                    include: {
+                                        category: {
+                                            select: {
+                                                id: true,
+                                                name: true,
+                                                description: true
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -241,6 +287,24 @@ class OrderService {
             throw error;
         }
 
+        // Format products to extract categories
+        if (order && order.items) {
+            order.items = order.items.map(item => {
+                const formatted = { ...item };
+                if (item.product && item.product.categories) {
+                    formatted.product = { ...item.product };
+                    formatted.product.categories = item.product.categories.map(pc => pc.category);
+                    formatted.product.categoryId = formatted.product.categories.length > 0 
+                        ? formatted.product.categories[0].id 
+                        : null;
+                    formatted.product.category = formatted.product.categories.length > 0 
+                        ? formatted.product.categories[0] 
+                        : null;
+                }
+                return formatted;
+            });
+        }
+
         return order;
     }
 
@@ -257,11 +321,15 @@ class OrderService {
                     include: {
                         product: {
                             include: {
-                                category: {
-                                    select: {
-                                        id: true,
-                                        name: true,
-                                        description: true
+                                categories: {
+                                    include: {
+                                        category: {
+                                            select: {
+                                                id: true,
+                                                name: true,
+                                                description: true
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -275,7 +343,27 @@ class OrderService {
             }
         });
 
-        return orders;
+        // Format products to extract categories
+        return orders.map(order => {
+            const formatted = { ...order };
+            if (formatted.items) {
+                formatted.items = formatted.items.map(item => {
+                    const formattedItem = { ...item };
+                    if (item.product && item.product.categories) {
+                        formattedItem.product = { ...item.product };
+                        formattedItem.product.categories = item.product.categories.map(pc => pc.category);
+                        formattedItem.product.categoryId = formattedItem.product.categories.length > 0 
+                            ? formattedItem.product.categories[0].id 
+                            : null;
+                        formattedItem.product.category = formattedItem.product.categories.length > 0 
+                            ? formattedItem.product.categories[0] 
+                            : null;
+                    }
+                    return formattedItem;
+                });
+            }
+            return formatted;
+        });
     }
 
     /**
@@ -289,11 +377,15 @@ class OrderService {
                     include: {
                         product: {
                             include: {
-                                category: {
-                                    select: {
-                                        id: true,
-                                        name: true,
-                                        description: true
+                                categories: {
+                                    include: {
+                                        category: {
+                                            select: {
+                                                id: true,
+                                                name: true,
+                                                description: true
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -314,7 +406,27 @@ class OrderService {
             }
         });
 
-        return orders;
+        // Format products to extract categories
+        return orders.map(order => {
+            const formatted = { ...order };
+            if (formatted.items) {
+                formatted.items = formatted.items.map(item => {
+                    const formattedItem = { ...item };
+                    if (item.product && item.product.categories) {
+                        formattedItem.product = { ...item.product };
+                        formattedItem.product.categories = item.product.categories.map(pc => pc.category);
+                        formattedItem.product.categoryId = formattedItem.product.categories.length > 0 
+                            ? formattedItem.product.categories[0].id 
+                            : null;
+                        formattedItem.product.category = formattedItem.product.categories.length > 0 
+                            ? formattedItem.product.categories[0] 
+                            : null;
+                    }
+                    return formattedItem;
+                });
+            }
+            return formatted;
+        });
     }
 }
 

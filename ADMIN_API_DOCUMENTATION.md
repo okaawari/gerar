@@ -342,6 +342,18 @@ GET /api/admin/products?categoryIds=1,2&search=laptop&minPrice=500&maxPrice=2000
       "discountAmount": "100.00",
       "discountPercentage": 10,
       "stock": 50,
+      "categories": [
+        {
+          "id": 1,
+          "name": "Electronics",
+          "description": "Electronic devices"
+        },
+        {
+          "id": 2,
+          "name": "Gaming",
+          "description": "Gaming products"
+        }
+      ],
       "categoryId": 1,
       "category": {
         "id": 1,
@@ -374,8 +386,9 @@ GET /api/admin/products?categoryIds=1,2&search=laptop&minPrice=500&maxPrice=2000
   - `discountAmount` - Discount amount (string or null)
   - `discountPercentage` - Discount percentage (integer or null)
   - `stock` - Stock quantity
-  - `categoryId` - Category ID
-  - `category` - Category object with id, name, description
+  - `categories` - Array of category objects (each with id, name, description)
+  - `categoryId` - First category ID (for backward compatibility)
+  - `category` - First category object (for backward compatibility)
   - `createdAt` - Creation timestamp
   - `updatedAt` - Last update timestamp
 - `pagination.total` - Total number of products matching the filters
@@ -420,7 +433,9 @@ Create a new product.
     "https://example.com/laptop-back.jpg"
   ],
   "stock": 50,                         // Required, integer (>= 0)
-  "categoryId": 1                      // Required, integer (must exist)
+  "categoryIds": [1, 2, 5]            // Required, array of integers - at least one category ID (must exist)
+  // OR for backward compatibility:
+  // "categoryId": 1                   // Single category ID (will be converted to array)
 }
 ```
 
@@ -445,6 +460,18 @@ Create a new product.
     "discountAmount": "100.00",
     "discountPercentage": 10,
     "stock": 50,
+    "categories": [
+      {
+        "id": 1,
+        "name": "Electronics",
+        "description": "Electronic devices"
+      },
+      {
+        "id": 2,
+        "name": "Gaming",
+        "description": "Gaming products"
+      }
+    ],
     "categoryId": 1,
     "category": {
       "id": 1,
@@ -461,16 +488,21 @@ Create a new product.
 - `price` is the current selling price (required)
 - `originalPrice` is optional - if provided and greater than `price`, discount will be automatically calculated
 - `images` is optional - provide an array of image URL strings
+- `categoryIds` is required - provide an array of category IDs (at least one required)
+- For backward compatibility, you can also use `categoryId` (single ID) which will be converted to an array
 - The first image in the array will be available as `firstImage` in the response for easy access in listings
+- Products can belong to multiple categories - use `categoryIds` array to assign multiple categories
 
 **Errors:**
 - `400` - Validation failed (missing required fields, invalid data types)
 - `401` - Authentication required
 - `403` - Admin privileges required
-- `404` - Category not found
+- `404` - One or more categories not found
+- `400` - At least one category ID is required
 - `400` - Invalid price (must be positive) or stock (must be >= 0)
 - `400` - Original price must be greater than or equal to current price
 - `400` - Images must be an array of non-empty string URLs
+- `400` - Category IDs must be an array
 
 ---
 
@@ -497,7 +529,9 @@ Update an existing product.
     "https://example.com/updated-back.jpg"
   ],
   "stock": 40,                         // Optional, integer (>= 0)
-  "categoryId": 1                      // Optional, integer (must exist)
+  "categoryIds": [1, 3]               // Optional, array of integers - replaces all existing categories
+  // OR for backward compatibility:
+  // "categoryId": 1                   // Single category ID (will replace all categories)
 }
 ```
 
@@ -521,6 +555,18 @@ Update an existing product.
     "discountAmount": "100.00",
     "discountPercentage": 11,
     "stock": 40,
+    "categories": [
+      {
+        "id": 1,
+        "name": "Electronics",
+        "description": "Electronic devices"
+      },
+      {
+        "id": 3,
+        "name": "Computers",
+        "description": "Computer products"
+      }
+    ],
     "categoryId": 1,
     "category": {
       "id": 1,
@@ -537,15 +583,20 @@ Update an existing product.
 - All fields are optional - only include fields you want to update
 - `originalPrice` can be set to `null` to remove discount
 - `images` can be set to `null` or empty array `[]` to clear all images
+- `categoryIds` replaces ALL existing categories with the new ones provided
+- For backward compatibility, `categoryId` (single ID) will replace all categories with just that one
 - If `originalPrice` is provided and greater than `price`, discount will be automatically calculated
 - To remove discount, set `originalPrice` to `null`
+- To update categories, provide `categoryIds` array with all desired category IDs (existing ones will be removed)
 
 **Errors:**
 - `400` - Validation failed
 - `401` - Authentication required
 - `403` - Admin privileges required
 - `404` - Product not found
-- `404` - Category not found (if categoryId provided)
+- `404` - One or more categories not found (if categoryIds provided)
+- `400` - At least one category ID is required (if categoryIds provided)
+- `400` - Category IDs must be an array (if categoryIds provided)
 - `400` - Invalid price or stock values
 - `400` - Original price must be greater than or equal to current price
 
@@ -573,6 +624,13 @@ Delete a product.
     "description": "High-performance laptop",
     "price": "999.99",
     "stock": 50,
+    "categories": [
+      {
+        "id": 1,
+        "name": "Electronics",
+        "description": "Electronic devices"
+      }
+    ],
     "categoryId": 1,
     "createdAt": "2024-01-15T10:30:00.000Z",
     "updatedAt": "2024-01-15T10:30:00.000Z"
@@ -648,6 +706,13 @@ Retrieve all orders from all users with full details.
             "description": "High-performance laptop",
             "price": "999.99",
             "stock": 50,
+            "categories": [
+              {
+                "id": 1,
+                "name": "Electronics",
+                "description": "Electronic devices"
+              }
+            ],
             "categoryId": 1,
             "category": {
               "id": 1,
@@ -709,11 +774,18 @@ interface Product {
   name: string;
   description: string;
   price: string;             // Decimal as string (e.g., "999.99")
+  originalPrice: string | null; // Original price before discount (null if no discount)
+  images: string[];          // Array of image URLs
+  firstImage: string | null; // First image URL for easy access
+  hasDiscount: boolean;      // Whether product has a discount
+  discountAmount: string | null; // Discount amount saved
+  discountPercentage: number | null; // Discount percentage (0-100)
   stock: number;             // Integer, >= 0
-  categoryId: number;
+  categories: Category[];    // Array of categories this product belongs to
+  categoryId: number | null; // First category ID (for backward compatibility)
+  category?: Category;       // First category object (for backward compatibility)
   createdAt: string;         // ISO 8601 date string
   updatedAt: string;         // ISO 8601 date string
-  category?: Category;       // Included in some responses
 }
 ```
 
@@ -830,12 +902,21 @@ curl -X POST http://localhost:3000/api/admin/categories \
 
 #### Update Product
 ```bash
+# Update price and stock
 curl -X PUT http://localhost:3000/api/admin/products/1 \
   -H "Authorization: Bearer YOUR_JWT_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "price": 899.99,
     "stock": 40
+  }'
+
+# Update categories (replaces all existing categories)
+curl -X PUT http://localhost:3000/api/admin/products/1 \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "categoryIds": [1, 2, 5]
   }'
 ```
 
@@ -869,13 +950,27 @@ const createProduct = async (productData, token) => {
   return data;
 };
 
-// Usage
+// Usage with multiple categories
 const product = await createProduct({
+  name: "Gaming Laptop",
+  description: "High-performance gaming laptop",
+  price: 1299.99,
+  originalPrice: 1499.99,
+  images: [
+    "https://example.com/laptop-front.jpg",
+    "https://example.com/laptop-side.jpg"
+  ],
+  stock: 50,
+  categoryIds: [1, 2, 5]  // Multiple categories
+}, 'YOUR_JWT_TOKEN');
+
+// Usage with single category (backward compatible)
+const productSingle = await createProduct({
   name: "Laptop",
   description: "High-performance laptop",
   price: 999.99,
   stock: 50,
-  categoryId: 1
+  categoryId: 1  // Single category - still works
 }, 'YOUR_JWT_TOKEN');
 ```
 
@@ -961,6 +1056,11 @@ const createCategory = (categoryData) => {
 const updateProduct = (productId, updates) => {
   return api.put(`/products/${productId}`, updates);
 };
+
+// Example: Update product with multiple categories
+updateProduct(1, {
+  categoryIds: [1, 3, 5]  // Replaces all existing categories
+});
 
 // Delete product
 const deleteProduct = (productId) => {

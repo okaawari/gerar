@@ -29,11 +29,15 @@ class CartService {
             include: {
                 product: {
                     include: {
-                        category: {
-                            select: {
-                                id: true,
-                                name: true,
-                                description: true
+                        categories: {
+                            include: {
+                                category: {
+                                    select: {
+                                        id: true,
+                                        name: true,
+                                        description: true
+                                    }
+                                }
                             }
                         }
                     }
@@ -44,7 +48,23 @@ class CartService {
             }
         });
 
-        return cartItems;
+        // Format products to extract categories
+        return cartItems.map(item => {
+            const formatted = { ...item };
+            if (item.product) {
+                formatted.product = { ...item.product };
+                formatted.product.categories = item.product.categories
+                    ? item.product.categories.map(pc => pc.category)
+                    : [];
+                formatted.product.categoryId = formatted.product.categories.length > 0 
+                    ? formatted.product.categories[0].id 
+                    : null;
+                formatted.product.category = formatted.product.categories.length > 0 
+                    ? formatted.product.categories[0] 
+                    : null;
+            }
+            return formatted;
+        });
     }
 
     /**
@@ -111,11 +131,15 @@ class CartService {
                 include: {
                     product: {
                         include: {
-                            category: {
-                                select: {
-                                    id: true,
-                                    name: true,
-                                    description: true
+                            categories: {
+                                include: {
+                                    category: {
+                                        select: {
+                                            id: true,
+                                            name: true,
+                                            description: true
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -123,7 +147,25 @@ class CartService {
                 }
             });
 
-            return updatedCartItem;
+            // Format product categories
+            const formatted = { ...updatedCartItem };
+            if (updatedCartItem.product) {
+                formatted.product = { ...updatedCartItem.product };
+                if (updatedCartItem.product.categories) {
+                    formatted.product.categories = updatedCartItem.product.categories.map(pc => pc.category);
+                    formatted.product.categoryId = formatted.product.categories.length > 0 
+                        ? formatted.product.categories[0].id 
+                        : null;
+                    formatted.product.category = formatted.product.categories.length > 0 
+                        ? formatted.product.categories[0] 
+                        : null;
+                } else {
+                    formatted.product.categories = [];
+                    formatted.product.categoryId = null;
+                    formatted.product.category = null;
+                }
+            }
+            return formatted;
         } else {
             // Create new cart item
             const cartItem = await prisma.cartItem.create({
@@ -135,11 +177,15 @@ class CartService {
                 include: {
                     product: {
                         include: {
-                            category: {
-                                select: {
-                                    id: true,
-                                    name: true,
-                                    description: true
+                            categories: {
+                                include: {
+                                    category: {
+                                        select: {
+                                            id: true,
+                                            name: true,
+                                            description: true
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -147,7 +193,25 @@ class CartService {
                 }
             });
 
-            return cartItem;
+            // Format product categories
+            const formatted = { ...cartItem };
+            if (cartItem.product) {
+                formatted.product = { ...cartItem.product };
+                if (cartItem.product.categories) {
+                    formatted.product.categories = cartItem.product.categories.map(pc => pc.category);
+                    formatted.product.categoryId = formatted.product.categories.length > 0 
+                        ? formatted.product.categories[0].id 
+                        : null;
+                    formatted.product.category = formatted.product.categories.length > 0 
+                        ? formatted.product.categories[0] 
+                        : null;
+                } else {
+                    formatted.product.categories = [];
+                    formatted.product.categoryId = null;
+                    formatted.product.category = null;
+                }
+            }
+            return formatted;
         }
     }
 
@@ -208,11 +272,15 @@ class CartService {
             include: {
                 product: {
                     include: {
-                        category: {
-                            select: {
-                                id: true,
-                                name: true,
-                                description: true
+                        categories: {
+                            include: {
+                                category: {
+                                    select: {
+                                        id: true,
+                                        name: true,
+                                        description: true
+                                    }
+                                }
                             }
                         }
                     }
@@ -220,7 +288,25 @@ class CartService {
             }
         });
 
-        return updatedCartItem;
+        // Format product categories
+        const formatted = { ...updatedCartItem };
+        if (updatedCartItem.product) {
+            formatted.product = { ...updatedCartItem.product };
+            if (updatedCartItem.product.categories) {
+                formatted.product.categories = updatedCartItem.product.categories.map(pc => pc.category);
+                formatted.product.categoryId = formatted.product.categories.length > 0 
+                    ? formatted.product.categories[0].id 
+                    : null;
+                formatted.product.category = formatted.product.categories.length > 0 
+                    ? formatted.product.categories[0] 
+                    : null;
+            } else {
+                formatted.product.categories = [];
+                formatted.product.categoryId = null;
+                formatted.product.category = null;
+            }
+        }
+        return formatted;
     }
 
     /**
@@ -243,11 +329,15 @@ class CartService {
             include: {
                 product: {
                     include: {
-                        category: {
-                            select: {
-                                id: true,
-                                name: true,
-                                description: true
+                        categories: {
+                            include: {
+                                category: {
+                                    select: {
+                                        id: true,
+                                        name: true,
+                                        description: true
+                                    }
+                                }
                             }
                         }
                     }
@@ -271,7 +361,25 @@ class CartService {
             }
         });
 
-        return existingCartItem;
+        // Format product categories
+        const formatted = { ...existingCartItem };
+        if (existingCartItem.product) {
+            formatted.product = { ...existingCartItem.product };
+            if (existingCartItem.product.categories) {
+                formatted.product.categories = existingCartItem.product.categories.map(pc => pc.category);
+                formatted.product.categoryId = formatted.product.categories.length > 0 
+                    ? formatted.product.categories[0].id 
+                    : null;
+                formatted.product.category = formatted.product.categories.length > 0 
+                    ? formatted.product.categories[0] 
+                    : null;
+            } else {
+                formatted.product.categories = [];
+                formatted.product.categoryId = null;
+                formatted.product.category = null;
+            }
+        }
+        return formatted;
     }
 
     /**

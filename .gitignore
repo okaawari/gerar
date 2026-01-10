@@ -1,5 +1,43 @@
+# Dependencies
 node_modules
-# Keep environment variables out of version control
+# Note: package-lock.json should be committed for consistent installs
+
+# Environment variables (NEVER commit these!)
 .env
-.kiro
+.env.local
+.env.production
+.env.development
+
+# IDE and Editor files
+.vscode
+.idea
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Testing
+coverage
+.nyc_output
+.jest
+
+# Build artifacts
+dist
+build
+*.tsbuildinfo
+
+# Prisma generated files (will be regenerated on server)
 /src/generated/prisma
+
+# Kiro files (if used)
+.kiro
+
+# OS files
+Thumbs.db

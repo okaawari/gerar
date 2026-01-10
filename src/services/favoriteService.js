@@ -44,10 +44,20 @@ class FavoriteService {
             take: validLimit
         });
 
-        // Format products with discount information
+        // Format products with discount information and categories
         const products = favorites.map(favorite => {
             const formatted = productService.formatProductWithDiscount(favorite.product);
             formatted.favoritedAt = favorite.createdAt;
+            // Extract categories from ProductCategory junction table
+            if (favorite.product.categories) {
+                formatted.categories = favorite.product.categories.map(pc => pc.category);
+                formatted.categoryId = formatted.categories.length > 0 ? formatted.categories[0].id : null;
+                formatted.category = formatted.categories.length > 0 ? formatted.categories[0] : null;
+            } else {
+                formatted.categories = [];
+                formatted.categoryId = null;
+                formatted.category = null;
+            }
             return formatted;
         });
 

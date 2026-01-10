@@ -43,7 +43,7 @@ model Category {
 
   parent      Category? @relation("CategoryToCategory", fields: [parentId], references: [id], onDelete: Cascade)
   children    Category[] @relation("CategoryToCategory")
-  products    Product[]
+  products    ProductCategory[]
 
   @@unique([name, parentId])
   @@index([parentId])
@@ -57,11 +57,10 @@ model Product {
   originalPrice Decimal?  @db.Decimal(10, 2) // Original price before discount (if null, no discount)
   images        Json?     // JSON array of image URLs
   stock         Int       @default(0)
-  categoryId    Int
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
-  category      Category  @relation(fields: [categoryId], references: [id])
+  categories    ProductCategory[]
   cartItems     CartItem[]
   orderItems    OrderItem[]
   favorites     Favorite[]
@@ -152,4 +151,18 @@ model Favorite {
   @@unique([userId, productId])
   @@index([userId])
   @@index([productId])
+}
+
+model ProductCategory {
+  id         Int      @id @default(autoincrement())
+  productId  Int
+  categoryId Int
+  createdAt  DateTime @default(now())
+
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, categoryId])
+  @@index([productId])
+  @@index([categoryId])
 }
