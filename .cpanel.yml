@@ -1,0 +1,43 @@
+---
+deployment:
+  tasks:
+    # Set the deployment path - UPDATE THIS TO YOUR ACTUAL cPanel PATH
+    # Common paths:
+    # - For Node.js app: /home/username/node_app
+    # - For subdirectory: /home/username/public_html/api
+    # Replace 'username' with your cPanel username
+    - export DEPLOYPATH=/home/username/public_html/api/
+    
+    # Create deployment directory if it doesn't exist
+    - mkdir -p $DEPLOYPATH
+    
+    # Copy source files
+    - /bin/cp -R src/ $DEPLOYPATH
+    
+    # Copy Prisma files (schema and migrations)
+    - /bin/cp -R prisma/ $DEPLOYPATH
+    
+    # Copy configuration files
+    - /bin/cp package.json $DEPLOYPATH
+    - /bin/cp package-lock.json $DEPLOYPATH
+    - /bin/cp prisma.config.ts $DEPLOYPATH
+    
+    # Copy README and documentation (optional, you can remove if not needed)
+    - /bin/cp README.md $DEPLOYPATH 2>/dev/null || true
+    - /bin/cp API_DOCUMENTATION.md $DEPLOYPATH 2>/dev/null || true
+    - /bin/cp ADMIN_API_DOCUMENTATION.md $DEPLOYPATH 2>/dev/null || true
+    
+    # Navigate to deployment directory
+    - cd $DEPLOYPATH
+    
+    # Install production dependencies (removes devDependencies)
+    - npm ci --production
+    
+    # Generate Prisma Client
+    - npx prisma generate
+    
+    # Run database migrations (uncomment when ready for production)
+    # - npx prisma migrate deploy
+    
+    # Set proper permissions (adjust as needed)
+    - chmod +x $DEPLOYPATH/src/server.js 2>/dev/null || true
