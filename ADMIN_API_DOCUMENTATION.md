@@ -10,6 +10,7 @@ This document provides comprehensive API documentation for admin endpoints to bu
   - [Categories](#categories-endpoints)
   - [Products](#products-endpoints)
   - [Orders](#orders-endpoints)
+  - [Users](#users-endpoints)
 - [Data Models](#data-models)
 - [Error Handling](#error-handling)
 - [Example Requests](#example-requests)
@@ -400,6 +401,8 @@ GET /api/admin/products?categoryIds=1,2&search=laptop&minPrice=500&maxPrice=2000
 - All filters can be combined together
 - Search term searches in both product `name` and `description` fields
 - When using `categoryIds`, if you provide `categoryId` as well, only `categoryIds` will be used
+- **Automatic sorting by category order:** When filtering by a single category (`categoryId` or `categoryIds` with one item) and no explicit `sortBy` is provided, products are automatically sorted by their `order` field within that category (ascending - lower numbers appear first), then by creation date (descending - newer first)
+- If you specify `sortBy` explicitly, the automatic category order sorting is disabled
 - Invalid filter values are ignored (e.g., non-numeric price values)
 - Date filters accept ISO 8601 format dates
 - Maximum limit per page is 100 items
@@ -433,9 +436,20 @@ Create a new product.
     "https://example.com/laptop-back.jpg"
   ],
   "stock": 50,                         // Required, integer (>= 0)
-  "categoryIds": [1, 2, 5]            // Required, array of integers - at least one category ID (must exist)
+  "categoryIds": [1, 2, 5],           // Required, array of integers - at least one category ID (must exist)
   // OR for backward compatibility:
-  // "categoryId": 1                   // Single category ID (will be converted to array)
+  // "categoryId": 1,                  // Single category ID (will be converted to array)
+  "categoryOrders": {                 // Optional, object mapping categoryId to order number
+    "1": 0,                           // Product order in category 1 (lower = shows first, default: 0)
+    "2": 1,                           // Product order in category 2
+    "5": 2                            // Product order in category 5
+  }
+  // OR as array format:
+  // "categoryOrders": [
+  //   {"categoryId": 1, "order": 0},
+  //   {"categoryId": 2, "order": 1},
+  //   {"categoryId": 5, "order": 2}
+  // ]
 }
 ```
 
@@ -490,8 +504,14 @@ Create a new product.
 - `images` is optional - provide an array of image URL strings
 - `categoryIds` is required - provide an array of category IDs (at least one required)
 - For backward compatibility, you can also use `categoryId` (single ID) which will be converted to an array
+- `categoryOrders` is optional - controls the display order of products within each category
+  - Lower order numbers appear first in the category listing
+  - Default order is `0` if not specified
+  - Can be provided as an object `{categoryId: order}` or array `[{categoryId, order}]`
+  - If a category in `categoryIds` doesn't have an order specified, it defaults to `0`
 - The first image in the array will be available as `firstImage` in the response for easy access in listings
 - Products can belong to multiple categories - use `categoryIds` array to assign multiple categories
+- When products are filtered by a single category, they are automatically sorted by order (ascending), then by creation date (descending)
 
 **Errors:**
 - `400` - Validation failed (missing required fields, invalid data types)
@@ -529,9 +549,18 @@ Update an existing product.
     "https://example.com/updated-back.jpg"
   ],
   "stock": 40,                         // Optional, integer (>= 0)
-  "categoryIds": [1, 3]               // Optional, array of integers - replaces all existing categories
+  "categoryIds": [1, 3],              // Optional, array of integers - replaces all existing categories
   // OR for backward compatibility:
-  // "categoryId": 1                   // Single category ID (will replace all categories)
+  // "categoryId": 1,                  // Single category ID (will replace all categories)
+  "categoryOrders": {                 // Optional, object mapping categoryId to order number
+    "1": 0,                           // Product order in category 1 (lower = shows first, default: 0)
+    "3": 1                            // Product order in category 3
+  }
+  // OR as array format:
+  // "categoryOrders": [
+  //   {"categoryId": 1, "order": 0},
+  //   {"categoryId": 3, "order": 1}
+  // ]
 }
 ```
 
@@ -585,9 +614,15 @@ Update an existing product.
 - `images` can be set to `null` or empty array `[]` to clear all images
 - `categoryIds` replaces ALL existing categories with the new ones provided
 - For backward compatibility, `categoryId` (single ID) will replace all categories with just that one
+- `categoryOrders` is optional - controls the display order of products within each category
+  - Lower order numbers appear first in the category listing
+  - Default order is `0` if not specified
+  - Can be provided as an object `{categoryId: order}` or array `[{categoryId, order}]`
+  - Must be provided together with `categoryIds` to set orders for the new categories
 - If `originalPrice` is provided and greater than `price`, discount will be automatically calculated
 - To remove discount, set `originalPrice` to `null`
 - To update categories, provide `categoryIds` array with all desired category IDs (existing ones will be removed)
+- When products are filtered by a single category, they are automatically sorted by order (ascending), then by creation date (descending)
 
 **Errors:**
 - `400` - Validation failed
@@ -748,6 +783,303 @@ Retrieve all orders from all users with full details.
 
 ---
 
+## Users Endpoints
+
+All user management endpoints are under `/api/admin/users`.
+
+### Get All Users
+
+Retrieve all users with summary statistics (order count, address count, etc.).
+
+**Endpoint:** `GET /api/admin/users`
+
+**Authentication:** Required (Admin only)
+
+**Query Parameters:**
+- `search` (optional) - Search by name, phone number, or email
+- `role` (optional) - Filter by role (`USER` or `ADMIN`)
+- `page` (optional) - Page number (default: 1)
+- `limit` (optional) - Items per page (default: 50)
+
+**Response:** `200 OK`
+```json
+{
+  "success": true,
+  "message": "Users retrieved successfully",
+  "data": [
+    {
+      "id": 1,
+      "phoneNumber": "12345678",
+      "email": "user@example.com",
+      "name": "John Doe",
+      "role": "USER",
+      "createdAt": "2024-01-15T10:30:00.000Z",
+      "updatedAt": "2024-01-15T10:30:00.000Z",
+      "_count": {
+        "orders": 5,
+        "addresses": 2,
+        "favorites": 12,
+        "cartItems": 3
+      }
+    },
+    {
+      "id": 2,
+      "phoneNumber": "87654321",
+      "email": null,
+      "name": "Jane Smith",
+      "role": "USER",
+      "createdAt": "2024-01-16T14:20:00.000Z",
+      "updatedAt": "2024-01-16T14:20:00.000Z",
+      "_count": {
+        "orders": 2,
+        "addresses": 1,
+        "favorites": 5,
+        "cartItems": 0
+      }
+    }
+  ],
+  "pagination": {
+    "total": 2,
+    "page": 1,
+    "limit": 50,
+    "totalPages": 1
+  }
+}
+```
+
+**Notes:**
+- Users are sorted by `createdAt` in descending order (newest first)
+- The `_count` object provides statistics about user activity
+- Email may be `null` if user didn't provide one
+- Pagination info is included in the response
+
+**Errors:**
+- `401` - Authentication required
+- `403` - Admin privileges required
+
+---
+
+### Get User by ID
+
+Retrieve detailed information about a specific user, including all orders, addresses, and statistics.
+
+**Endpoint:** `GET /api/admin/users/:id`
+
+**Authentication:** Required (Admin only)
+
+**URL Parameters:**
+- `id` (required) - User ID
+
+**Response:** `200 OK`
+```json
+{
+  "success": true,
+  "message": "User retrieved successfully",
+  "data": {
+    "id": 1,
+    "phoneNumber": "12345678",
+    "email": "user@example.com",
+    "name": "John Doe",
+    "role": "USER",
+    "createdAt": "2024-01-15T10:30:00.000Z",
+    "updatedAt": "2024-01-15T10:30:00.000Z",
+    "addresses": [
+      {
+        "id": 1,
+        "userId": 1,
+        "label": "Home",
+        "fullName": "John Doe",
+        "phoneNumber": "12345678",
+        "provinceOrDistrict": "Ulaanbaatar",
+        "khorooOrSoum": "Bayangol",
+        "street": "Peace Avenue",
+        "neighborhood": "Downtown",
+        "residentialComplex": "Green Complex",
+        "building": "Building 5",
+        "entrance": "Entrance A",
+        "apartmentNumber": "Apt 12B",
+        "addressNote": "Next to the blue gate",
+        "isDefault": true,
+        "createdAt": "2024-01-15T10:35:00.000Z",
+        "updatedAt": "2024-01-15T10:35:00.000Z"
+      }
+    ],
+    "orders": [
+      {
+        "id": 1,
+        "status": "PENDING",
+        "totalAmount": "1999.98",
+        "deliveryTimeSlot": "14-18",
+        "address": {
+          "id": 1,
+          "fullName": "John Doe",
+          "phoneNumber": "12345678",
+          "provinceOrDistrict": "Ulaanbaatar",
+          "khorooOrSoum": "Bayangol",
+          "street": "Peace Avenue",
+          "neighborhood": "Downtown",
+          "residentialComplex": "Green Complex",
+          "building": "Building 5",
+          "entrance": "Entrance A",
+          "apartmentNumber": "Apt 12B",
+          "addressNote": "Next to the blue gate",
+          "label": "Home"
+        },
+        "createdAt": "2024-01-15T10:40:00.000Z",
+        "updatedAt": "2024-01-15T10:40:00.000Z",
+        "items": [
+          {
+            "id": 1,
+            "quantity": 2,
+            "price": "999.99",
+            "product": {
+              "id": 1,
+              "name": "Laptop",
+              "description": "High-performance laptop",
+              "price": "999.99",
+              "originalPrice": "1299.99",
+              "images": [
+                "https://example.com/laptop-front.jpg",
+                "https://example.com/laptop-side.jpg"
+              ],
+              "categories": [
+                {
+                  "id": 1,
+                  "name": "Electronics"
+                },
+                {
+                  "id": 2,
+                  "name": "Computers"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ],
+    "_count": {
+      "orders": 5,
+      "addresses": 2,
+      "favorites": 12,
+      "cartItems": 3
+    }
+  }
+}
+```
+
+**Notes:**
+- Returns complete user profile with all related data
+- Orders are sorted by `createdAt` in descending order (newest first)
+- Each order includes full product information with categories
+- Addresses are sorted by `isDefault` (default address first)
+- The `_count` object provides statistics
+
+**Errors:**
+- `401` - Authentication required
+- `403` - Admin privileges required
+- `404` - User not found
+- `400` - Invalid user ID
+
+---
+
+### Generate Password Reset Code
+
+Generate a password reset code and link for a user. This allows admins to help users reset their passwords.
+
+**Endpoint:** `POST /api/admin/users/:id/reset-password`
+
+**Authentication:** Required (Admin only)
+
+**URL Parameters:**
+- `id` (required) - User ID
+
+**Response:** `200 OK`
+```json
+{
+  "success": true,
+  "message": "Password reset code generated successfully",
+  "data": {
+    "userId": 1,
+    "userPhone": "12345678",
+    "userEmail": "user@example.com",
+    "userName": "John Doe",
+    "resetCode": "456789",
+    "resetToken": "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6",
+    "expiresAt": "2024-01-15T11:30:00.000Z",
+    "resetLink": "http://localhost:3000/reset-password?token=a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6&code=456789",
+    "message": "Reset code generated for user: John Doe (12345678)"
+  }
+}
+```
+
+**Notes:**
+- Returns a 6-digit reset code and a reset token
+- Reset code expires in 1 hour
+- The reset link can be sent to the user via email or SMS
+- Admin can share the reset code or link with the user
+- In production, consider sending the code via SMS/email automatically
+
+**Errors:**
+- `401` - Authentication required
+- `403` - Admin privileges required
+- `404` - User not found
+- `400` - Invalid user ID
+
+---
+
+### Reset User Password (Admin)
+
+Reset a user's password directly. This bypasses the reset code verification and allows admins to set a new PIN for users.
+
+**Endpoint:** `PUT /api/admin/users/:id/reset-password`
+
+**Authentication:** Required (Admin only)
+
+**URL Parameters:**
+- `id` (required) - User ID
+
+**Request Body:**
+```json
+{
+  "newPin": "5678",
+  "resetCode": "456789",
+  "resetToken": "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6"
+}
+```
+
+**Request Body Fields:**
+- `newPin` (required) - New 4-digit PIN for the user
+- `resetCode` (optional) - Reset code from generate endpoint (for logging/verification)
+- `resetToken` (optional) - Reset token from generate endpoint (for logging/verification)
+
+**Response:** `200 OK`
+```json
+{
+  "success": true,
+  "message": "Password reset successfully",
+  "data": {
+    "userId": 1
+  }
+}
+```
+
+**Notes:**
+- Admin can reset password for any user
+- New PIN must be exactly 4 digits
+- The PIN is immediately updated and the user can log in with the new PIN
+- `resetCode` and `resetToken` are optional and used for audit/logging purposes
+
+**Validation:**
+- `newPin`: Required, must be exactly 4 digits
+
+**Errors:**
+- `401` - Authentication required
+- `403` - Admin privileges required
+- `404` - User not found
+- `400` - Invalid user ID or PIN format
+
+---
+
 ## Data Models
 
 ### Category
@@ -839,6 +1171,19 @@ interface Address {
   updatedAt: string;
 }
 ```
+
+### ProductCategory
+```typescript
+interface ProductCategory {
+  id: number;
+  productId: number;
+  categoryId: number;
+  order: number;           // Display order within this category (lower = shows first, default: 0)
+  createdAt: string;       // ISO 8601 date string
+}
+```
+
+**Important:** The `ProductCategory` model is a junction table that links products to categories with an ordering field. The `order` field controls the display order of products within each category. Lower order numbers appear first when viewing products in a category.
 
 ### User
 ```typescript
@@ -950,7 +1295,7 @@ const createProduct = async (productData, token) => {
   return data;
 };
 
-// Usage with multiple categories
+// Usage with multiple categories and ordering
 const product = await createProduct({
   name: "Gaming Laptop",
   description: "High-performance gaming laptop",
@@ -961,7 +1306,12 @@ const product = await createProduct({
     "https://example.com/laptop-side.jpg"
   ],
   stock: 50,
-  categoryIds: [1, 2, 5]  // Multiple categories
+  categoryIds: [1, 2, 5],  // Multiple categories
+  categoryOrders: {        // Set display order within each category (lower = shows first)
+    1: 0,                  // First product in category 1
+    2: 1,                  // Second product in category 2
+    5: 0                   // First product in category 5
+  }
 }, 'YOUR_JWT_TOKEN');
 
 // Usage with single category (backward compatible)
@@ -1021,6 +1371,82 @@ const getAllOrders = async (token) => {
 };
 ```
 
+#### Get All Users
+```javascript
+const getAllUsers = async (token, filters = {}) => {
+  const params = new URLSearchParams();
+  if (filters.search) params.append('search', filters.search);
+  if (filters.role) params.append('role', filters.role);
+  if (filters.page) params.append('page', filters.page);
+  if (filters.limit) params.append('limit', filters.limit);
+  
+  const response = await fetch(`http://localhost:3000/api/admin/users?${params}`, {
+    method: 'GET',
+    headers: {
+      'Authorization': `Bearer ${token}`
+    }
+  });
+  
+  const data = await response.json();
+  return {
+    users: data.data,
+    pagination: data.pagination
+  };
+};
+```
+
+#### Get User by ID
+```javascript
+const getUserById = async (userId, token) => {
+  const response = await fetch(`http://localhost:3000/api/admin/users/${userId}`, {
+    method: 'GET',
+    headers: {
+      'Authorization': `Bearer ${token}`
+    }
+  });
+  
+  const data = await response.json();
+  return data.data; // Returns user with orders, addresses, and statistics
+};
+```
+
+#### Generate Password Reset Code
+```javascript
+const generateResetCode = async (userId, token) => {
+  const response = await fetch(`http://localhost:3000/api/admin/users/${userId}/reset-password`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    }
+  });
+  
+  const data = await response.json();
+  return data.data; // Returns reset code, token, and link
+};
+```
+
+#### Reset User Password
+```javascript
+const resetUserPassword = async (userId, newPin, token, resetCode = null, resetToken = null) => {
+  const response = await fetch(`http://localhost:3000/api/admin/users/${userId}/reset-password`, {
+    method: 'PUT',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      newPin,
+      resetCode,
+      resetToken
+    })
+  });
+  
+  const data = await response.json();
+  return data;
+};
+```
+
 ### Using Axios
 
 ```javascript
@@ -1071,6 +1497,30 @@ const deleteProduct = (productId) => {
 const getAllOrders = () => {
   return api.get('/orders/all');
 };
+
+// Get all users with optional filters
+const getAllUsers = (filters = {}) => {
+  return api.get('/users', { params: filters });
+};
+
+// Get user by ID with full details
+const getUserById = (userId) => {
+  return api.get(`/users/${userId}`);
+};
+
+// Generate password reset code for user
+const generateResetCode = (userId) => {
+  return api.post(`/users/${userId}/reset-password`);
+};
+
+// Reset user password (admin)
+const resetUserPassword = (userId, newPin, resetCode = null, resetToken = null) => {
+  return api.put(`/users/${userId}/reset-password`, {
+    newPin,
+    resetCode,
+    resetToken
+  });
+};
 ```
 
 ---
@@ -1113,6 +1563,12 @@ While not admin-specific, admins can also use these public endpoints for viewing
 - `GET /api/admin/categories` - Get all categories with nested subcategories
 - `POST /api/admin/categories` - Create category
 - `PUT /api/admin/categories/:id` - Update category
+
+### User Endpoints
+- `GET /api/admin/users` - Get all users (with pagination and filters)
+- `GET /api/admin/users/:id` - Get user by ID (with orders, addresses, statistics)
+- `POST /api/admin/users/:id/reset-password` - Generate password reset code
+- `PUT /api/admin/users/:id/reset-password` - Reset user password
 - `DELETE /api/admin/categories/:id` - Delete category
 
 ### Product Endpoints

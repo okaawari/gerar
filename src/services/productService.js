@@ -273,15 +273,31 @@ class ProductService {
         }
 
         // Sorting options
-        const sortBy = filters.sortBy || 'createdAt';
-        const validSortFields = ['name', 'price', 'stock', 'createdAt', 'updatedAt'];
-        const sortField = validSortFields.includes(sortBy) ? sortBy : 'createdAt';
+        // If filtering by a single category without explicit sortBy, sort by category order
+        // Otherwise, use the specified sortBy or default to createdAt
+        let orderBy;
+        let shouldSortByCategoryOrder = false;
+        let singleCategoryId = null;
         
-        const sortOrder = (filters.sortOrder === 'asc' || filters.sortOrder === 'ASC') ? 'asc' : 'desc';
-        
-        const orderBy = {
-            [sortField]: sortOrder
-        };
+        if ((filters.categoryId || (filters.categoryIds && filters.categoryIds.length === 1)) && !filters.sortBy) {
+            // Single category filter without explicit sortBy - we'll sort by category order in post-processing
+            shouldSortByCategoryOrder = true;
+            singleCategoryId = parseInt(filters.categoryId || filters.categoryIds[0]);
+            // Still order by createdAt as fallback, then sort by order after
+            orderBy = {
+                createdAt: 'desc'
+            };
+        } else {
+            const sortBy = filters.sortBy || 'createdAt';
+            const validSortFields = ['name', 'price', 'stock', 'createdAt', 'updatedAt'];
+            const sortField = validSortFields.includes(sortBy) ? sortBy : 'createdAt';
+            
+            const sortOrder = (filters.sortOrder === 'asc' || filters.sortOrder === 'ASC') ? 'asc' : 'desc';
+            
+            orderBy = {
+                [sortField]: sortOrder
+            };
+        }
 
         // Pagination
         const page = parseInt(filters.page) || 1;
@@ -296,7 +312,7 @@ class ProductService {
         const total = await prisma.product.count({ where });
 
         // Get products with pagination
-        const products = await prisma.product.findMany({
+        let products = await prisma.product.findMany({
             where,
             include: {
                 categories: {
@@ -313,8 +329,28 @@ class ProductService {
             },
             orderBy,
             skip: (validPage - 1) * validLimit,
-            take: validLimit
+            take: shouldSortByCategoryOrder ? undefined : validLimit // Fetch all if sorting by order, then paginate after
         });
+
+        // If sorting by category order, sort products now and then paginate
+        if (shouldSortByCategoryOrder && singleCategoryId) {
+            products = products.sort((a, b) => {
+                const aCategory = a.categories.find(pc => pc.categoryId === singleCategoryId);
+                const bCategory = b.categories.find(pc => pc.categoryId === singleCategoryId);
+                
+                const aOrder = aCategory ? (aCategory.order || 0) : 999999;
+                const bOrder = bCategory ? (bCategory.order || 0) : 999999;
+                
+                if (aOrder !== bOrder) {
+                    return aOrder - bOrder; // Lower order number = appears first
+                }
+                // If order is same, sort by createdAt (newer first)
+                return new Date(b.createdAt) - new Date(a.createdAt);
+            });
+            
+            // Apply pagination after sorting
+            products = products.slice((validPage - 1) * validLimit, validPage * validLimit);
+        }
 
         const totalPages = Math.ceil(total / validLimit);
 
@@ -444,17 +480,24 @@ class ProductService {
             throw error;
         }
 
-        // Prepare product data
+        // Handle category orders - accept array [{categoryId, order}] or object {categoryId: order}
+        const categoryOrders = data.categoryOrders || {};
+        const getOrderForCategory = (categoryId) => {
+            if (Array.isArray(categoryOrders)) {
+                const entry = categoryOrders.find(co => parseInt(co.categoryId) === parseInt(categoryId));
+                return entry ? parseInt(entry.order) || 0 : 0;
+            } else if (typeof categoryOrders === 'object' && categoryOrders !== null) {
+                return parseInt(categoryOrders[categoryId]) || 0;
+            }
+            return 0;
+        };
+
+        // Prepare product data (without categories - will create junction records separately)
         const productData = {
             name: data.name.trim(),
             description: data.description.trim(),
             price: parseFloat(data.price),
-            stock: parseInt(data.stock),
-            categories: {
-                create: categoryIds.map(categoryId => ({
-                    categoryId: categoryId
-                }))
-            }
+            stock: parseInt(data.stock)
         };
 
         // Add originalPrice if provided
@@ -469,9 +512,23 @@ class ProductService {
             }
         }
 
-        // Create product
+        // Create product first (without categories)
         const product = await prisma.product.create({
-            data: productData,
+            data: productData
+        });
+
+        // Create ProductCategory junction records with order field
+        await prisma.productCategory.createMany({
+            data: categoryIds.map(categoryId => ({
+                productId: product.id,
+                categoryId: categoryId,
+                order: getOrderForCategory(categoryId)
+            }))
+        });
+
+        // Fetch product with categories
+        const productWithCategories = await prisma.product.findUnique({
+            where: { id: product.id },
             include: {
                 categories: {
                     include: {
@@ -594,23 +651,60 @@ class ProductService {
         }
 
         // Handle category updates - delete existing and create new
+        // Note: We handle this separately because Prisma doesn't support setting junction table fields in nested create
+        let categoryUpdateNeeded = false;
+        let categoryOrdersData = {};
+        let categoryIdsForUpdate = [];
+
         if (categoryIds !== null) {
+            categoryUpdateNeeded = true;
+            categoryIdsForUpdate = categoryIds;
+            
+            // Handle category orders - accept array [{categoryId, order}] or object {categoryId: order}
+            const categoryOrders = data.categoryOrders || {};
+            const getOrderForCategory = (categoryId) => {
+                if (Array.isArray(categoryOrders)) {
+                    const entry = categoryOrders.find(co => parseInt(co.categoryId) === parseInt(categoryId));
+                    return entry ? parseInt(entry.order) || 0 : 0;
+                } else if (typeof categoryOrders === 'object' && categoryOrders !== null) {
+                    return parseInt(categoryOrders[categoryId]) || 0;
+                }
+                return 0;
+            };
+
+            // Store order data for later use
+            categoryOrdersData = categoryIdsForUpdate.reduce((acc, categoryId) => {
+                acc[categoryId] = getOrderForCategory(categoryId);
+                return acc;
+            }, {});
+        }
+
+        // Update product (without categories)
+        const product = await prisma.product.update({
+            where: { id: parseInt(id) },
+            data: updateData
+        });
+
+        // Handle category updates separately using ProductCategory table directly
+        if (categoryUpdateNeeded) {
             // Delete all existing category associations
             await prisma.productCategory.deleteMany({
                 where: { productId: parseInt(id) }
             });
-            // Add new category associations
-            updateData.categories = {
-                create: categoryIds.map(categoryId => ({
-                    categoryId: categoryId
+
+            // Create new category associations with order field
+            await prisma.productCategory.createMany({
+                data: categoryIdsForUpdate.map(categoryId => ({
+                    productId: parseInt(id),
+                    categoryId: categoryId,
+                    order: categoryOrdersData[categoryId] || 0
                 }))
-            };
+            });
         }
 
-        // Update product
-        const product = await prisma.product.update({
+        // Fetch product with categories
+        const productWithCategories = await prisma.product.findUnique({
             where: { id: parseInt(id) },
-            data: updateData,
             include: {
                 categories: {
                     include: {
@@ -627,10 +721,10 @@ class ProductService {
         });
 
         // Format product with discount information
-        const formatted = this.formatProductWithDiscount(product);
+        const formatted = this.formatProductWithDiscount(productWithCategories);
         // Extract categories from ProductCategory junction table
-        formatted.categories = product.categories
-            ? product.categories.map(pc => pc.category)
+        formatted.categories = productWithCategories.categories
+            ? productWithCategories.categories.map(pc => pc.category)
             : [];
         formatted.categoryId = formatted.categories.length > 0 ? formatted.categories[0].id : null;
         formatted.category = formatted.categories.length > 0 ? formatted.categories[0] : null;

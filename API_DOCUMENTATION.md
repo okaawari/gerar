@@ -236,6 +236,102 @@ Authenticate and receive a JWT token.
 
 ---
 
+### Request Password Reset
+
+Request a password reset code for your account using your phone number.
+
+**Endpoint:** `POST /api/auth/forgot-password`
+
+**Authentication:** Not required
+
+**Request Body:**
+```json
+{
+  "phoneNumber": "12345678"  // Exactly 8 digits
+}
+```
+
+**Response:** `200 OK`
+```json
+{
+  "success": true,
+  "message": "Reset code generated successfully",
+  "data": {
+    "resetCode": "456789",
+    "resetToken": "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6",
+    "expiresAt": "2024-01-15T11:30:00.000Z",
+    "resetLink": "http://localhost:3000/reset-password?token=a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6&code=456789"
+  }
+}
+```
+
+**Notes:**
+- Returns a 6-digit reset code and reset token
+- Reset code expires in 1 hour
+- The reset link includes both token and code for convenience
+- In production, the reset code should be sent via SMS automatically
+
+**Errors:**
+- `400` - Invalid phone number format
+- `400` - Phone number is required
+
+---
+
+### Reset Password
+
+Reset your password using the reset code received from the forgot-password endpoint.
+
+**Endpoint:** `POST /api/auth/reset-password`
+
+**Authentication:** Not required
+
+**Request Body:**
+```json
+{
+  "phoneNumber": "12345678",  // Exactly 8 digits
+  "resetCode": "456789",      // 6-digit code from forgot-password
+  "newPin": "5678",           // New 4-digit PIN
+  "resetToken": "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6"  // Optional token from forgot-password
+}
+```
+
+**Response:** `200 OK`
+```json
+{
+  "success": true,
+  "message": "Password reset successfully",
+  "data": {
+    "user": {
+      "id": 1,
+      "phoneNumber": "12345678",
+      "name": "John Doe",
+      "role": "USER",
+      "createdAt": "2024-01-15T10:30:00.000Z",
+      "updatedAt": "2024-01-15T10:30:00.000Z"
+    },
+    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+  }
+}
+```
+
+**Notes:**
+- New PIN must be exactly 4 digits
+- Returns user data and a new authentication token for automatic login
+- The reset code must be valid and not expired (expires in 1 hour)
+
+**Validation:**
+- `phoneNumber`: Required, must be exactly 8 digits
+- `resetCode`: Required, must be 6 digits
+- `newPin`: Required, must be exactly 4 digits
+- `resetToken`: Optional, can be included from the reset link
+
+**Errors:**
+- `400` - Invalid reset code or user not found
+- `400` - Invalid PIN format
+- `400` - Phone number, reset code, and new PIN are required
+
+---
+
 ## Categories Endpoints
 
 ### Get All Categories
@@ -298,7 +394,7 @@ Retrieve a specific category by ID.
 
 ### Get Products by Category
 
-Retrieve all products in a specific category.
+Retrieve all products in a specific category. Products are automatically sorted by their display order within the category.
 
 **Endpoint:** `GET /api/categories/:id/products`
 
@@ -306,6 +402,9 @@ Retrieve all products in a specific category.
 
 **Parameters:**
 - `id` (path) - Category ID
+
+**Query Parameters:**
+- `includeSubcategories` (optional) - Include products from subcategories. Default: `false`. Set to `true` to include products from all child categories.
 
 **Response:** `200 OK`
 ```json
@@ -318,11 +417,27 @@ Retrieve all products in a specific category.
       "name": "Laptop",
       "description": "High-performance laptop",
       "price": "999.99",
+      "originalPrice": "1299.99",
+      "images": [
+        "https://example.com/laptop-front.jpg"
+      ],
+      "firstImage": "https://example.com/laptop-front.jpg",
+      "hasDiscount": true,
+      "discountAmount": "300.00",
+      "discountPercentage": 23,
       "stock": 50,
+      "categories": [
+        {
+          "id": 1,
+          "name": "Electronics",
+          "description": "Electronic devices"
+        }
+      ],
       "categoryId": 1,
       "category": {
         "id": 1,
-        "name": "Electronics"
+        "name": "Electronics",
+        "description": "Electronic devices"
       },
       "createdAt": "2024-01-15T10:30:00.000Z",
       "updatedAt": "2024-01-15T10:30:00.000Z"
@@ -331,136 +446,12 @@ Retrieve all products in a specific category.
 }
 ```
 
-**Errors:**
-- `404` - Category not found
-
----
-
-### Create Category (Admin Only)
-
-Create a new product category.
-
-**Endpoint:** `POST /api/categories`
-
-**Authentication:** Required (Admin only)
-
-**Headers:**
-```
-Authorization: Bearer <token>
-```
-
-**Request Body:**
-```json
-{
-  "name": "Electronics",           // Required, unique
-  "description": "Electronic devices" // Optional
-}
-```
-
-**Response:** `201 Created`
-```json
-{
-  "success": true,
-  "message": "Category created successfully",
-  "data": {
-    "id": 1,
-    "name": "Electronics",
-    "description": "Electronic devices",
-    "createdAt": "2024-01-15T10:30:00.000Z",
-    "updatedAt": "2024-01-15T10:30:00.000Z"
-  }
-}
-```
+**Notes:**
+- Products are automatically sorted by their display order within the category (ascending - lower order numbers appear first), then by creation date (descending - newer first)
+- The display order is set when products are assigned to categories
+- If `includeSubcategories=true`, products from child categories are also included, but they are not sorted by the parent category's order
 
 **Errors:**
-- `401` - Authentication required
-- `403` - Admin privileges required
-- `409` - Category with this name already exists
-- `400` - Validation failed
-
----
-
-### Update Category (Admin Only)
-
-Update an existing category.
-
-**Endpoint:** `PUT /api/categories/:id`
-
-**Authentication:** Required (Admin only)
-
-**Headers:**
-```
-Authorization: Bearer <token>
-```
-
-**Parameters:**
-- `id` (path) - Category ID
-
-**Request Body:**
-```json
-{
-  "name": "Updated Electronics",    // Optional
-  "description": "Updated description" // Optional
-}
-```
-
-**Response:** `200 OK`
-```json
-{
-  "success": true,
-  "message": "Category updated successfully",
-  "data": {
-    "id": 1,
-    "name": "Updated Electronics",
-    "description": "Updated description",
-    "createdAt": "2024-01-15T10:30:00.000Z",
-    "updatedAt": "2024-01-15T11:00:00.000Z"
-  }
-}
-```
-
-**Errors:**
-- `401` - Authentication required
-- `403` - Admin privileges required
-- `404` - Category not found
-- `409` - Category with this name already exists
-
----
-
-### Delete Category (Admin Only)
-
-Delete a category.
-
-**Endpoint:** `DELETE /api/categories/:id`
-
-**Authentication:** Required (Admin only)
-
-**Headers:**
-```
-Authorization: Bearer <token>
-```
-
-**Parameters:**
-- `id` (path) - Category ID
-
-**Response:** `200 OK`
-```json
-{
-  "success": true,
-  "message": "Category deleted successfully",
-  "data": {
-    "id": 1,
-    "name": "Electronics",
-    "description": "Electronic devices",
-    "createdAt": "2024-01-15T10:30:00.000Z",
-    "updatedAt": "2024-01-15T10:30:00.000Z"
-  }
-}
-```
-
-**Errors:**
-- `401` - Authentication required
-- `403` - Admin privileges required
 - `404` - Category not found
 
 ---
@@ -497,6 +488,7 @@ Retrieve all products with advanced filtering, sorting, and pagination.
 
 #### Sorting
 - `sortBy` (optional) - Field to sort by. Valid values: `name`, `price`, `stock`, `createdAt`, `updatedAt`. Default: `createdAt`
+  - **Note:** When filtering by a single category (`categoryId` or `categoryIds` with one item) and no explicit `sortBy` is provided, products are automatically sorted by their display order within that category (ascending - lower order numbers appear first), then by creation date (descending - newer first)
 - `sortOrder` (optional) - Sort order. Valid values: `asc`, `desc`. Default: `desc`
 
 #### Pagination
@@ -549,6 +541,18 @@ GET /api/products?categoryIds=1,2&search=laptop&minPrice=500&maxPrice=2000&minSt
       "discountPercentage": 10,
       "isFavorite": false,
       "stock": 50,
+      "categories": [
+        {
+          "id": 1,
+          "name": "Electronics",
+          "description": "Electronic devices"
+        },
+        {
+          "id": 2,
+          "name": "Gaming",
+          "description": "Gaming products"
+        }
+      ],
       "categoryId": 1,
       "category": {
         "id": 1,
@@ -582,8 +586,9 @@ GET /api/products?categoryIds=1,2&search=laptop&minPrice=500&maxPrice=2000&minSt
   - `discountPercentage` - Discount percentage (integer or null)
   - `isFavorite` - Boolean indicating if product is favorited by authenticated user (only present if authenticated)
   - `stock` - Stock quantity
-  - `categoryId` - Category ID
-  - `category` - Category object with id, name, description
+  - `categories` - Array of category objects (product can belong to multiple categories), each with id, name, description
+  - `categoryId` - First category ID (for backward compatibility)
+  - `category` - First category object (for backward compatibility) with id, name, description
   - `createdAt` - Creation timestamp
   - `updatedAt` - Last update timestamp
 - `pagination.total` - Total number of products matching the filters
@@ -595,12 +600,14 @@ GET /api/products?categoryIds=1,2&search=laptop&minPrice=500&maxPrice=2000&minSt
 - All filters can be combined together
 - Search term searches in both product `name` and `description` fields
 - When using `categoryIds`, if you provide `categoryId` as well, only `categoryIds` will be used
+- **Automatic sorting by category order:** When filtering by a single category (`categoryId` or `categoryIds` with one item) and no explicit `sortBy` is provided, products are automatically sorted by their display order within that category (ascending - lower order numbers appear first), then by creation date (descending - newer first). If you specify `sortBy` explicitly, the automatic category order sorting is disabled.
 - Invalid filter values are ignored (e.g., non-numeric price values)
 - Date filters accept ISO 8601 format dates
 - Maximum limit per page is 100 items
 - Products include `firstImage` field for easy display of the first image in listings
 - Discount information is automatically calculated when `originalPrice` is provided and greater than `price`
 - `isFavorite` field is only included if user is authenticated (via Authorization header)
+- Products can belong to multiple categories, and each category association has its own display order
 
 ---
 
@@ -658,206 +665,6 @@ Retrieve a specific product by ID.
 
 ---
 
-### Create Product (Admin Only)
-
-Create a new product.
-
-**Endpoint:** `POST /api/products`
-
-**Authentication:** Required (Admin only)
-
-**Headers:**
-```
-Authorization: Bearer <token>
-```
-
-**Request Body:**
-```json
-{
-  "name": "Laptop",              // Required, string
-  "description": "High-performance laptop", // Required, string
-  "price": 899.99,               // Required, decimal - current selling price
-  "originalPrice": 999.99,       // Optional, decimal - original price before discount
-  "images": [                    // Optional, array of image URLs (strings)
-    "https://example.com/laptop-front.jpg",
-    "https://example.com/laptop-side.jpg",
-    "https://example.com/laptop-back.jpg"
-  ],
-  "stock": 50,                   // Required, integer (>= 0)
-  "categoryId": 1                // Required, integer - must exist
-}
-```
-
-**Response:** `201 Created`
-```json
-{
-  "success": true,
-  "message": "Product created successfully",
-  "data": {
-    "id": 1,
-    "name": "Laptop",
-    "description": "High-performance laptop",
-    "price": "899.99",
-    "originalPrice": "999.99",
-    "images": [
-      "https://example.com/laptop-front.jpg",
-      "https://example.com/laptop-side.jpg",
-      "https://example.com/laptop-back.jpg"
-    ],
-    "firstImage": "https://example.com/laptop-front.jpg",
-    "hasDiscount": true,
-    "discountAmount": "100.00",
-    "discountPercentage": 10,
-    "stock": 50,
-    "categoryId": 1,
-    "category": {
-      "id": 1,
-      "name": "Electronics",
-      "description": "Electronic devices"
-    },
-    "createdAt": "2024-01-15T10:30:00.000Z",
-    "updatedAt": "2024-01-15T10:30:00.000Z"
-  }
-}
-```
-
-**Notes:**
-- `price` is the current selling price (required)
-- `originalPrice` is optional - if provided and greater than `price`, discount will be automatically calculated
-- `images` is optional - provide an array of image URL strings
-- The first image in the array will be available as `firstImage` in the response for easy access in listings
-
-**Errors:**
-- `401` - Authentication required
-- `403` - Admin privileges required
-- `400` - Validation failed (missing required fields, invalid data types)
-- `404` - Category not found
-- `400` - Invalid price (must be positive) or stock (must be >= 0)
-- `400` - Original price must be greater than or equal to current price
-- `400` - Images must be an array of non-empty string URLs
-
----
-
-### Update Product (Admin Only)
-
-Update an existing product.
-
-**Endpoint:** `PUT /api/products/:id`
-
-**Authentication:** Required (Admin only)
-
-**Headers:**
-```
-Authorization: Bearer <token>
-```
-
-**Parameters:**
-- `id` (path) - Product ID
-
-**Request Body:**
-```json
-{
-  "name": "Updated Laptop",      // Optional, string
-  "description": "Updated description", // Optional, string
-  "price": 799.99,               // Optional, decimal - current selling price
-  "originalPrice": 899.99,       // Optional, decimal or null - original price before discount
-  "images": [                    // Optional, array of image URLs (strings) or null to clear
-    "https://example.com/updated-front.jpg",
-    "https://example.com/updated-back.jpg"
-  ],
-  "stock": 40,                   // Optional, integer (>= 0)
-  "categoryId": 1                // Optional, integer - must exist
-}
-```
-
-**Response:** `200 OK`
-```json
-{
-  "success": true,
-  "message": "Product updated successfully",
-  "data": {
-    "id": 1,
-    "name": "Updated Laptop",
-    "description": "Updated description",
-    "price": "799.99",
-    "originalPrice": "899.99",
-    "images": [
-      "https://example.com/updated-front.jpg",
-      "https://example.com/updated-back.jpg"
-    ],
-    "firstImage": "https://example.com/updated-front.jpg",
-    "hasDiscount": true,
-    "discountAmount": "100.00",
-    "discountPercentage": 11,
-    "stock": 40,
-    "categoryId": 1,
-    "category": {
-      "id": 1,
-      "name": "Electronics",
-      "description": "Electronic devices"
-    },
-    "createdAt": "2024-01-15T10:30:00.000Z",
-    "updatedAt": "2024-01-15T11:00:00.000Z"
-  }
-}
-```
-
-**Notes:**
-- All fields are optional - only include fields you want to update
-- `originalPrice` can be set to `null` to remove discount
-- `images` can be set to `null` or empty array `[]` to clear all images
-- If `originalPrice` is provided and greater than `price`, discount will be automatically calculated
-- To remove discount, set `originalPrice` to `null`
-
-**Errors:**
-- `401` - Authentication required
-- `403` - Admin privileges required
-- `404` - Product not found
-- `400` - Validation failed (e.g., category doesn't exist)
-- `400` - Original price must be greater than or equal to current price
-
----
-
-### Delete Product (Admin Only)
-
-Delete a product.
-
-**Endpoint:** `DELETE /api/products/:id`
-
-**Authentication:** Required (Admin only)
-
-**Headers:**
-```
-Authorization: Bearer <token>
-```
-
-**Parameters:**
-- `id` (path) - Product ID
-
-**Response:** `200 OK`
-```json
-{
-  "success": true,
-  "message": "Product deleted successfully",
-  "data": {
-    "id": 1,
-    "name": "Laptop",
-    "description": "High-performance laptop",
-    "price": "999.99",
-    "stock": 50,
-    "categoryId": 1,
-    "createdAt": "2024-01-15T10:30:00.000Z",
-    "updatedAt": "2024-01-15T10:30:00.000Z"
-  }
-}
-```
-
-**Errors:**
-- `401` - Authentication required
-- `403` - Admin privileges required
-- `404` - Product not found
-
----
 
 ## Favorites Endpoints
 
@@ -1459,21 +1266,9 @@ Authorization: Bearer <token>
 
 ---
 
-### Get All Orders (Admin Only)
-
-Retrieve all orders from all users. This endpoint is available to admin users only and is documented in the [Admin API Documentation](./ADMIN_API_DOCUMENTATION.md).
-
-**Endpoint:** `GET /api/admin/orders/all`
-
-**Authentication:** Required (Admin only)
-
-**Note:** For detailed documentation on admin endpoints, please refer to the [Admin API Documentation](./ADMIN_API_DOCUMENTATION.md).
-
----
-
 ### Get Order by ID
 
-Retrieve a specific order by ID. Users can only view their own orders, while admins can view any order.
+Retrieve a specific order by ID. Users can only view their own orders.
 
 **Endpoint:** `GET /api/orders/:id`
 
@@ -1906,12 +1701,20 @@ Authorization: Bearer <token>
   id: number;
   name: string;
   description: string;
-  price: string;        // Decimal as string (e.g., "999.99")
-  stock: number;
-  categoryId: number;
-  createdAt: string;    // ISO 8601 date
-  updatedAt: string;    // ISO 8601 date
-  category?: Category;  // Included in some responses
+  price: string;             // Decimal as string (e.g., "999.99") - current selling price
+  originalPrice: string | null; // Original price before discount (null if no discount)
+  images: string[];          // Array of image URLs
+  firstImage: string | null; // First image URL for easy access
+  hasDiscount: boolean;      // Whether product has a discount
+  discountAmount: string | null; // Discount amount saved
+  discountPercentage: number | null; // Discount percentage (0-100)
+  isFavorite?: boolean;      // Whether product is favorited (only if authenticated)
+  stock: number;             // Integer, >= 0
+  categories: Category[];    // Array of categories this product belongs to
+  categoryId: number | null; // First category ID (for backward compatibility)
+  category?: Category;       // First category object (for backward compatibility)
+  createdAt: string;         // ISO 8601 date
+  updatedAt: string;         // ISO 8601 date
 }
 ```
 
@@ -1964,7 +1767,6 @@ Authorization: Bearer <token>
   updatedAt: string;          // ISO 8601 date
   items?: OrderItem[];        // Included in responses
   address?: Address;          // Included in order responses
-  user?: User;                // Included in admin responses
 }
 ```
 
@@ -2146,7 +1948,7 @@ try {
 
 4. **Cart Behavior**: When adding a product that already exists in the cart, the quantity will be updated (not duplicated).
 
-5. **Order Status**: Orders are created with status "PENDING" by default. Status can be changed by admins.
+5. **Order Status**: Orders are created with status "PENDING" by default.
 
 6. **Address Management**: Users can have multiple addresses. Only one address can be set as default at a time. Addresses used in orders cannot be deleted.
 

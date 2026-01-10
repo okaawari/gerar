@@ -1,9 +1,318 @@
 require('dotenv').config();
 const prisma = require('../src/lib/prisma');
 const bcrypt = require('bcrypt');
+const fs = require('fs');
+const path = require('path');
 
-async function main() {
-    console.log('🌱 Starting database seeding...\n');
+async function seedFromFile(seedData) {
+    console.log('📂 Seeding from exported data file...\n');
+    console.log(`📅 Data exported at: ${seedData.exportedAt}\n`);
+
+    // Track old ID to new ID mappings for relationships
+    const userIdMap = new Map();
+    const categoryIdMap = new Map();
+    const productIdMap = new Map();
+    const addressIdMap = new Map();
+    const orderIdMap = new Map();
+
+    try {
+        // 1. Seed Users
+        console.log('👤 Seeding users...');
+        for (const user of seedData.users) {
+            const oldId = user.id;
+            const { id, createdAt, updatedAt, ...userData } = user;
+            
+            const newUser = await prisma.user.upsert({
+                where: { phoneNumber: user.phoneNumber },
+                update: userData,
+                create: userData
+            });
+            userIdMap.set(oldId, newUser.id);
+            console.log(`  ✅ User: ${user.phoneNumber} (ID: ${oldId} → ${newUser.id})`);
+        }
+
+        // 2. Seed Categories (first pass: parent categories only)
+        console.log('\n📁 Seeding categories (parents first)...');
+        const parentCategories = seedData.categories.filter(c => !c.parentId);
+        const childCategories = seedData.categories.filter(c => c.parentId);
+
+        for (const category of parentCategories) {
+            const oldId = category.id;
+            const { id, createdAt, updatedAt, ...categoryData } = category;
+            
+            // For parent categories (parentId is null), use findFirst + create/update
+            let newCategory = await prisma.category.findFirst({
+                where: {
+                    name: category.name,
+                    parentId: null
+                }
+            });
+            
+            if (newCategory) {
+                newCategory = await prisma.category.update({
+                    where: { id: newCategory.id },
+                    data: categoryData
+                });
+            } else {
+                newCategory = await prisma.category.create({
+                    data: categoryData
+                });
+            }
+            
+            categoryIdMap.set(oldId, newCategory.id);
+            console.log(`  ✅ Category: ${category.name} (ID: ${oldId} → ${newCategory.id})`);
+        }
+
+        // 3. Seed Child Categories
+        console.log('\n📁 Seeding subcategories...');
+        for (const category of childCategories) {
+            const oldId = category.id;
+            const oldParentId = category.parentId;
+            const newParentId = categoryIdMap.get(oldParentId);
+            
+            if (!newParentId) {
+                console.warn(`  ⚠️  Skipping category ${category.name}: parent ID ${oldParentId} not found`);
+                continue;
+            }
+
+            const { id, createdAt, updatedAt, ...categoryData } = category;
+            categoryData.parentId = newParentId;
+            
+            const newCategory = await prisma.category.upsert({
+                where: {
+                    name_parentId: {
+                        name: category.name,
+                        parentId: newParentId
+                    }
+                },
+                update: categoryData,
+                create: categoryData
+            });
+            categoryIdMap.set(oldId, newCategory.id);
+            console.log(`  ✅ Subcategory: ${category.name} (ID: ${oldId} → ${newCategory.id})`);
+        }
+
+        // 4. Seed Products
+        console.log('\n📦 Seeding products...');
+        for (const product of seedData.products) {
+            const oldId = product.id;
+            const { id, createdAt, updatedAt, ...productData } = product;
+            productData.price = parseFloat(productData.price);
+            productData.originalPrice = productData.originalPrice ? parseFloat(productData.originalPrice) : null;
+            
+            const newProduct = await prisma.product.upsert({
+                where: { id: oldId },
+                update: productData,
+                create: productData
+            });
+            productIdMap.set(oldId, newProduct.id);
+            console.log(`  ✅ Product: ${product.name} (ID: ${oldId} → ${newProduct.id})`);
+        }
+
+        // 5. Seed ProductCategories
+        console.log('\n🔗 Seeding product-category relationships...');
+        for (const pc of seedData.productCategories) {
+            const oldProductId = pc.productId;
+            const oldCategoryId = pc.categoryId;
+            const newProductId = productIdMap.get(oldProductId);
+            const newCategoryId = categoryIdMap.get(oldCategoryId);
+
+            if (!newProductId || !newCategoryId) {
+                console.warn(`  ⚠️  Skipping ProductCategory: product ${oldProductId} or category ${oldCategoryId} not found`);
+                continue;
+            }
+
+            const { id, createdAt, ...pcData } = pc;
+            pcData.productId = newProductId;
+            pcData.categoryId = newCategoryId;
+
+            await prisma.productCategory.upsert({
+                where: {
+                    productId_categoryId: {
+                        productId: newProductId,
+                        categoryId: newCategoryId
+                    }
+                },
+                update: pcData,
+                create: pcData
+            });
+        }
+        console.log(`  ✅ Created ${seedData.productCategories.length} product-category relationships`);
+
+        // 6. Seed Addresses
+        console.log('\n📍 Seeding addresses...');
+        for (const address of seedData.addresses) {
+            const oldId = address.id;
+            const oldUserId = address.userId;
+            const newUserId = userIdMap.get(oldUserId);
+
+            if (!newUserId) {
+                console.warn(`  ⚠️  Skipping address: user ID ${oldUserId} not found`);
+                continue;
+            }
+
+            const { id, createdAt, updatedAt, ...addressData } = address;
+            addressData.userId = newUserId;
+
+            const newAddress = await prisma.address.upsert({
+                where: { id: oldId },
+                update: addressData,
+                create: addressData
+            });
+            addressIdMap.set(oldId, newAddress.id);
+            console.log(`  ✅ Address: ${address.label || address.fullName} (ID: ${oldId} → ${newAddress.id})`);
+        }
+
+        // 7. Seed CartItems
+        console.log('\n🛒 Seeding cart items...');
+        let cartItemsCreated = 0;
+        for (const cartItem of seedData.cartItems) {
+            const oldUserId = cartItem.userId;
+            const oldProductId = cartItem.productId;
+            const newUserId = userIdMap.get(oldUserId);
+            const newProductId = productIdMap.get(oldProductId);
+
+            if (!newUserId || !newProductId) {
+                console.warn(`  ⚠️  Skipping cart item: user ${oldUserId} or product ${oldProductId} not found`);
+                continue;
+            }
+
+            const { id, createdAt, updatedAt, ...cartItemData } = cartItem;
+            cartItemData.userId = newUserId;
+            cartItemData.productId = newProductId;
+
+            await prisma.cartItem.upsert({
+                where: {
+                    userId_productId: {
+                        userId: newUserId,
+                        productId: newProductId
+                    }
+                },
+                update: cartItemData,
+                create: cartItemData
+            });
+            cartItemsCreated++;
+        }
+        console.log(`  ✅ Created ${cartItemsCreated} cart items`);
+
+        // 8. Seed Orders
+        console.log('\n📋 Seeding orders...');
+        for (const order of seedData.orders) {
+            const oldId = order.id;
+            const oldUserId = order.userId;
+            const newUserId = userIdMap.get(oldUserId);
+
+            if (!newUserId) {
+                console.warn(`  ⚠️  Skipping order: user ID ${oldUserId} not found`);
+                continue;
+            }
+
+            const { id, createdAt, updatedAt, ...orderData } = order;
+            orderData.userId = newUserId;
+            orderData.totalAmount = parseFloat(orderData.totalAmount);
+            
+            // Map address ID if exists
+            if (orderData.addressId) {
+                const oldAddressId = orderData.addressId;
+                const newAddressId = addressIdMap.get(oldAddressId);
+                if (newAddressId) {
+                    orderData.addressId = newAddressId;
+                } else {
+                    console.warn(`  ⚠️  Order ${oldId}: address ${oldAddressId} not found, setting to null`);
+                    orderData.addressId = null;
+                }
+            }
+
+            const newOrder = await prisma.order.create({
+                data: orderData
+            });
+            orderIdMap.set(oldId, newOrder.id);
+            console.log(`  ✅ Order: ID ${oldId} → ${newOrder.id}`);
+        }
+
+        // 9. Seed OrderItems
+        console.log('\n📦 Seeding order items...');
+        let orderItemsCreated = 0;
+        for (const orderItem of seedData.orderItems) {
+            const oldOrderId = orderItem.orderId;
+            const oldProductId = orderItem.productId;
+            const newOrderId = orderIdMap.get(oldOrderId);
+            const newProductId = productIdMap.get(oldProductId);
+
+            if (!newOrderId || !newProductId) {
+                console.warn(`  ⚠️  Skipping order item: order ${oldOrderId} or product ${oldProductId} not found`);
+                continue;
+            }
+
+            const { id, createdAt, updatedAt, ...orderItemData } = orderItem;
+            orderItemData.orderId = newOrderId;
+            orderItemData.productId = newProductId;
+            orderItemData.price = parseFloat(orderItemData.price);
+
+            await prisma.orderItem.create({
+                data: orderItemData
+            });
+            orderItemsCreated++;
+        }
+        console.log(`  ✅ Created ${orderItemsCreated} order items`);
+
+        // 10. Seed Favorites
+        console.log('\n❤️ Seeding favorites...');
+        let favoritesCreated = 0;
+        for (const favorite of seedData.favorites) {
+            const oldUserId = favorite.userId;
+            const oldProductId = favorite.productId;
+            const newUserId = userIdMap.get(oldUserId);
+            const newProductId = productIdMap.get(oldProductId);
+
+            if (!newUserId || !newProductId) {
+                console.warn(`  ⚠️  Skipping favorite: user ${oldUserId} or product ${oldProductId} not found`);
+                continue;
+            }
+
+            const { id, createdAt, ...favoriteData } = favorite;
+            favoriteData.userId = newUserId;
+            favoriteData.productId = newProductId;
+
+            await prisma.favorite.upsert({
+                where: {
+                    userId_productId: {
+                        userId: newUserId,
+                        productId: newProductId
+                    }
+                },
+                update: {},
+                create: favoriteData
+            });
+            favoritesCreated++;
+        }
+        console.log(`  ✅ Created ${favoritesCreated} favorites`);
+
+        // Summary
+        console.log('\n' + '='.repeat(50));
+        console.log('📊 Seeding Summary:');
+        console.log('='.repeat(50));
+        console.log(`✅ Users: ${seedData.users.length}`);
+        console.log(`✅ Categories: ${seedData.categories.length}`);
+        console.log(`✅ Products: ${seedData.products.length}`);
+        console.log(`✅ ProductCategories: ${seedData.productCategories.length}`);
+        console.log(`✅ Addresses: ${seedData.addresses.length}`);
+        console.log(`✅ CartItems: ${cartItemsCreated}`);
+        console.log(`✅ Orders: ${seedData.orders.length}`);
+        console.log(`✅ OrderItems: ${orderItemsCreated}`);
+        console.log(`✅ Favorites: ${favoritesCreated}`);
+        console.log('\n' + '='.repeat(50));
+        console.log('🎉 Database seeding from file completed successfully!');
+        console.log('='.repeat(50) + '\n');
+
+    } catch (error) {
+        console.error('❌ Error seeding from file:', error);
+        throw error;
+    }
+}
+
+async function seedDefault() {
+    console.log('🌱 Starting default database seeding...\n');
 
     // 1. Create Admin User
     console.log('👤 Creating admin user...');
@@ -154,21 +463,29 @@ async function main() {
         for (const product of products) {
             const existingProduct = await prisma.product.findFirst({
                 where: {
-                    name: product.name,
-                    categoryId: category.id
+                    name: product.name
                 }
             });
 
             if (!existingProduct) {
-                await prisma.product.create({
+                const newProduct = await prisma.product.create({
                     data: {
                         name: product.name,
                         description: product.description,
                         price: product.price,
-                        stock: product.stock,
-                        categoryId: category.id
+                        stock: product.stock
                     }
                 });
+                
+                // Link product to category via ProductCategory
+                await prisma.productCategory.create({
+                    data: {
+                        productId: newProduct.id,
+                        categoryId: category.id,
+                        order: 0
+                    }
+                });
+                
                 console.log(`  ✅ Created product: ${product.name} (${category.name})`);
                 totalProducts++;
             } else {
@@ -229,6 +546,19 @@ async function main() {
     console.log('Admin - Phone: 12345678, PIN: 1234');
     console.log('User  - Phone: 87654321, PIN: 1234');
     console.log('\n');
+}
+
+async function main() {
+    const seedDataPath = path.join(__dirname, 'seed-data.json');
+    
+    if (fs.existsSync(seedDataPath)) {
+        console.log('📂 Found seed-data.json file, loading exported data...\n');
+        const seedData = JSON.parse(fs.readFileSync(seedDataPath, 'utf8'));
+        await seedFromFile(seedData);
+    } else {
+        console.log('📝 No seed-data.json found, using default seed data...\n');
+        await seedDefault();
+    }
 }
 
 main()

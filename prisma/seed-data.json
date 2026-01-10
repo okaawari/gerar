@@ -1,0 +1,540 @@
+{
+  "exportedAt": "2026-01-10T13:45:47.384Z",
+  "users": [
+    {
+      "id": 1,
+      "phoneNumber": "80650025",
+      "email": "purweeshees@gmail.com",
+      "pin": "$2b$10$AXcdXYbWr5/vYizG9wdUZecklaFRkdJTpvr1zxgdatOPqzPUkGPai",
+      "name": "Purweeshees",
+      "role": "ADMIN",
+      "createdAt": "2026-01-08T19:50:31.028Z",
+      "updatedAt": "2026-01-08T19:50:31.028Z"
+    },
+    {
+      "id": 2,
+      "phoneNumber": "12345678",
+      "email": "admin@example.com",
+      "pin": "$2b$10$Irwe8aCm8yju.mN.wNXij.xS1hWg2Jz0REKs5A5/V3kK4whKG0TPm",
+      "name": "Admin User",
+      "role": "ADMIN",
+      "createdAt": "2026-01-08T20:12:27.524Z",
+      "updatedAt": "2026-01-08T20:12:27.524Z"
+    },
+    {
+      "id": 3,
+      "phoneNumber": "87654321",
+      "email": "user@example.com",
+      "pin": "$2b$10$Irwe8aCm8yju.mN.wNXij.xS1hWg2Jz0REKs5A5/V3kK4whKG0TPm",
+      "name": "Test User",
+      "role": "USER",
+      "createdAt": "2026-01-08T20:12:27.549Z",
+      "updatedAt": "2026-01-08T20:12:27.549Z"
+    }
+  ],
+  "categories": [
+    {
+      "id": 1,
+      "name": "Гэр ахуйн бараа",
+      "description": "Гэр ахуйн бараа бүтээгдэхүүнүүд",
+      "parentId": null,
+      "createdAt": "2026-01-08T19:59:08.611Z",
+      "updatedAt": "2026-01-08T22:00:16.631Z"
+    },
+    {
+      "id": 2,
+      "name": "Гал тогоо",
+      "description": "Гал тогооны хэрэгслүүд",
+      "parentId": 1,
+      "createdAt": "2026-01-08T19:59:26.106Z",
+      "updatedAt": "2026-01-08T19:59:26.106Z"
+    },
+    {
+      "id": 3,
+      "name": "Цэвэрлэгээ",
+      "description": "Гэрийн цэвэрлэгээний бүтээгдэхүүн",
+      "parentId": 1,
+      "createdAt": "2026-01-08T20:12:27.570Z",
+      "updatedAt": "2026-01-08T20:12:27.570Z"
+    },
+    {
+      "id": 4,
+      "name": "Хадгална",
+      "description": "Хоол ундаа хадгалах хэрэгсэл",
+      "parentId": 1,
+      "createdAt": "2026-01-08T20:12:27.580Z",
+      "updatedAt": "2026-01-08T20:12:27.580Z"
+    },
+    {
+      "id": 5,
+      "name": "Гоо сайхан",
+      "description": "Гоо сайхны бүтээгдэхүүн",
+      "parentId": 1,
+      "createdAt": "2026-01-08T20:12:27.595Z",
+      "updatedAt": "2026-01-08T20:12:27.595Z"
+    },
+    {
+      "id": 6,
+      "name": "Гэрэлтүүлэг",
+      "description": "Гэрийн гэрэлтүүлэг",
+      "parentId": 1,
+      "createdAt": "2026-01-08T20:12:27.604Z",
+      "updatedAt": "2026-01-08T20:12:27.604Z"
+    },
+    {
+      "id": 7,
+      "name": "Тавилга",
+      "description": "Гэрийн тавилга",
+      "parentId": 1,
+      "createdAt": "2026-01-08T20:12:27.613Z",
+      "updatedAt": "2026-01-08T20:12:27.613Z"
+    },
+    {
+      "id": 8,
+      "name": "Сандал",
+      "description": "Оффис болон ширээний сандал",
+      "parentId": 2,
+      "createdAt": "2026-01-08T22:00:55.953Z",
+      "updatedAt": "2026-01-08T22:00:55.953Z"
+    },
+    {
+      "id": 9,
+      "name": "Цахилгаан бараа",
+      "description": "цахилгаан бараанууд",
+      "parentId": null,
+      "createdAt": "2026-01-09T17:05:21.506Z",
+      "updatedAt": "2026-01-09T17:05:21.506Z"
+    }
+  ],
+  "products": [
+    {
+      "id": 1,
+      "name": "Хатаагч",
+      "description": "Аяга таваг хатаах хэрэгсэл",
+      "price": "25000",
+      "originalPrice": null,
+      "images": [
+        "https://cdn.emartmall.mn/Resource/product_webp/94929fdf-34e3-4dc7-b6ce-c6e7249fb29e.webp"
+      ],
+      "stock": 50,
+      "createdAt": "2026-01-08T20:12:27.623Z",
+      "updatedAt": "2026-01-09T21:22:09.694Z"
+    },
+    {
+      "id": 2,
+      "name": "Аяга таваг",
+      "description": "Гарын аяга таваг",
+      "price": "15000",
+      "originalPrice": null,
+      "images": [
+        "https://cdn.emartmall.mn/Resource/product_webp/00fa31ea-ae3e-4ab7-adce-3036e5ceb12d.webp"
+      ],
+      "stock": 100,
+      "createdAt": "2026-01-08T20:12:27.633Z",
+      "updatedAt": "2026-01-09T21:21:57.972Z"
+    },
+    {
+      "id": 3,
+      "name": "Сармагчин",
+      "description": "Хоол хийх сармагчин",
+      "price": "35000",
+      "originalPrice": null,
+      "images": [
+        "https://cdn.emartmall.mn/Resource/product_webp/610f9709-e985-469b-97de-7f7c8cff8216.webp"
+      ],
+      "stock": 30,
+      "createdAt": "2026-01-08T20:12:27.647Z",
+      "updatedAt": "2026-01-09T21:21:47.899Z"
+    },
+    {
+      "id": 4,
+      "name": "Хутга багц",
+      "description": "Гал тогооны хутга багц",
+      "price": "45000",
+      "originalPrice": null,
+      "images": [
+        "https://cdn.emartmall.mn/Resource/product_webp/8113e29f-32af-4081-bfc8-46411ebf8d02.webp"
+      ],
+      "stock": 40,
+      "createdAt": "2026-01-08T20:12:27.653Z",
+      "updatedAt": "2026-01-09T21:21:38.908Z"
+    },
+    {
+      "id": 5,
+      "name": "Гэрийн цэвэрлэгээний шингэн",
+      "description": "Олон зориулалттай цэвэрлэгээний шингэн",
+      "price": "8000",
+      "originalPrice": null,
+      "images": [
+        "https://cdn.emartmall.mn/Resource/medium/7525d5ec-6ace-404a-9654-beb09d44a034.jpg"
+      ],
+      "stock": 75,
+      "createdAt": "2026-01-08T20:12:27.660Z",
+      "updatedAt": "2026-01-09T21:21:26.621Z"
+    },
+    {
+      "id": 6,
+      "name": "Шал цэвэрлэгээний бодис",
+      "description": "Шал цэвэрлэхэд зориулсан бодис",
+      "price": "6000",
+      "originalPrice": null,
+      "images": [
+        "https://cdn.emartmall.mn/Resource/product_webp/a1ce5663-2cf4-405e-97ab-ae5eff80253e.webp"
+      ],
+      "stock": 60,
+      "createdAt": "2026-01-08T20:12:27.667Z",
+      "updatedAt": "2026-01-09T21:21:16.668Z"
+    },
+    {
+      "id": 7,
+      "name": "Ариутгалтын бодис",
+      "description": "Гадаргуу ариутгах бодис",
+      "price": "12000",
+      "originalPrice": null,
+      "images": [
+        "https://cdn.emartmall.mn/Resource/product_webp/b2745bbb-3af0-4137-ac5c-18af837f7231.webp"
+      ],
+      "stock": 45,
+      "createdAt": "2026-01-08T20:12:27.673Z",
+      "updatedAt": "2026-01-09T21:21:07.706Z"
+    },
+    {
+      "id": 8,
+      "name": "Гоо сайхны алчуур",
+      "description": "Гоо сайхны алчуур багц",
+      "price": "5000",
+      "originalPrice": null,
+      "images": [
+        "https://cdn.emartmall.mn/Resource/product_webp/0c31843e-ecb9-441c-9ee3-e731676f485a.webp"
+      ],
+      "stock": 120,
+      "createdAt": "2026-01-08T20:12:27.680Z",
+      "updatedAt": "2026-01-09T21:20:45.738Z"
+    },
+    {
+      "id": 9,
+      "name": "Хадгалах саван",
+      "description": "Хоол хадгалах саван",
+      "price": "3500",
+      "originalPrice": null,
+      "images": [
+        "https://cdn.emartmall.mn/Resource/product_webp/13a98aef-3489-414d-bd65-59be4763584b.webp"
+      ],
+      "stock": 200,
+      "createdAt": "2026-01-08T20:12:27.686Z",
+      "updatedAt": "2026-01-09T21:20:33.177Z"
+    },
+    {
+      "id": 10,
+      "name": "Вакуум уут",
+      "description": "Вакуум хадгалах уут",
+      "price": "12000",
+      "originalPrice": null,
+      "images": [
+        "https://cdn.emartmall.mn/Resource/product_webp/de62027f-bf67-48fc-8300-bfca185beb56.webp"
+      ],
+      "stock": 80,
+      "createdAt": "2026-01-08T20:12:27.694Z",
+      "updatedAt": "2026-01-09T21:20:20.713Z"
+    },
+    {
+      "id": 11,
+      "name": "Хөлдөөгч саван",
+      "description": "Хөлдөөгч дотор ашиглах саван",
+      "price": "4500",
+      "originalPrice": null,
+      "images": [
+        "https://cdn.emartmall.mn/Resource/product_webp/fafda5e2-b60f-4777-bd9b-ced412e2d640.webp"
+      ],
+      "stock": 150,
+      "createdAt": "2026-01-08T20:12:27.700Z",
+      "updatedAt": "2026-01-09T21:20:09.194Z"
+    },
+    {
+      "id": 12,
+      "name": "Хадгалах уут багц",
+      "description": "Олон зориулалттай хадгалах уут",
+      "price": "8000",
+      "originalPrice": null,
+      "images": [
+        "https://cdn.emartmall.mn/Resource/medium/e66a60b7-fe41-4f12-803f-a4effbdcaceb.png"
+      ],
+      "stock": 100,
+      "createdAt": "2026-01-08T20:12:27.707Z",
+      "updatedAt": "2026-01-09T21:19:55.104Z"
+    },
+    {
+      "id": 13,
+      "name": "Гар угаах саван",
+      "description": "Гоо сайхны гар угаах саван",
+      "price": "3500",
+      "originalPrice": null,
+      "images": [
+        "https://cdn.emartmall.mn/Resource/product_webp/e9e48900-3dab-4033-a634-f3983dd85c6b.webp"
+      ],
+      "stock": 150,
+      "createdAt": "2026-01-08T20:12:27.715Z",
+      "updatedAt": "2026-01-09T21:19:41.169Z"
+    },
+    {
+      "id": 14,
+      "name": "Шүдний сойз",
+      "description": "Эрүүл шүдний сойз",
+      "price": "2500",
+      "originalPrice": null,
+      "images": [
+        "https://cdn.emartmall.mn/Resource/product_webp/1303043f-e67e-4428-bb7f-9e0d780e009d.webp"
+      ],
+      "stock": 200,
+      "createdAt": "2026-01-08T20:12:27.724Z",
+      "updatedAt": "2026-01-09T21:19:29.632Z"
+    },
+    {
+      "id": 15,
+      "name": "Шүдний оо",
+      "description": "Фтортой шүдний оо",
+      "price": "4500",
+      "originalPrice": null,
+      "images": [
+        "https://cdn.emartmall.mn/Resource/product_webp/d89ae4f1-5ba1-473c-8cf6-f38aa5be34ed.webp"
+      ],
+      "stock": 180,
+      "createdAt": "2026-01-08T20:12:27.732Z",
+      "updatedAt": "2026-01-09T21:19:20.158Z"
+    },
+    {
+      "id": 16,
+      "name": "Гарын крем",
+      "description": "Чийгшүүлэх гарын крем",
+      "price": "5500",
+      "originalPrice": null,
+      "images": [
+        "https://cdn.emartmall.mn/Resource/product_webp/ab807cc8-acc0-4a1b-9fea-2d6a692ff38c.webp"
+      ],
+      "stock": 120,
+      "createdAt": "2026-01-08T20:12:27.739Z",
+      "updatedAt": "2026-01-09T21:19:08.589Z"
+    },
+    {
+      "id": 17,
+      "name": "LED чийдэн",
+      "description": "Эрчим хүч хэмнэдэг LED чийдэн",
+      "price": "8000",
+      "originalPrice": null,
+      "images": [
+        "https://cdn.emartmall.mn/Resource/product_webp/da93b604-5ad0-4635-b61a-b66294e23d73.webp"
+      ],
+      "stock": 90,
+      "createdAt": "2026-01-08T20:12:27.747Z",
+      "updatedAt": "2026-01-09T21:18:37.564Z"
+    },
+    {
+      "id": 18,
+      "name": "Гадаад чийдэн",
+      "description": "Гадаад ашиглах чийдэн",
+      "price": "15000",
+      "originalPrice": null,
+      "images": [
+        "https://cdn.emartmall.mn/Resource/product_webp/cb185f39-c4dc-4c79-a6f8-9fbc4c86593d.webp"
+      ],
+      "stock": 50,
+      "createdAt": "2026-01-08T20:12:27.756Z",
+      "updatedAt": "2026-01-09T21:18:23.445Z"
+    },
+    {
+      "id": 19,
+      "name": "Гэрэлтүүлэг багц",
+      "description": "Гэрийн гэрэлтүүлэг багц",
+      "price": "25000",
+      "originalPrice": null,
+      "images": [
+        "https://cdn.emartmall.mn/Resource/product_webp/b79a6d54-cec1-476d-84db-2c1025eb58ae.webp"
+      ],
+      "stock": 30,
+      "createdAt": "2026-01-08T20:12:27.762Z",
+      "updatedAt": "2026-01-09T21:18:14.170Z"
+    },
+    {
+      "id": 20,
+      "name": "Ширээ",
+      "description": "Оффисын ширээ",
+      "price": "85000",
+      "originalPrice": null,
+      "images": [
+        "https://cdn.emartmall.mn/Resource/product_webp/ff3bc7d2-5bed-4bc0-b1d9-77df74eb3fc5.webp"
+      ],
+      "stock": 20,
+      "createdAt": "2026-01-08T20:12:27.769Z",
+      "updatedAt": "2026-01-09T21:17:54.552Z"
+    },
+    {
+      "id": 21,
+      "name": "Сандал",
+      "description": "Тохилог сандал",
+      "price": "45000",
+      "originalPrice": null,
+      "images": [
+        "https://cdn.emartmall.mn/Resource/product_webp/fd164c19-1721-47ee-874f-0b91798da91e.webp"
+      ],
+      "stock": 0,
+      "createdAt": "2026-01-08T20:12:27.775Z",
+      "updatedAt": "2026-01-09T21:17:02.398Z"
+    },
+    {
+      "id": 22,
+      "name": "Тавиур",
+      "description": "Ном тавиур",
+      "price": "65000",
+      "originalPrice": null,
+      "images": [
+        "https://cdn.emartmall.mn/Resource/banner/7a38797a-5ed0-4e89-8d38-88ac5112934f.png",
+        "https://cdn.emartmall.mn/Resource/product_webp/bfa419af-58e8-4fe0-98dc-971ff1edf31d.webp",
+        "https://cdn.emartmall.mn/Resource/product_webp/19c5d541-83e0-4980-bd8a-7304ea16c4e3.webp"
+      ],
+      "stock": 5,
+      "createdAt": "2026-01-08T20:12:27.782Z",
+      "updatedAt": "2026-01-10T09:14:27.898Z"
+    }
+  ],
+  "productCategories": [
+    {
+      "id": 1,
+      "productId": 1,
+      "categoryId": 2,
+      "createdAt": "2026-01-10T17:10:47.000Z"
+    },
+    {
+      "id": 2,
+      "productId": 2,
+      "categoryId": 2,
+      "createdAt": "2026-01-10T17:10:47.000Z"
+    },
+    {
+      "id": 3,
+      "productId": 3,
+      "categoryId": 2,
+      "createdAt": "2026-01-10T17:10:47.000Z"
+    },
+    {
+      "id": 4,
+      "productId": 4,
+      "categoryId": 2,
+      "createdAt": "2026-01-10T17:10:47.000Z"
+    },
+    {
+      "id": 5,
+      "productId": 5,
+      "categoryId": 3,
+      "createdAt": "2026-01-10T17:10:47.000Z"
+    },
+    {
+      "id": 6,
+      "productId": 6,
+      "categoryId": 3,
+      "createdAt": "2026-01-10T17:10:47.000Z"
+    },
+    {
+      "id": 7,
+      "productId": 7,
+      "categoryId": 3,
+      "createdAt": "2026-01-10T17:10:47.000Z"
+    },
+    {
+      "id": 8,
+      "productId": 8,
+      "categoryId": 3,
+      "createdAt": "2026-01-10T17:10:47.000Z"
+    },
+    {
+      "id": 9,
+      "productId": 9,
+      "categoryId": 4,
+      "createdAt": "2026-01-10T17:10:47.000Z"
+    },
+    {
+      "id": 10,
+      "productId": 10,
+      "categoryId": 4,
+      "createdAt": "2026-01-10T17:10:47.000Z"
+    },
+    {
+      "id": 11,
+      "productId": 11,
+      "categoryId": 4,
+      "createdAt": "2026-01-10T17:10:47.000Z"
+    },
+    {
+      "id": 12,
+      "productId": 12,
+      "categoryId": 4,
+      "createdAt": "2026-01-10T17:10:47.000Z"
+    },
+    {
+      "id": 17,
+      "productId": 17,
+      "categoryId": 6,
+      "createdAt": "2026-01-10T17:10:47.000Z"
+    },
+    {
+      "id": 18,
+      "productId": 18,
+      "categoryId": 6,
+      "createdAt": "2026-01-10T17:10:47.000Z"
+    },
+    {
+      "id": 19,
+      "productId": 19,
+      "categoryId": 6,
+      "createdAt": "2026-01-10T17:10:47.000Z"
+    },
+    {
+      "id": 20,
+      "productId": 20,
+      "categoryId": 7,
+      "createdAt": "2026-01-10T17:10:47.000Z"
+    },
+    {
+      "id": 21,
+      "productId": 21,
+      "categoryId": 7,
+      "createdAt": "2026-01-10T17:10:47.000Z"
+    },
+    {
+      "id": 32,
+      "productId": 22,
+      "categoryId": 7,
+      "createdAt": "2026-01-10T09:14:27.898Z"
+    },
+    {
+      "id": 33,
+      "productId": 22,
+      "categoryId": 3,
+      "createdAt": "2026-01-10T09:14:27.898Z"
+    }
+  ],
+  "addresses": [
+    {
+      "id": 1,
+      "userId": 3,
+      "label": "Home",
+      "fullName": "Test User",
+      "phoneNumber": "87654321",
+      "provinceOrDistrict": "Ulaanbaatar",
+      "khorooOrSoum": "Bayangol",
+      "street": "Peace Avenue",
+      "neighborhood": "Downtown",
+      "residentialComplex": null,
+      "building": "Building 5",
+      "entrance": null,
+      "apartmentNumber": "Apt 12B",
+      "addressNote": "Call when arrived",
+      "isDefault": true,
+      "createdAt": "2026-01-08T20:12:27.789Z",
+      "updatedAt": "2026-01-08T20:12:27.789Z"
+    }
+  ],
+  "cartItems": [],
+  "orders": [],
+  "orderItems": [],
+  "favorites": []
+}

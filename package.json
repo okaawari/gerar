@@ -10,7 +10,12 @@
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "test:quick": "jest --maxWorkers=2 --testTimeout=5000",
-    "seed": "node prisma/seed.js"
+    "seed": "node prisma/seed.js",
+    "export-data": "node prisma/export-data.js",
+    "migrate:reset": "prisma migrate reset --force",
+    "migrate:deploy": "prisma migrate deploy",
+    "migrate:fresh": "prisma migrate reset --force && npm run seed",
+    "migrate:status": "prisma migrate status"
   },
   "keywords": [],
   "author": "",

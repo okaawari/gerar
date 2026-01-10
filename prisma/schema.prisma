@@ -17,7 +17,7 @@ enum Role {
   ADMIN
 }
 
-model User {
+model user {
   id          Int      @id @default(autoincrement())
   phoneNumber String   @unique @db.VarChar(8)
   email       String?  @unique
@@ -27,13 +27,15 @@ model User {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  cartItems   CartItem[]
-  orders      Order[]
-  addresses   Address[]
-  favorites   Favorite[]
+  cartItems   cartitem[]
+  orders      order[]
+  addresses   address[]
+  favorites   favorite[]
+
+  @@map("user")
 }
 
-model Category {
+model category {
   id          Int       @id @default(autoincrement())
   name        String
   description String?   @db.Text
@@ -41,15 +43,16 @@ model Category {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
-  parent      Category? @relation("CategoryToCategory", fields: [parentId], references: [id], onDelete: Cascade)
-  children    Category[] @relation("CategoryToCategory")
-  products    ProductCategory[]
+  parent      category? @relation("CategoryToCategory", fields: [parentId], references: [id], onDelete: Cascade)
+  children    category[] @relation("CategoryToCategory")
+  products    productcategory[]
 
   @@unique([name, parentId])
   @@index([parentId])
+  @@map("category")
 }
 
-model Product {
+model product {
   id            Int       @id @default(autoincrement())
   name          String
   description   String    @db.Text
@@ -60,13 +63,15 @@ model Product {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
-  categories    ProductCategory[]
-  cartItems     CartItem[]
-  orderItems    OrderItem[]
-  favorites     Favorite[]
+  categories    productcategory[]
+  cartItems     cartitem[]
+  orderItems    orderitem[]
+  favorites     favorite[]
+
+  @@map("product")
 }
 
-model CartItem {
+model cartitem {
   id        Int      @id @default(autoincrement())
   userId    Int
   productId Int
@@ -74,13 +79,14 @@ model CartItem {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  user      User     @relation(fields: [userId], references: [id])
-  product   Product  @relation(fields: [productId], references: [id])
+  user      user     @relation(fields: [userId], references: [id])
+  product   product  @relation(fields: [productId], references: [id])
 
   @@unique([userId, productId])
+  @@map("cartitem")
 }
 
-model Order {
+model order {
   id              Int         @id @default(autoincrement())
   userId          Int
   addressId       Int?
@@ -90,17 +96,18 @@ model Order {
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
 
-  user            User        @relation(fields: [userId], references: [id])
-  address         Address?    @relation(fields: [addressId], references: [id])
-  items           OrderItem[]
+  user            user        @relation(fields: [userId], references: [id])
+  address         address?    @relation(fields: [addressId], references: [id])
+  items           orderitem[]
 
   @@index([userId])
   @@index([status])
   @@index([addressId])
   @@index([deliveryTimeSlot])
+  @@map("order")
 }
 
-model Address {
+model address {
   id                  Int       @id @default(autoincrement())
   userId              Int
   label               String?
@@ -119,14 +126,15 @@ model Address {
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
 
-  user                User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  orders              Order[]
+  user                user      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orders              order[]
 
   @@index([userId])
   @@index([userId, isDefault])
+  @@map("address")
 }
 
-model OrderItem {
+model orderitem {
   id        Int      @id @default(autoincrement())
   orderId   Int
   productId Int
@@ -135,34 +143,40 @@ model OrderItem {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  order     Order   @relation(fields: [orderId], references: [id])
-  product   Product @relation(fields: [productId], references: [id])
+  order     order   @relation(fields: [orderId], references: [id])
+  product   product @relation(fields: [productId], references: [id])
+
+  @@map("orderitem")
 }
 
-model Favorite {
+model favorite {
   id        Int      @id @default(autoincrement())
   userId    Int
   productId Int
   createdAt DateTime @default(now())
 
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  user      user     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product   product  @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   @@unique([userId, productId])
   @@index([userId])
   @@index([productId])
+  @@map("favorite")
 }
 
-model ProductCategory {
+model productcategory {
   id         Int      @id @default(autoincrement())
   productId  Int
   categoryId Int
+  order      Int      @default(0) // Order/position of product within this category (lower = shows first)
   createdAt  DateTime @default(now())
 
-  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
-  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  product    product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  category   category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
 
   @@unique([productId, categoryId])
   @@index([productId])
   @@index([categoryId])
+  @@index([categoryId, order]) // Index for efficient sorting by category and order
+  @@map("productcategory")
 }

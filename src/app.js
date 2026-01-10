@@ -19,9 +19,66 @@ dotenv.config();
 const app = express();
 
 // Middleware configuration
-// Enable CORS for all routes
+// Configure CORS to support multiple origins including localhost
+const getAllowedOrigins = () => {
+    const corsOrigin = process.env.CORS_ORIGIN;
+    
+    // If wildcard is explicitly set, allow all origins
+    if (corsOrigin === '*') {
+        return '*';
+    }
+    
+    // Default allowed origins including localhost
+    const defaultOrigins = [
+        'http://localhost:3000',
+        'http://localhost:3001',
+        'http://localhost:5173',
+        'http://localhost:8080',
+        'http://127.0.0.1:3000',
+        'http://127.0.0.1:3001',
+        'http://127.0.0.1:5173',
+        'http://127.0.0.1:8080'
+    ];
+    
+    // Parse comma-separated origins from environment variable
+    const envOrigins = corsOrigin 
+        ? corsOrigin.split(',').map(origin => origin.trim()).filter(Boolean)
+        : [];
+    
+    // Combine environment origins with default localhost origins
+    const allowedOrigins = [...new Set([...defaultOrigins, ...envOrigins])];
+    
+    return allowedOrigins;
+};
+
+// CORS configuration with dynamic origin checking
 app.use(cors({
-    origin: process.env.CORS_ORIGIN || '*',
+    origin: (origin, callback) => {
+        const allowedOrigins = getAllowedOrigins();
+        
+        // Allow requests with no origin (like mobile apps or Postman)
+        if (!origin) {
+            return callback(null, true);
+        }
+        
+        // If wildcard is allowed
+        if (allowedOrigins === '*') {
+            return callback(null, true);
+        }
+        
+        // Check if origin is in allowed list
+        if (allowedOrigins.includes(origin)) {
+            return callback(null, true);
+        }
+        
+        // For localhost with any port, allow it if any localhost is in the list
+        const isLocalhost = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+        if (isLocalhost && allowedOrigins.some(o => o.includes('localhost') || o.includes('127.0.0.1'))) {
+            return callback(null, true);
+        }
+        
+        callback(new Error('Not allowed by CORS'));
+    },
     credentials: true
 }));
 

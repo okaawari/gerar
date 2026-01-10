@@ -27,11 +27,15 @@ class FavoriteService {
             include: {
                 product: {
                     include: {
-                        category: {
-                            select: {
-                                id: true,
-                                name: true,
-                                description: true
+                        categories: {
+                            include: {
+                                category: {
+                                    select: {
+                                        id: true,
+                                        name: true,
+                                        description: true
+                                    }
+                                }
                             }
                         }
                     }
@@ -49,7 +53,7 @@ class FavoriteService {
             const formatted = productService.formatProductWithDiscount(favorite.product);
             formatted.favoritedAt = favorite.createdAt;
             // Extract categories from ProductCategory junction table
-            if (favorite.product.categories) {
+            if (favorite.product.categories && favorite.product.categories.length > 0) {
                 formatted.categories = favorite.product.categories.map(pc => pc.category);
                 formatted.categoryId = formatted.categories.length > 0 ? formatted.categories[0].id : null;
                 formatted.category = formatted.categories.length > 0 ? formatted.categories[0] : null;
@@ -109,11 +113,15 @@ class FavoriteService {
                 include: {
                     product: {
                         include: {
-                            category: {
-                                select: {
-                                    id: true,
-                                    name: true,
-                                    description: true
+                            categories: {
+                                include: {
+                                    category: {
+                                        select: {
+                                            id: true,
+                                            name: true,
+                                            description: true
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -123,6 +131,16 @@ class FavoriteService {
 
             const formatted = productService.formatProductWithDiscount(favorite.product);
             formatted.favoritedAt = favorite.createdAt;
+            // Extract categories from ProductCategory junction table
+            if (favorite.product.categories && favorite.product.categories.length > 0) {
+                formatted.categories = favorite.product.categories.map(pc => pc.category);
+                formatted.categoryId = formatted.categories.length > 0 ? formatted.categories[0].id : null;
+                formatted.category = formatted.categories.length > 0 ? formatted.categories[0] : null;
+            } else {
+                formatted.categories = [];
+                formatted.categoryId = null;
+                formatted.category = null;
+            }
             return formatted;
         }
 
@@ -135,11 +153,15 @@ class FavoriteService {
             include: {
                 product: {
                     include: {
-                        category: {
-                            select: {
-                                id: true,
-                                name: true,
-                                description: true
+                        categories: {
+                            include: {
+                                category: {
+                                    select: {
+                                        id: true,
+                                        name: true,
+                                        description: true
+                                    }
+                                }
                             }
                         }
                     }
@@ -149,6 +171,16 @@ class FavoriteService {
 
         const formatted = productService.formatProductWithDiscount(favorite.product);
         formatted.favoritedAt = favorite.createdAt;
+        // Extract categories from ProductCategory junction table
+        if (favorite.product.categories && favorite.product.categories.length > 0) {
+            formatted.categories = favorite.product.categories.map(pc => pc.category);
+            formatted.categoryId = formatted.categories.length > 0 ? formatted.categories[0].id : null;
+            formatted.category = formatted.categories.length > 0 ? formatted.categories[0] : null;
+        } else {
+            formatted.categories = [];
+            formatted.categoryId = null;
+            formatted.category = null;
+        }
         return formatted;
     }
 
@@ -173,11 +205,15 @@ class FavoriteService {
             include: {
                 product: {
                     include: {
-                        category: {
-                            select: {
-                                id: true,
-                                name: true,
-                                description: true
+                        categories: {
+                            include: {
+                                category: {
+                                    select: {
+                                        id: true,
+                                        name: true,
+                                        description: true
+                                    }
+                                }
                             }
                         }
                     }
@@ -203,6 +239,16 @@ class FavoriteService {
 
         const formatted = productService.formatProductWithDiscount(existingFavorite.product);
         formatted.favoritedAt = existingFavorite.createdAt;
+        // Extract categories from ProductCategory junction table
+        if (existingFavorite.product.categories && existingFavorite.product.categories.length > 0) {
+            formatted.categories = existingFavorite.product.categories.map(pc => pc.category);
+            formatted.categoryId = formatted.categories.length > 0 ? formatted.categories[0].id : null;
+            formatted.category = formatted.categories.length > 0 ? formatted.categories[0] : null;
+        } else {
+            formatted.categories = [];
+            formatted.categoryId = null;
+            formatted.category = null;
+        }
         return formatted;
     }
 
