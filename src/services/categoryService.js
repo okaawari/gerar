@@ -183,7 +183,7 @@ class CategoryService {
             });
         }
 
-        const products = await prisma.product.findMany({
+        let products = await prisma.product.findMany({
             where: {
                 categories: {
                     some: {
@@ -205,11 +205,30 @@ class CategoryService {
                         }
                     }
                 }
-            },
-            orderBy: {
-                createdAt: 'desc'
             }
         });
+
+        // Sort by order field in ProductCategory for the primary category
+        // If multiple categories, sort by the first category's order
+        if (categoryIds.length === 1) {
+            const primaryCategoryId = categoryIds[0];
+            products = products.sort((a, b) => {
+                const aCategory = a.categories.find(pc => pc.categoryId === primaryCategoryId);
+                const bCategory = b.categories.find(pc => pc.categoryId === primaryCategoryId);
+                
+                const aOrder = aCategory ? (aCategory.order || 0) : 999999;
+                const bOrder = bCategory ? (bCategory.order || 0) : 999999;
+                
+                if (aOrder !== bOrder) {
+                    return aOrder - bOrder; // Lower order number = appears first
+                }
+                // If order is same, sort by createdAt (newer first)
+                return new Date(b.createdAt) - new Date(a.createdAt);
+            });
+        } else {
+            // Multiple categories - sort by createdAt as fallback
+            products = products.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        }
 
         // Format products to extract categories
         return products.map(product => {

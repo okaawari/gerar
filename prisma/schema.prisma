@@ -67,6 +67,7 @@ model product {
   cartItems     cartitem[]
   orderItems    orderitem[]
   favorites     favorite[]
+  draftOrders   draftorder[]
 
   @@map("product")
 }
@@ -179,4 +180,21 @@ model productcategory {
   @@index([categoryId])
   @@index([categoryId, order]) // Index for efficient sorting by category and order
   @@map("productcategory")
+}
+
+model draftorder {
+  id              Int       @id @default(autoincrement())
+  sessionToken    String    @unique // Unique token to identify guest session
+  productId       Int
+  quantity        Int
+  totalAmount     Decimal   @db.Decimal(10, 2)
+  expiresAt       DateTime  // Auto-expire draft orders after 24 hours
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  product         product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([sessionToken])
+  @@index([expiresAt]) // For cleanup of expired drafts
+  @@map("draftorder")
 }

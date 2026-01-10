@@ -155,7 +155,7 @@ class ProductController {
      */
     async createProduct(req, res, next) {
         try {
-            const { name, description, price, originalPrice, images, stock, categoryIds, categoryId } = req.body;
+            const { name, description, price, originalPrice, images, stock, categoryIds, categoryId, categoryOrders } = req.body;
             const product = await productService.createProduct({
                 name,
                 description,
@@ -163,8 +163,9 @@ class ProductController {
                 originalPrice,
                 images,
                 stock,
-                categoryIds,  // Accept array of category IDs
-                categoryId    // Also accept single categoryId for backward compatibility
+                categoryIds,      // Accept array of category IDs
+                categoryId,       // Also accept single categoryId for backward compatibility
+                categoryOrders    // Accept order mapping: {categoryId: order} or [{categoryId, order}]
             });
 
             res.status(201).json({
@@ -185,7 +186,7 @@ class ProductController {
     async updateProduct(req, res, next) {
         try {
             const { id } = req.params;
-            const { name, description, price, originalPrice, images, stock, categoryIds, categoryId } = req.body;
+            const { name, description, price, originalPrice, images, stock, categoryIds, categoryId, categoryOrders } = req.body;
             const product = await productService.updateProduct(id, {
                 name,
                 description,
@@ -193,8 +194,9 @@ class ProductController {
                 originalPrice,
                 images,
                 stock,
-                categoryIds,  // Accept array of category IDs
-                categoryId    // Also accept single categoryId for backward compatibility
+                categoryIds,      // Accept array of category IDs
+                categoryId,       // Also accept single categoryId for backward compatibility
+                categoryOrders    // Accept order mapping: {categoryId: order} or [{categoryId, order}]
             });
 
             res.status(200).json({

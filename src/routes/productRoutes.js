@@ -1,11 +1,12 @@
 const express = require('express');
 const productController = require('../controllers/productController');
+const { optionallyAuthenticateUser } = require('../middleware/authMiddleware');
 
 const router = express.Router();
 
-// Public routes (no authentication required)
-router.get('/', productController.getAllProducts);
-router.get('/:id', productController.getProductById);
+// Public routes with optional authentication (to check favorite status if logged in)
+router.get('/', optionallyAuthenticateUser, productController.getAllProducts);
+router.get('/:id', optionallyAuthenticateUser, productController.getProductById);
 
 module.exports = router;
 
