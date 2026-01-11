@@ -19,6 +19,13 @@ class DraftOrderService {
      * @returns {Object} - Draft order with session token
      */
     async createDraftOrder(productId, quantity, sessionToken = null) {
+        // Check if Prisma is available
+        if (!prisma) {
+            const error = new Error('Database connection not available');
+            error.statusCode = 500;
+            throw error;
+        }
+
         const prodId = parseInt(productId);
         const qty = parseInt(quantity);
 
@@ -52,9 +59,30 @@ class DraftOrderService {
 
         // Check if draft order already exists for this session token
         // Note: Prisma keeps 'draftorder' as lowercase (not converted to camelCase like cartitem -> cartItem)
-        const existingDraft = await prisma.draftorder.findUnique({
-            where: { sessionToken: token }
-        });
+        let existingDraft;
+        try {
+            existingDraft = await prisma.draftorder.findUnique({
+                where: { sessionToken: token }
+            });
+        } catch (prismaError) {
+            // Write to stderr so Passenger captures it
+            process.stderr.write('\n❌ PRISMA ERROR in createDraftOrder\n');
+            process.stderr.write('Error: ' + (prismaError.message || 'Unknown error') + '\n');
+            if (prismaError.stack) {
+                process.stderr.write('Stack: ' + prismaError.stack + '\n');
+            }
+            if (prismaError.code) {
+                process.stderr.write('Prisma Code: ' + prismaError.code + '\n');
+            }
+            process.stderr.write('\n');
+            
+            console.error('❌ Prisma error in createDraftOrder:', prismaError);
+            const error = new Error('Database error: ' + (prismaError.message || 'Failed to check existing draft order'));
+            error.statusCode = 500;
+            error.originalError = prismaError;
+            error.code = prismaError.code;
+            throw error;
+        }
 
         let draftOrder;
         if (existingDraft) {

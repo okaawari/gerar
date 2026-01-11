@@ -5,19 +5,31 @@
 const { formatTimestamp } = require('../utils/response');
 
 const errorHandler = (err, req, res, next) => {
-    // Log error for debugging - ALWAYS log full details for debugging
-    console.error('='.repeat(80));
-    console.error('ERROR HANDLED:', new Date().toISOString());
-    console.error('Error Message:', err.message);
-    console.error('Error Code:', err.code);
-    console.error('Status Code:', err.statusCode);
-    console.error('Error Name:', err.name);
-    console.error('Request URL:', req.originalUrl);
-    console.error('Request Method:', req.method);
+    // CRITICAL: Log to stderr (Passenger captures stderr)
+    // Use multiple console.error calls to ensure all parts are logged
+    process.stderr.write('\n');
+    process.stderr.write('='.repeat(80) + '\n');
+    process.stderr.write('ERROR HANDLED: ' + new Date().toISOString() + '\n');
+    process.stderr.write('Error Message: ' + (err.message || 'No message') + '\n');
+    process.stderr.write('Error Code: ' + (err.code || 'No code') + '\n');
+    process.stderr.write('Status Code: ' + (err.statusCode || 500) + '\n');
+    process.stderr.write('Error Name: ' + (err.name || 'Error') + '\n');
+    process.stderr.write('Request URL: ' + (req.originalUrl || 'Unknown') + '\n');
+    process.stderr.write('Request Method: ' + (req.method || 'Unknown') + '\n');
     if (err.stack) {
-        console.error('Stack Trace:', err.stack);
+        process.stderr.write('Stack Trace:\n' + err.stack + '\n');
     }
-    console.error('='.repeat(80));
+    if (err.originalError && err.originalError.stack) {
+        process.stderr.write('Original Error Stack:\n' + err.originalError.stack + '\n');
+    }
+    process.stderr.write('='.repeat(80) + '\n');
+    process.stderr.write('\n');
+    
+    // Also use console.error as backup
+    console.error('ERROR:', err);
+    if (err.stack) {
+        console.error('STACK:', err.stack);
+    }
 
     // Default error values
     let statusCode = err.statusCode || 500;

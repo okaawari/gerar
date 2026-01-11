@@ -16,10 +16,15 @@ try {
     var app = require('./app');
     console.log('✅ app.js loaded successfully');
 } catch (error) {
+    // Write to stderr so Passenger captures it
+    process.stderr.write('\n❌ FAILED TO LOAD app.js\n');
+    process.stderr.write('Error: ' + (error.message || 'Unknown error') + '\n');
+    if (error.stack) {
+        process.stderr.write('Stack: ' + error.stack + '\n');
+    }
+    process.stderr.write('\n');
+    
     console.error('❌ Failed to load app.js:', error);
-    console.error('Error message:', error.message);
-    console.error('Stack:', error.stack);
-    // Try to continue anyway - might work
     throw error;
 }
 
@@ -33,8 +38,15 @@ const NODE_ENV = process.env.NODE_ENV || 'development';
         await connectDatabase();
         console.log('✅ Database connected');
     } catch (error) {
-        console.error('❌ Database connection failed:', error.message);
-        console.error('Stack:', error.stack);
+        // Write to stderr so Passenger captures it
+        process.stderr.write('\n❌ DATABASE CONNECTION FAILED (async)\n');
+        process.stderr.write('Error: ' + (error.message || 'Unknown error') + '\n');
+        if (error.stack) {
+            process.stderr.write('Stack: ' + error.stack + '\n');
+        }
+        process.stderr.write('\n');
+        
+        console.error('❌ Database connection failed:', error);
         // Don't exit - let the app start anyway (for Passenger)
     }
 })();
@@ -107,14 +119,28 @@ if (!isPassenger) {
 
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (err) => {
-    console.error('UNHANDLED REJECTION! 💥', err.name, err.message);
-    if (err.stack) console.error(err.stack);
+    process.stderr.write('\n💥 UNHANDLED REJECTION!\n');
+    process.stderr.write('Error: ' + (err.message || 'Unknown') + '\n');
+    process.stderr.write('Name: ' + (err.name || 'Error') + '\n');
+    if (err.stack) {
+        process.stderr.write('Stack: ' + err.stack + '\n');
+    }
+    process.stderr.write('\n');
+    
+    console.error('UNHANDLED REJECTION! 💥', err);
 });
 
 // Handle uncaught exceptions
 process.on('uncaughtException', async (err) => {
-    console.error('UNCAUGHT EXCEPTION! 💥', err.name, err.message);
-    if (err.stack) console.error(err.stack);
+    process.stderr.write('\n💥 UNCAUGHT EXCEPTION!\n');
+    process.stderr.write('Error: ' + (err.message || 'Unknown') + '\n');
+    process.stderr.write('Name: ' + (err.name || 'Error') + '\n');
+    if (err.stack) {
+        process.stderr.write('Stack: ' + err.stack + '\n');
+    }
+    process.stderr.write('\n');
+    
+    console.error('UNCAUGHT EXCEPTION! 💥', err);
     await disconnectDatabase();
     process.exit(1);
 });
