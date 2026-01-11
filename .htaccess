@@ -27,32 +27,12 @@ PassengerStartupFile /home/gerarmn/api.gerar.mn/src/server.js
     Require all granted
 </Limit>
 
-# Disable mod_security for API routes
-# This is necessary because mod_security blocks PUT/PATCH/DELETE requests before they reach Node.js
-# Try multiple approaches as different hosting providers use different mod_security versions
-
-# Approach 1: Disable mod_security entirely for this directory (mod_security v1)
-<IfModule mod_security.c>
-    SecFilterEngine Off
-    SecFilterScanPOST Off
-    SecFilterScanGET Off
-</IfModule>
-
-# Approach 2: Disable mod_security v2/v3 (CloudLinux/WHM/cPanel)
-<IfModule mod_security2.c>
-    SecRuleEngine Off
-</IfModule>
-
-# Approach 3: Remove specific rules that commonly block API methods
-# Common rule IDs that block PUT/PATCH/DELETE: 300015, 300016, 300017, 949110, 980130
-# Uncomment and adjust based on your mod_security logs:
-# <IfModule mod_security2.c>
-#     SecRuleRemoveById 300015
-#     SecRuleRemoveById 300016
-#     SecRuleRemoveById 300017
-#     SecRuleRemoveById 949110
-#     SecRuleRemoveById 980130
-# </IfModule>
+# Note: mod_security directives (SecRuleEngine, SecFilterEngine, etc.) are NOT allowed in .htaccess
+# These must be configured via WHM/cPanel or contact hosting support
+# If you need to disable mod_security, you must do it via:
+# 1. WHM → Security Center → ModSecurity™ Configuration
+# 2. Contact hosting support to whitelist your API directory
+# 3. Ask them to allow PUT/PATCH/DELETE methods for your API routes
 
 # Enable CORS for API endpoints
 # Note: Since Passenger handles routing to Node.js, CORS is primarily handled by the Node.js app.

@@ -1,43 +1,42 @@
+// Simple, non-blocking Prisma setup
 require('dotenv').config();
 const { PrismaClient } = require("@prisma/client");
-const { PrismaMariaDb } = require("@prisma/adapter-mariadb");
 
-let prisma;
+let adapter = null;
 
 try {
-    // Parse DATABASE_URL: mysql://user:password@host:port/database
     const dbUrl = process.env.DATABASE_URL;
-
-    if (!dbUrl) {
-        process.stderr.write('\n⚠️ DATABASE_URL not set - creating Prisma without adapter\n');
-        // Create Prisma without adapter - will fail on use but won't block startup
-        prisma = new PrismaClient();
-    } else {
+    
+    if (dbUrl) {
         const urlMatch = dbUrl.match(/^mysql:\/\/([^:]+):([^@]*)@([^:]+):(\d+)\/(.+)$/);
-
-        if (!urlMatch) {
-            process.stderr.write('\n⚠️ Invalid DATABASE_URL format - creating Prisma without adapter\n');
-            process.stderr.write('Expected: mysql://user:password@host:port/database\n');
-            // Create Prisma without adapter - will fail on use but won't block startup
-            prisma = new PrismaClient();
-        } else {
-            const [, user, password, host, port, database] = urlMatch;
-
-            const adapter = new PrismaMariaDb({
-                host: host,
-                port: parseInt(port, 10),
-                user: user || undefined,
-                password: password || undefined,
-                database: database,
-            });
-
-            prisma = new PrismaClient({ adapter });
+        
+        if (urlMatch) {
+            try {
+                // Try to load adapter (might not be installed)
+                const { PrismaMariaDb } = require("@prisma/adapter-mariadb");
+                const [, user, password, host, port, database] = urlMatch;
+                
+                adapter = new PrismaMariaDb({
+                    host: host,
+                    port: parseInt(port, 10),
+                    user: user || undefined,
+                    password: password || undefined,
+                    database: database,
+                });
+            } catch (adapterError) {
+                // Adapter not available or failed - use default
+                // PrismaClient will use default adapter
+            }
         }
     }
 } catch (error) {
-    process.stderr.write('\n❌ Error initializing Prisma: ' + error.message + '\n');
-    // Create basic Prisma client as fallback - won't work but won't block startup
-    prisma = new PrismaClient();
+    // Ignore - will use default PrismaClient
 }
+
+// Create PrismaClient - this is fast and non-blocking
+// It doesn't connect until you call $connect() or make a query
+const prisma = adapter 
+    ? new PrismaClient({ adapter })
+    : new PrismaClient();
 
 module.exports = prisma;
