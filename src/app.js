@@ -38,14 +38,21 @@ const loadRoute = (path, name) => {
     }
 };
 
-authRoutes = loadRoute('./routes/authRoutes', 'authRoutes');
-categoryRoutes = loadRoute('./routes/categoryRoutes', 'categoryRoutes');
-productRoutes = loadRoute('./routes/productRoutes', 'productRoutes');
-cartRoutes = loadRoute('./routes/cartRoutes', 'cartRoutes');
-orderRoutes = loadRoute('./routes/orderRoutes', 'orderRoutes');
-addressRoutes = loadRoute('./routes/addressRoutes', 'addressRoutes');
-favoriteRoutes = loadRoute('./routes/favoriteRoutes', 'favoriteRoutes');
-adminRoutes = loadRoute('./routes/admin', 'adminRoutes');
+// Load routes lazily - wrap in try-catch and defer if needed
+try {
+    authRoutes = loadRoute('./routes/authRoutes', 'authRoutes');
+    categoryRoutes = loadRoute('./routes/categoryRoutes', 'categoryRoutes');
+    productRoutes = loadRoute('./routes/productRoutes', 'productRoutes');
+    cartRoutes = loadRoute('./routes/cartRoutes', 'cartRoutes');
+    orderRoutes = loadRoute('./routes/orderRoutes', 'orderRoutes');
+    addressRoutes = loadRoute('./routes/addressRoutes', 'addressRoutes');
+    favoriteRoutes = loadRoute('./routes/favoriteRoutes', 'favoriteRoutes');
+    adminRoutes = loadRoute('./routes/admin', 'adminRoutes');
+} catch (error) {
+    process.stderr.write('\n❌ Critical error loading routes: ' + error.message + '\n');
+    // Use error routers as fallback
+    authRoutes = categoryRoutes = productRoutes = cartRoutes = orderRoutes = addressRoutes = favoriteRoutes = adminRoutes = createErrorRouter(error.message);
+}
 
 // Add request logging to see if requests are reaching the app
 app.use((req, res, next) => {
@@ -148,10 +155,9 @@ if (process.env.NODE_ENV === 'development') {
     });
 }
 
-// Basic health check route
+// Basic health check route - available immediately
 app.get('/', (req, res) => {
     try {
-        process.stderr.write('\n✅ Health check route called\n');
         res.status(200).json({
             success: true,
             message: 'Ecommerce API is running',
@@ -159,7 +165,6 @@ app.get('/', (req, res) => {
             version: '1.0.0'
         });
     } catch (error) {
-        process.stderr.write('\n❌ Error in health check: ' + error.message + '\n');
         res.status(500).json({
             success: false,
             message: 'Error in health check',
@@ -168,7 +173,7 @@ app.get('/', (req, res) => {
     }
 });
 
-// API routes
+// Mount routes - these are loaded synchronously but that's OK since app is already exported
 app.use('/api/auth', authRoutes);
 app.use('/api/categories', categoryRoutes);
 app.use('/api/products', productRoutes);
@@ -176,8 +181,6 @@ app.use('/api/cart', cartRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/addresses', addressRoutes);
 app.use('/api/favorites', favoriteRoutes);
-
-// Admin API routes (requires authentication and admin role)
 app.use('/api/admin', adminRoutes);
 
 // Handle cPanel/server error page requests
