@@ -919,9 +919,9 @@ Content-Type: application/json
 
 ---
 
-### Buy Now (Creates Draft Order)
+### Buy Now (Smart Checkout Flow)
 
-**Method**: `POST` (creates draft order without cart - **REQUIRES request body**)
+**Method**: `POST` (creates order or draft order - **REQUIRES request body**)
 
 **Endpoint**: `POST /api/orders/buy-now`
 
@@ -933,7 +933,22 @@ Authorization: Bearer <token> // Optional - included if user is authenticated
 Content-Type: application/json
 ```
 
-**Request Body** (JSON):
+**Smart Routing Behavior:**
+- ✅ **Authenticated user with `addressId`** → Creates order directly (1-step, instant checkout)
+- ⚠️ **Authenticated user without `addressId`** → Creates draft order (2-step, choose address)
+- ⚠️ **Guest user** → Creates draft order (2-step, guest checkout)
+
+**Request Body for Direct Order (Authenticated with address)**:
+```json
+{
+  "productId": 1,
+  "quantity": 2,
+  "addressId": 1,
+  "deliveryTimeSlot": "10-14"
+}
+```
+
+**Request Body for Draft Order (Authenticated without address OR Guest)**:
 ```json
 {
   "productId": 1,
@@ -946,12 +961,48 @@ Content-Type: application/json
 - `productId` (number): Product ID to purchase
 - `quantity` (number): Quantity to purchase
 
-**Optional Fields**:
+**Optional Fields** (for direct order):
+- `addressId` (number): Delivery address ID (if provided and user is authenticated, creates direct order)
+- `deliveryTimeSlot` (string): Valid time slot (required if creating direct order)
+
+**Optional Fields** (for draft order):
 - `sessionToken` (string): Session token for tracking draft order (recommended for guest checkout)
 
-**Note**: This endpoint always creates a **draft order**, regardless of authentication status. Address is **NOT required** at this step. You must call the `/finalize` endpoint to complete the order with address details.
+**Response (Direct Order - if authenticated with addressId)**: `201 Created`
+```json
+{
+  "success": true,
+  "message": "Order created successfully",
+  "data": {
+    "id": 1,
+    "userId": 1,
+    "totalAmount": "1999.98",
+    "status": "PENDING",
+    "deliveryTimeSlot": "10-14",
+    "items": [
+      {
+        "id": 1,
+        "productId": 1,
+        "quantity": 2,
+        "price": "999.99",
+        "product": {
+          "id": 1,
+          "name": "iPhone 15"
+        }
+      }
+    ],
+    "address": {
+      "id": 1,
+      "street": "123 Main St",
+      "city": "City",
+      "state": "State",
+      "zipCode": "12345"
+    }
+  }
+}
+```
 
-**Response**: `201 Created`
+**Response (Draft Order - if no addressId or guest)**: `201 Created`
 ```json
 {
   "success": true,
@@ -979,7 +1030,7 @@ Content-Type: application/json
 }
 ```
 
-**Response Fields**:
+**Response Fields (Draft Order)**:
 - `draftOrder`: The draft order object with product details
 - `sessionToken`: Token to use when finalizing the order (save this!)
 - `requiresAuth`: 

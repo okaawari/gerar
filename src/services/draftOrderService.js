@@ -51,14 +51,15 @@ class DraftOrderService {
         expiresAt.setHours(expiresAt.getHours() + 24);
 
         // Check if draft order already exists for this session token
-        const existingDraft = await prisma.draftOrder.findUnique({
+        // Note: Prisma keeps 'draftorder' as lowercase (not converted to camelCase like cartitem -> cartItem)
+        const existingDraft = await prisma.draftorder.findUnique({
             where: { sessionToken: token }
         });
 
         let draftOrder;
         if (existingDraft) {
             // Update existing draft order
-            draftOrder = await prisma.draftOrder.update({
+            draftOrder = await prisma.draftorder.update({
                 where: { sessionToken: token },
                 data: {
                     productId: prodId,
@@ -86,7 +87,7 @@ class DraftOrderService {
             });
         } else {
             // Create new draft order
-            draftOrder = await prisma.draftOrder.create({
+            draftOrder = await prisma.draftorder.create({
                 data: {
                     sessionToken: token,
                     productId: prodId,
@@ -140,7 +141,7 @@ class DraftOrderService {
             throw error;
         }
 
-        const draftOrder = await prisma.draftOrder.findUnique({
+        const draftOrder = await prisma.draftorder.findUnique({
             where: { sessionToken },
             include: {
                 product: {
@@ -170,7 +171,7 @@ class DraftOrderService {
         // Check if expired
         if (new Date() > draftOrder.expiresAt) {
             // Delete expired draft
-            await prisma.draftOrder.delete({
+            await prisma.draftorder.delete({
                 where: { sessionToken }
             });
             const error = new Error('Draft order has expired. Please create a new order.');
@@ -201,7 +202,7 @@ class DraftOrderService {
             return;
         }
 
-        await prisma.draftOrder.deleteMany({
+        await prisma.draftorder.deleteMany({
             where: { sessionToken }
         });
     }
@@ -210,7 +211,7 @@ class DraftOrderService {
      * Clean up expired draft orders (can be called by a cron job)
      */
     async cleanupExpiredDrafts() {
-        const deleted = await prisma.draftOrder.deleteMany({
+        const deleted = await prisma.draftorder.deleteMany({
             where: {
                 expiresAt: {
                     lt: new Date()

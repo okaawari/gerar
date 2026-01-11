@@ -24,7 +24,7 @@ class CartService {
      * @returns {Array} - Cart items with product information
      */
     async getCart(userId) {
-        const cartItems = await prisma.cartItem.findMany({
+        const cartItems = await prisma.cartitem.findMany({
             where: { userId: parseInt(userId) },
             include: {
                 product: {
@@ -95,7 +95,7 @@ class CartService {
         }
 
         // Check if cart item already exists
-        const existingCartItem = await prisma.cartItem.findUnique({
+        const existingCartItem = await prisma.cartitem.findUnique({
             where: {
                 userId_productId: {
                     userId: parseInt(userId),
@@ -118,7 +118,7 @@ class CartService {
             }
 
             // Update existing cart item
-            const updatedCartItem = await prisma.cartItem.update({
+            const updatedCartItem = await prisma.cartitem.update({
                 where: {
                     userId_productId: {
                         userId: parseInt(userId),
@@ -168,7 +168,7 @@ class CartService {
             return formatted;
         } else {
             // Create new cart item
-            const cartItem = await prisma.cartItem.create({
+            const cartItem = await prisma.cartitem.create({
                 data: {
                     userId: parseInt(userId),
                     productId: prodId,
@@ -235,7 +235,7 @@ class CartService {
         const prodId = parseInt(productId);
 
         // Check if cart item exists
-        const existingCartItem = await prisma.cartItem.findUnique({
+        const existingCartItem = await prisma.cartitem.findUnique({
             where: {
                 userId_productId: {
                     userId: parseInt(userId),
@@ -259,7 +259,7 @@ class CartService {
         }
 
         // Update cart item
-        const updatedCartItem = await prisma.cartItem.update({
+        const updatedCartItem = await prisma.cartitem.update({
             where: {
                 userId_productId: {
                     userId: parseInt(userId),
@@ -319,7 +319,7 @@ class CartService {
         const prodId = parseInt(productId);
 
         // Check if cart item exists
-        const existingCartItem = await prisma.cartItem.findUnique({
+        const existingCartItem = await prisma.cartitem.findUnique({
             where: {
                 userId_productId: {
                     userId: parseInt(userId),
@@ -352,7 +352,7 @@ class CartService {
         }
 
         // Delete cart item
-        await prisma.cartItem.delete({
+        await prisma.cartitem.delete({
             where: {
                 userId_productId: {
                     userId: parseInt(userId),
@@ -388,7 +388,7 @@ class CartService {
      * @returns {number} - Number of items deleted
      */
     async clearCart(userId) {
-        const result = await prisma.cartItem.deleteMany({
+        const result = await prisma.cartitem.deleteMany({
             where: { userId: parseInt(userId) }
         });
 

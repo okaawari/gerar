@@ -1,5 +1,6 @@
 const orderService = require('../services/orderService');
 const draftOrderService = require('../services/draftOrderService');
+const addressService = require('../services/addressService');
 
 class OrderController {
     /**
@@ -24,12 +25,15 @@ class OrderController {
     }
 
     /**
-     * Buy now - Create draft order (works for both authenticated and guest users)
+     * Buy now - Smart routing:
+     * - Authenticated user with addressId → Direct order creation (1-step)
+     * - Authenticated user without addressId → Draft order (2-step, choose address)
+     * - Guest user → Draft order (2-step, guest checkout)
      * POST /api/orders/buy-now
      */
     async buyNow(req, res, next) {
         try {
-            const { productId, quantity, sessionToken } = req.body;
+            const { productId, quantity, sessionToken, addressId, deliveryTimeSlot } = req.body;
             
             // Validate required fields
             if (!productId || !quantity) {
@@ -38,11 +42,27 @@ class OrderController {
                 throw error;
             }
 
-            // Create draft order (works for both authenticated and guest users)
+            // If user is authenticated AND provided addressId → create direct order (1-step checkout)
+            if (req.user && req.user.id && addressId) {
+                const order = await orderService.buyNow(
+                    req.user.id, 
+                    productId, 
+                    quantity, 
+                    addressId, 
+                    deliveryTimeSlot
+                );
+                
+                return res.status(201).json({
+                    success: true,
+                    message: 'Order created successfully',
+                    data: order
+                });
+            }
+
+            // Otherwise, create draft order (for both authenticated users without addressId and guests)
             const draftOrder = await draftOrderService.createDraftOrder(productId, quantity, sessionToken);
 
             // Determine if authentication is required
-            // If user is not authenticated, they'll need to authenticate to finalize
             const requiresAuth = !req.user || !req.user.id;
 
             res.status(201).json({

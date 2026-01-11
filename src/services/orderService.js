@@ -111,7 +111,7 @@ class OrderService {
             const orderItems = [];
             for (const cartItem of cartItems) {
                 // Create order item
-                const orderItem = await tx.orderItem.create({
+                const orderItem = await tx.orderitem.create({
                     data: {
                         orderId: newOrder.id,
                         productId: cartItem.productId,
@@ -151,7 +151,7 @@ class OrderService {
             }
 
             // Clear cart after successful order creation
-            await tx.cartItem.deleteMany({
+            await tx.cartitem.deleteMany({
                 where: { userId: userIdInt }
             });
 
@@ -310,7 +310,7 @@ class OrderService {
             });
 
             // Create order item
-            const orderItem = await tx.orderItem.create({
+            const orderItem = await tx.orderitem.create({
                 data: {
                     orderId: newOrder.id,
                     productId: prodId,
@@ -497,7 +497,7 @@ class OrderService {
             });
 
             // Create order item
-            const orderItem = await tx.orderItem.create({
+            const orderItem = await tx.orderitem.create({
                 data: {
                     orderId: newOrder.id,
                     productId: prodId,
