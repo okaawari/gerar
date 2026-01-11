@@ -18,6 +18,12 @@ dotenv.config();
 
 const app = express();
 
+// Add request logging to see if requests are reaching the app
+app.use((req, res, next) => {
+    process.stderr.write(`\n[${new Date().toISOString()}] ${req.method} ${req.path}\n`);
+    next();
+});
+
 // Middleware configuration
 // Configure CORS to support multiple origins including localhost
 const getAllowedOrigins = () => {
@@ -115,12 +121,22 @@ if (process.env.NODE_ENV === 'development') {
 
 // Basic health check route
 app.get('/', (req, res) => {
-    res.status(200).json({
-        success: true,
-        message: 'Ecommerce API is running',
-        timestamp: new Date().toISOString(),
-        version: '1.0.0'
-    });
+    try {
+        process.stderr.write('\n✅ Health check route called\n');
+        res.status(200).json({
+            success: true,
+            message: 'Ecommerce API is running',
+            timestamp: new Date().toISOString(),
+            version: '1.0.0'
+        });
+    } catch (error) {
+        process.stderr.write('\n❌ Error in health check: ' + error.message + '\n');
+        res.status(500).json({
+            success: false,
+            message: 'Error in health check',
+            error: error.message
+        });
+    }
 });
 
 // API routes
@@ -185,5 +201,23 @@ app.use(notFoundHandler);
 // Global error handling middleware
 // Should be the last middleware added
 app.use(errorHandler);
+
+// Final catch-all - if error handler fails, this will catch it
+app.use((err, req, res, next) => {
+    process.stderr.write('\n💥 ERROR HANDLER FAILED!\n');
+    process.stderr.write('Error: ' + (err.message || 'Unknown') + '\n');
+    if (err.stack) {
+        process.stderr.write('Stack: ' + err.stack + '\n');
+    }
+    process.stderr.write('\n');
+    
+    if (!res.headersSent) {
+        res.status(500).json({
+            success: false,
+            message: 'Internal server error',
+            error: 'Error handler failed'
+        });
+    }
+});
 
 module.exports = app;

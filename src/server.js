@@ -12,9 +12,17 @@ const { connectDatabase, disconnectDatabase } = require('./config/database');
 
 console.log('✅ Database module loaded');
 
+let app;
 try {
-    var app = require('./app');
+    app = require('./app');
+    process.stderr.write('\n✅ app.js loaded successfully\n');
     console.log('✅ app.js loaded successfully');
+    
+    // Test if app is actually an Express app
+    if (!app || typeof app.use !== 'function') {
+        throw new Error('app.js did not export a valid Express app');
+    }
+    process.stderr.write('✅ Express app is valid\n');
 } catch (error) {
     // Write to stderr so Passenger captures it
     process.stderr.write('\n❌ FAILED TO LOAD app.js\n');
@@ -25,7 +33,17 @@ try {
     process.stderr.write('\n');
     
     console.error('❌ Failed to load app.js:', error);
-    throw error;
+    // Create a minimal error app
+    const express = require('express');
+    app = express();
+    app.get('*', (req, res) => {
+        res.status(500).json({
+            success: false,
+            message: 'App initialization failed',
+            error: error.message
+        });
+    });
+    process.stderr.write('⚠️ Created minimal error app\n');
 }
 
 const PORT = process.env.PORT || 3000;
