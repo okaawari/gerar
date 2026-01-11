@@ -1,10 +1,11 @@
-# Ecommerce API Documentation
+# Frontend API Documentation
 
-This document provides comprehensive API documentation for front-end developers to integrate with the Ecommerce backend API.
+This document provides comprehensive API documentation for frontend developers to integrate with the Ecommerce backend API. **This documentation covers only frontend endpoints - no admin endpoints are included.**
 
 ## Table of Contents
 
 - [Base Information](#base-information)
+- [Understanding HTTP Methods: GET vs POST](#understanding-http-methods-get-vs-post)
 - [Authentication](#authentication)
 - [Response Format](#response-format)
 - [Error Handling](#error-handling)
@@ -13,10 +14,9 @@ This document provides comprehensive API documentation for front-end developers 
   - [Categories](#categories-endpoints)
   - [Products](#products-endpoints)
   - [Cart](#cart-endpoints)
-  - [Addresses](#addresses-endpoints)
   - [Orders](#orders-endpoints)
-- [Data Models](#data-models)
-- [Examples](#examples)
+  - [Addresses](#addresses-endpoints)
+  - [Favorites](#favorites-endpoints)
 
 ---
 
@@ -43,6 +43,77 @@ Returns server status and API information.
   "version": "1.0.0"
 }
 ```
+
+---
+
+## Understanding HTTP Methods: GET vs POST
+
+### 🔵 GET Requests
+- **Purpose**: Retrieve/read data from the server
+- **Request Body**: **NONE** - GET requests should NOT include a request body
+- **Data Location**: Query parameters (e.g., `?page=1&limit=10`) or URL path parameters (e.g., `/api/products/:id`)
+- **Idempotent**: Yes - making the same GET request multiple times returns the same data
+- **Example**: Fetching a list of products, getting user cart, viewing order details
+
+**GET Request Format:**
+```javascript
+// ✅ CORRECT - No body, data in URL/query
+fetch('http://localhost:3000/api/products?category=1&page=1', {
+  method: 'GET',
+  headers: {
+    'Authorization': 'Bearer <token>'
+  }
+  // NO body property
+})
+
+// ❌ WRONG - Don't send body with GET
+fetch('http://localhost:3000/api/products', {
+  method: 'GET',
+  body: JSON.stringify({ category: 1 }) // ❌ WRONG!
+})
+```
+
+### 🟢 POST Requests
+- **Purpose**: Create new resources or perform actions that modify server state
+- **Request Body**: **REQUIRED** - POST requests MUST include a JSON body with data
+- **Data Location**: Request body (JSON format)
+- **Idempotent**: No - making the same POST request multiple times may create duplicates or have side effects
+- **Example**: Registering a user, adding items to cart, creating orders
+
+**POST Request Format:**
+```javascript
+// ✅ CORRECT - Data in body
+fetch('http://localhost:3000/api/cart', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': 'Bearer <token>'
+  },
+  body: JSON.stringify({
+    productId: 123,
+    quantity: 2
+  })
+})
+
+// ❌ WRONG - Missing body
+fetch('http://localhost:3000/api/cart', {
+  method: 'POST',
+  headers: {
+    'Authorization': 'Bearer <token>'
+  }
+  // ❌ Missing body!
+})
+```
+
+### Quick Reference
+
+| Method | Request Body? | When to Use |
+|--------|--------------|-------------|
+| **GET** | ❌ **NO** | Retrieve data, fetch resources |
+| **POST** | ✅ **YES** | Create new resources, submit forms |
+| **PUT** | ✅ **YES** | Update existing resources (full update) |
+| **PATCH** | ✅ **YES** | Partial update of resources |
+| **DELETE** | ❌ Usually **NO** | Delete resources |
 
 ---
 
@@ -87,13 +158,8 @@ All API responses follow a consistent format:
 ```json
 {
   "success": false,
-  "message": "Error message",
-  "error": {
-    "code": "ERROR_CODE",
-    "message": "Error message",
-    "details": {} // Optional additional details
-  },
-  "timestamp": "2024-01-15T10:30:00.000Z"
+  "message": "Error description",
+  "error": "Detailed error information"
 }
 ```
 
@@ -103,44 +169,27 @@ All API responses follow a consistent format:
 
 ### HTTP Status Codes
 
-- `200` - Success
-- `201` - Created
-- `400` - Bad Request (validation errors, invalid input)
-- `401` - Unauthorized (missing or invalid token)
-- `403` - Forbidden (insufficient permissions)
-- `404` - Not Found (resource doesn't exist)
-- `409` - Conflict (duplicate entry)
-- `500` - Internal Server Error
+- `200 OK` - Successful GET, PUT, PATCH, DELETE requests
+- `201 Created` - Successful POST request that created a resource
+- `400 Bad Request` - Invalid request data or missing required fields
+- `401 Unauthorized` - Missing or invalid authentication token
+- `403 Forbidden` - User doesn't have permission (not used in frontend endpoints)
+- `404 Not Found` - Resource not found
+- `500 Internal Server Error` - Server error
 
-### Error Codes
+### Common Error Scenarios
 
-- `VALIDATION_ERROR` - Request validation failed
-- `AUTHENTICATION_ERROR` - Authentication failed
-- `INVALID_TOKEN` - Invalid or malformed token
-- `TOKEN_EXPIRED` - Token has expired
-- `NOT_FOUND` - Resource not found
-- `DUPLICATE_ENTRY` - Record already exists
-- `DATABASE_ERROR` - Database operation failed
-- `INTERNAL_ERROR` - Internal server error
+1. **Missing Authentication**
+   - Status: `401`
+   - Solution: Include `Authorization: Bearer <token>` header
 
-### Example Error Response
-```json
-{
-  "success": false,
-  "message": "Validation failed",
-  "error": {
-    "code": "VALIDATION_ERROR",
-    "message": "Validation failed",
-    "details": {
-      "errors": [
-        "phoneNumber must be exactly 8 digits",
-        "pin must be exactly 4 digits"
-      ]
-    }
-  },
-  "timestamp": "2024-01-15T10:30:00.000Z"
-}
-```
+2. **Invalid Request Data**
+   - Status: `400`
+   - Solution: Check request body matches required format
+
+3. **Resource Not Found**
+   - Status: `404`
+   - Solution: Verify resource ID exists
 
 ---
 
@@ -150,22 +199,31 @@ All API responses follow a consistent format:
 
 ### Register User
 
-Create a new user account.
+**Method**: `POST` (creates a new user account)
 
-**Endpoint:** `POST /api/auth/register`
+**Endpoint**: `POST /api/auth/register`
 
-**Authentication:** Not required
+**Authentication**: Not required (public endpoint)
 
-**Request Body:**
+**Request Body** (JSON):
 ```json
 {
-  "phoneNumber": "12345678",  // Exactly 8 digits
-  "pin": "1234",              // Exactly 4 digits
-  "name": "John Doe"          // Non-empty string
+  "phoneNumber": "12345678",
+  "pin": "1234",
+  "name": "John Doe",
+  "email": "john@example.com" // Optional
 }
 ```
 
-**Response:** `201 Created`
+**Required Fields**:
+- `phoneNumber` (string): User's phone number
+- `pin` (string): 4-digit PIN for authentication
+- `name` (string): User's full name
+
+**Optional Fields**:
+- `email` (string): User's email address
+
+**Response**: `201 Created`
 ```json
 {
   "success": true,
@@ -175,43 +233,42 @@ Create a new user account.
       "id": 1,
       "phoneNumber": "12345678",
       "name": "John Doe",
+      "email": "john@example.com",
       "role": "USER",
-      "createdAt": "2024-01-15T10:30:00.000Z",
-      "updatedAt": "2024-01-15T10:30:00.000Z"
+      "createdAt": "2024-01-15T10:30:00.000Z"
     },
     "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
   }
 }
 ```
 
-**Validation Rules:**
-- `phoneNumber`: Required, must be exactly 8 digits
-- `pin`: Required, must be exactly 4 digits
-- `name`: Required, must be a non-empty string
-
-**Errors:**
-- `409` - User with this phone number already exists
-- `400` - Validation failed
+**Error Responses**:
+- `400` - Missing required fields or invalid data
+- `409` - Phone number already registered
 
 ---
 
-### Login
+### Login User
 
-Authenticate and receive a JWT token.
+**Method**: `POST` (authenticates user and returns token)
 
-**Endpoint:** `POST /api/auth/login`
+**Endpoint**: `POST /api/auth/login`
 
-**Authentication:** Not required
+**Authentication**: Not required (public endpoint)
 
-**Request Body:**
+**Request Body** (JSON):
 ```json
 {
-  "phoneNumber": "12345678",  // Exactly 8 digits
-  "pin": "1234"               // Exactly 4 digits
+  "phoneNumber": "12345678",
+  "pin": "1234"
 }
 ```
 
-**Response:** `200 OK`
+**Required Fields**:
+- `phoneNumber` (string): User's phone number
+- `pin` (string): User's 4-digit PIN
+
+**Response**: `200 OK`
 ```json
 {
   "success": true,
@@ -221,81 +278,80 @@ Authenticate and receive a JWT token.
       "id": 1,
       "phoneNumber": "12345678",
       "name": "John Doe",
-      "role": "USER",
-      "createdAt": "2024-01-15T10:30:00.000Z",
-      "updatedAt": "2024-01-15T10:30:00.000Z"
+      "email": "john@example.com",
+      "role": "USER"
     },
     "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
   }
 }
 ```
 
-**Errors:**
+**Error Responses**:
+- `400` - Missing phone number or PIN
 - `401` - Invalid credentials
-- `400` - Validation failed
 
 ---
 
 ### Request Password Reset
 
-Request a password reset code for your account using your phone number.
+**Method**: `POST` (initiates password reset process)
 
-**Endpoint:** `POST /api/auth/forgot-password`
+**Endpoint**: `POST /api/auth/forgot-password`
 
-**Authentication:** Not required
+**Authentication**: Not required (public endpoint)
 
-**Request Body:**
+**Request Body** (JSON):
 ```json
 {
-  "phoneNumber": "12345678"  // Exactly 8 digits
+  "phoneNumber": "12345678"
 }
 ```
 
-**Response:** `200 OK`
+**Required Fields**:
+- `phoneNumber` (string): User's phone number
+
+**Response**: `200 OK`
 ```json
 {
   "success": true,
-  "message": "Reset code generated successfully",
+  "message": "Password reset code sent successfully",
   "data": {
-    "resetCode": "456789",
-    "resetToken": "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6",
+    "resetCode": "123456",
+    "resetToken": "reset_token_here",
     "expiresAt": "2024-01-15T11:30:00.000Z",
-    "resetLink": "http://localhost:3000/reset-password?token=a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6&code=456789"
+    "resetLink": "reset_link_here"
   }
 }
 ```
 
-**Notes:**
-- Returns a 6-digit reset code and reset token
-- Reset code expires in 1 hour
-- The reset link includes both token and code for convenience
-- In production, the reset code should be sent via SMS automatically
-
-**Errors:**
-- `400` - Invalid phone number format
-- `400` - Phone number is required
+**Note**: In production, `resetCode` should be sent via SMS, not returned in response.
 
 ---
 
 ### Reset Password
 
-Reset your password using the reset code received from the forgot-password endpoint.
+**Method**: `POST` (resets user password using reset code)
 
-**Endpoint:** `POST /api/auth/reset-password`
+**Endpoint**: `POST /api/auth/reset-password`
 
-**Authentication:** Not required
+**Authentication**: Not required (public endpoint)
 
-**Request Body:**
+**Request Body** (JSON):
 ```json
 {
-  "phoneNumber": "12345678",  // Exactly 8 digits
-  "resetCode": "456789",      // 6-digit code from forgot-password
-  "newPin": "5678",           // New 4-digit PIN
-  "resetToken": "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6"  // Optional token from forgot-password
+  "phoneNumber": "12345678",
+  "resetCode": "123456",
+  "newPin": "5678",
+  "resetToken": "reset_token_here" // Optional, can use resetCode alone
 }
 ```
 
-**Response:** `200 OK`
+**Required Fields**:
+- `phoneNumber` (string): User's phone number
+- `newPin` (string): New 4-digit PIN
+- Either `resetCode` OR `resetToken` (string)
+
+**Response**: `200 OK`
 ```json
 {
   "success": true,
@@ -304,31 +360,16 @@ Reset your password using the reset code received from the forgot-password endpo
     "user": {
       "id": 1,
       "phoneNumber": "12345678",
-      "name": "John Doe",
-      "role": "USER",
-      "createdAt": "2024-01-15T10:30:00.000Z",
-      "updatedAt": "2024-01-15T10:30:00.000Z"
+      "name": "John Doe"
     },
     "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
   }
 }
 ```
 
-**Notes:**
-- New PIN must be exactly 4 digits
-- Returns user data and a new authentication token for automatic login
-- The reset code must be valid and not expired (expires in 1 hour)
-
-**Validation:**
-- `phoneNumber`: Required, must be exactly 8 digits
-- `resetCode`: Required, must be 6 digits
-- `newPin`: Required, must be exactly 4 digits
-- `resetToken`: Optional, can be included from the reset link
-
-**Errors:**
-- `400` - Invalid reset code or user not found
-- `400` - Invalid PIN format
-- `400` - Phone number, reset code, and new PIN are required
+**Error Responses**:
+- `400` - Missing required fields
+- `401` - Invalid or expired reset code/token
 
 ---
 
@@ -336,13 +377,21 @@ Reset your password using the reset code received from the forgot-password endpo
 
 ### Get All Categories
 
-Retrieve all product categories.
+**Method**: `GET` (retrieves list of categories - **NO request body**)
 
-**Endpoint:** `GET /api/categories`
+**Endpoint**: `GET /api/categories`
 
-**Authentication:** Not required
+**Authentication**: Not required (public endpoint)
 
-**Response:** `200 OK`
+**Query Parameters** (optional, added to URL):
+- `includeSubcategories` (boolean): Default `true`. Set to `false` for flat list.
+
+**Example Request**:
+```
+GET /api/categories?includeSubcategories=true
+```
+
+**Response**: `200 OK`
 ```json
 {
   "success": true,
@@ -351,9 +400,21 @@ Retrieve all product categories.
     {
       "id": 1,
       "name": "Electronics",
-      "description": "Electronic devices and gadgets",
+      "slug": "electronics",
+      "description": "Electronic devices",
+      "parentId": null,
+      "order": 1,
       "createdAt": "2024-01-15T10:30:00.000Z",
-      "updatedAt": "2024-01-15T10:30:00.000Z"
+      "children": [
+        {
+          "id": 2,
+          "name": "Mobile Phones",
+          "slug": "mobile-phones",
+          "parentId": 1,
+          "order": 1,
+          "children": []
+        }
+      ]
     }
   ]
 }
@@ -363,16 +424,21 @@ Retrieve all product categories.
 
 ### Get Category by ID
 
-Retrieve a specific category by ID.
+**Method**: `GET` (retrieves single category - **NO request body**)
 
-**Endpoint:** `GET /api/categories/:id`
+**Endpoint**: `GET /api/categories/:id`
 
-**Authentication:** Not required
+**Authentication**: Not required (public endpoint)
 
-**Parameters:**
-- `id` (path) - Category ID
+**Path Parameters**:
+- `id` (number): Category ID
 
-**Response:** `200 OK`
+**Example Request**:
+```
+GET /api/categories/1
+```
+
+**Response**: `200 OK`
 ```json
 {
   "success": true,
@@ -380,145 +446,51 @@ Retrieve a specific category by ID.
   "data": {
     "id": 1,
     "name": "Electronics",
-    "description": "Electronic devices and gadgets",
-    "createdAt": "2024-01-15T10:30:00.000Z",
-    "updatedAt": "2024-01-15T10:30:00.000Z"
+    "slug": "electronics",
+    "description": "Electronic devices",
+    "parentId": null,
+    "order": 1,
+    "children": [
+      {
+        "id": 2,
+        "name": "Mobile Phones",
+        "slug": "mobile-phones",
+        "parentId": 1,
+        "order": 1,
+        "children": []
+      }
+    ]
   }
 }
 ```
 
-**Errors:**
+**Error Responses**:
 - `404` - Category not found
 
 ---
 
 ### Get Products by Category
 
-Retrieve all products in a specific category. Products are automatically sorted by their display order within the category.
+**Method**: `GET` (retrieves products in a category - **NO request body**)
 
-**Endpoint:** `GET /api/categories/:id/products`
+**Endpoint**: `GET /api/categories/:id/products`
 
-**Authentication:** Not required
+**Authentication**: Not required (public endpoint)
 
-**Parameters:**
-- `id` (path) - Category ID
+**Path Parameters**:
+- `id` (number): Category ID
 
-**Query Parameters:**
-- `includeSubcategories` (optional) - Include products from subcategories. Default: `false`. Set to `true` to include products from all child categories.
+**Query Parameters** (optional, added to URL):
+- `includeSubcategories` (boolean): Default `false`. Include products from subcategories.
+- `page` (number): Page number for pagination (default: 1)
+- `limit` (number): Items per page (default: 20)
 
-**Response:** `200 OK`
-```json
-{
-  "success": true,
-  "message": "Category products retrieved successfully",
-  "data": [
-    {
-      "id": 1,
-      "name": "Laptop",
-      "description": "High-performance laptop",
-      "price": "999.99",
-      "originalPrice": "1299.99",
-      "images": [
-        "https://example.com/laptop-front.jpg"
-      ],
-      "firstImage": "https://example.com/laptop-front.jpg",
-      "hasDiscount": true,
-      "discountAmount": "300.00",
-      "discountPercentage": 23,
-      "stock": 50,
-      "categories": [
-        {
-          "id": 1,
-          "name": "Electronics",
-          "description": "Electronic devices"
-        }
-      ],
-      "categoryId": 1,
-      "category": {
-        "id": 1,
-        "name": "Electronics",
-        "description": "Electronic devices"
-      },
-      "createdAt": "2024-01-15T10:30:00.000Z",
-      "updatedAt": "2024-01-15T10:30:00.000Z"
-    }
-  ]
-}
+**Example Request**:
+```
+GET /api/categories/1/products?includeSubcategories=true&page=1&limit=20
 ```
 
-**Notes:**
-- Products are automatically sorted by their display order within the category (ascending - lower order numbers appear first), then by creation date (descending - newer first)
-- The display order is set when products are assigned to categories
-- If `includeSubcategories=true`, products from child categories are also included, but they are not sorted by the parent category's order
-
-**Errors:**
-- `404` - Category not found
-
----
-
-## Products Endpoints
-
-### Get All Products (Advanced Search)
-
-Retrieve all products with advanced filtering, sorting, and pagination.
-
-**Endpoint:** `GET /api/products`
-
-**Authentication:** Not required
-
-**Query Parameters:**
-
-#### Basic Filters
-- `categoryId` (optional) - Filter by single category ID (for backward compatibility)
-- `categoryIds[]` (optional) - Filter by multiple category IDs (array format: `categoryIds[]=1&categoryIds[]=2` or comma-separated: `categoryIds=1,2`)
-- `search` (optional) - Search products by name and/or description (case-insensitive)
-- `inStock` (optional) - Filter by stock availability (`true`/`false`)
-
-#### Price Filters
-- `minPrice` (optional) - Minimum price (decimal number, e.g., `100.00`)
-- `maxPrice` (optional) - Maximum price (decimal number, e.g., `1000.00`)
-
-#### Stock Range Filters
-- `minStock` (optional) - Minimum stock quantity (integer, e.g., `1`)
-- `maxStock` (optional) - Maximum stock quantity (integer, e.g., `100`)
-
-#### Date Range Filters
-- `createdAfter` (optional) - Filter products created after this date (ISO 8601 format: `2024-01-01` or `2024-01-01T00:00:00Z`)
-- `createdBefore` (optional) - Filter products created before this date (ISO 8601 format: `2024-12-31` or `2024-12-31T23:59:59Z`)
-
-#### Sorting
-- `sortBy` (optional) - Field to sort by. Valid values: `name`, `price`, `stock`, `createdAt`, `updatedAt`. Default: `createdAt`
-  - **Note:** When filtering by a single category (`categoryId` or `categoryIds` with one item) and no explicit `sortBy` is provided, products are automatically sorted by their display order within that category (ascending - lower order numbers appear first), then by creation date (descending - newer first)
-- `sortOrder` (optional) - Sort order. Valid values: `asc`, `desc`. Default: `desc`
-
-#### Pagination
-- `page` (optional) - Page number (integer, starts from 1). Default: `1`
-- `limit` (optional) - Number of items per page (integer, max 100). Default: `50`
-
-**Examples:**
-```
-# Basic search
-GET /api/products
-GET /api/products?categoryId=1
-GET /api/products?search=laptop
-GET /api/products?inStock=true
-
-# Advanced search with multiple filters
-GET /api/products?categoryIds[]=1&categoryIds[]=2&search=laptop&inStock=true
-GET /api/products?minPrice=100&maxPrice=1000&sortBy=price&sortOrder=asc
-GET /api/products?categoryId=1&search=gaming&minStock=5&maxStock=50
-
-# Date range filtering
-GET /api/products?createdAfter=2024-01-01&createdBefore=2024-12-31
-
-# With pagination
-GET /api/products?page=1&limit=20&sortBy=name&sortOrder=asc
-
-# Complex query combining all filters
-GET /api/products?categoryIds=1,2&search=laptop&minPrice=500&maxPrice=2000&minStock=1&inStock=true&sortBy=price&sortOrder=asc&page=1&limit=25
-```
-
-**Response:** `200 OK`
+**Response**: `200 OK`
 ```json
 {
   "success": true,
@@ -526,356 +498,123 @@ GET /api/products?categoryIds=1,2&search=laptop&minPrice=500&maxPrice=2000&minSt
   "data": [
     {
       "id": 1,
-      "name": "Laptop",
-      "description": "High-performance laptop",
-      "price": "899.99",
-      "originalPrice": "999.99",
-      "images": [
-        "https://example.com/laptop-front.jpg",
-        "https://example.com/laptop-side.jpg",
-        "https://example.com/laptop-back.jpg"
-      ],
-      "firstImage": "https://example.com/laptop-front.jpg",
-      "hasDiscount": true,
-      "discountAmount": "100.00",
-      "discountPercentage": 10,
-      "isFavorite": false,
+      "name": "iPhone 15",
+      "description": "Latest iPhone model",
+      "price": "999.99",
+      "discount": "10.00",
       "stock": 50,
+      "images": ["image1.jpg", "image2.jpg"],
       "categories": [
         {
           "id": 1,
           "name": "Electronics",
-          "description": "Electronic devices"
-        },
-        {
-          "id": 2,
-          "name": "Gaming",
-          "description": "Gaming products"
+          "order": 1
         }
-      ],
-      "categoryId": 1,
-      "category": {
-        "id": 1,
-        "name": "Electronics",
-        "description": "Electronic devices"
-      },
-      "createdAt": "2024-01-15T10:30:00.000Z",
-      "updatedAt": "2024-01-15T10:30:00.000Z"
+      ]
     }
-  ],
-  "pagination": {
-    "total": 150,
-    "page": 1,
-    "limit": 50,
-    "totalPages": 3
-  }
+  ]
 }
 ```
 
-**Response Fields:**
-- `data` - Array of product objects, each containing:
-  - `id` - Product ID
-  - `name` - Product name
-  - `description` - Product description
-  - `price` - Current selling price (string)
-  - `originalPrice` - Original price before discount (string or null)
-  - `images` - Array of image URLs (strings)
-  - `firstImage` - First image URL for easy access in listings (string or null)
-  - `hasDiscount` - Boolean indicating if product has a discount
-  - `discountAmount` - Discount amount saved (string or null)
-  - `discountPercentage` - Discount percentage (integer or null)
-  - `isFavorite` - Boolean indicating if product is favorited by authenticated user (only present if authenticated)
-  - `stock` - Stock quantity
-  - `categories` - Array of category objects (product can belong to multiple categories), each with id, name, description
-  - `categoryId` - First category ID (for backward compatibility)
-  - `category` - First category object (for backward compatibility) with id, name, description
-  - `createdAt` - Creation timestamp
-  - `updatedAt` - Last update timestamp
-- `pagination.total` - Total number of products matching the filters
-- `pagination.page` - Current page number
-- `pagination.limit` - Number of items per page
-- `pagination.totalPages` - Total number of pages
+---
 
-**Notes:**
-- All filters can be combined together
-- Search term searches in both product `name` and `description` fields
-- When using `categoryIds`, if you provide `categoryId` as well, only `categoryIds` will be used
-- **Automatic sorting by category order:** When filtering by a single category (`categoryId` or `categoryIds` with one item) and no explicit `sortBy` is provided, products are automatically sorted by their display order within that category (ascending - lower order numbers appear first), then by creation date (descending - newer first). If you specify `sortBy` explicitly, the automatic category order sorting is disabled.
-- Invalid filter values are ignored (e.g., non-numeric price values)
-- Date filters accept ISO 8601 format dates
-- Maximum limit per page is 100 items
-- Products include `firstImage` field for easy display of the first image in listings
-- Discount information is automatically calculated when `originalPrice` is provided and greater than `price`
-- `isFavorite` field is only included if user is authenticated (via Authorization header)
-- Products can belong to multiple categories, and each category association has its own display order
+## Products Endpoints
+
+### Get All Products
+
+**Method**: `GET` (retrieves list of products - **NO request body**)
+
+**Endpoint**: `GET /api/products`
+
+**Authentication**: Optional (if authenticated, returns favorite status for each product)
+
+**Query Parameters** (optional, added to URL):
+- `category` (number): Filter by category ID
+- `page` (number): Page number (default: 1)
+- `limit` (number): Items per page (default: 20)
+- `search` (string): Search query
+- `minPrice` (number): Minimum price filter
+- `maxPrice` (number): Maximum price filter
+- `sortBy` (string): Sort field (e.g., "price", "name", "createdAt")
+- `sortOrder` (string): "asc" or "desc" (default: "asc")
+
+**Example Request**:
+```
+GET /api/products?category=1&page=1&limit=20&sortBy=price&sortOrder=asc
+```
+
+**Response**: `200 OK`
+```json
+{
+  "success": true,
+  "message": "Products retrieved successfully",
+  "data": [
+    {
+      "id": 1,
+      "name": "iPhone 15",
+      "description": "Latest iPhone model",
+      "price": "999.99",
+      "discount": "10.00",
+      "stock": 50,
+      "images": ["image1.jpg", "image2.jpg"],
+      "categories": [
+        {
+          "id": 1,
+          "name": "Electronics",
+          "order": 1
+        }
+      ],
+      "isFavorite": false // Only included if user is authenticated
+    }
+  ]
+}
+```
 
 ---
 
 ### Get Product by ID
 
-Retrieve a specific product by ID.
+**Method**: `GET` (retrieves single product - **NO request body**)
 
-**Endpoint:** `GET /api/products/:id`
+**Endpoint**: `GET /api/products/:id`
 
-**Authentication:** Not required
+**Authentication**: Optional (if authenticated, returns favorite status)
 
-**Parameters:**
-- `id` (path) - Product ID
+**Path Parameters**:
+- `id` (number): Product ID
 
-**Response:** `200 OK`
+**Example Request**:
+```
+GET /api/products/1
+```
+
+**Response**: `200 OK`
 ```json
 {
   "success": true,
   "message": "Product retrieved successfully",
   "data": {
     "id": 1,
-    "name": "Laptop",
-    "description": "High-performance laptop",
-    "price": "899.99",
-    "originalPrice": "999.99",
-    "images": [
-      "https://example.com/laptop-front.jpg",
-      "https://example.com/laptop-side.jpg",
-      "https://example.com/laptop-back.jpg"
-    ],
-    "firstImage": "https://example.com/laptop-front.jpg",
-    "hasDiscount": true,
-    "discountAmount": "100.00",
-    "discountPercentage": 10,
-    "isFavorite": false,
+    "name": "iPhone 15",
+    "description": "Latest iPhone model",
+    "price": "999.99",
+    "discount": "10.00",
     "stock": 50,
-    "categoryId": 1,
-    "category": {
-      "id": 1,
-      "name": "Electronics",
-      "description": "Electronic devices"
-    },
-    "createdAt": "2024-01-15T10:30:00.000Z",
-    "updatedAt": "2024-01-15T10:30:00.000Z"
-  }
-}
-```
-
-**Notes:**
-- `isFavorite` field is only included if user is authenticated (via Authorization header)
-- Discount information is automatically calculated when `originalPrice` is provided and greater than `price`
-
-**Errors:**
-- `404` - Product not found
-
----
-
-
-## Favorites Endpoints
-
-All favorites endpoints require authentication.
-
-### Get Favorites
-
-Retrieve the authenticated user's favorite products.
-
-**Endpoint:** `GET /api/favorites`
-
-**Authentication:** Required
-
-**Headers:**
-```
-Authorization: Bearer <token>
-```
-
-**Query Parameters:**
-- `page` (optional) - Page number (integer, starts from 1). Default: `1`
-- `limit` (optional) - Number of items per page (integer, max 100). Default: `50`
-
-**Response:** `200 OK`
-```json
-{
-  "success": true,
-  "message": "Favorites retrieved successfully",
-  "data": [
-    {
-      "id": 1,
-      "name": "Laptop",
-      "description": "High-performance laptop",
-      "price": "899.99",
-      "originalPrice": "999.99",
-      "images": [
-        "https://example.com/laptop-front.jpg",
-        "https://example.com/laptop-side.jpg"
-      ],
-      "firstImage": "https://example.com/laptop-front.jpg",
-      "hasDiscount": true,
-      "discountAmount": "100.00",
-      "discountPercentage": 10,
-      "isFavorite": true,
-      "favoritedAt": "2024-01-15T12:00:00.000Z",
-      "stock": 50,
-      "categoryId": 1,
-      "category": {
+    "images": ["image1.jpg", "image2.jpg"],
+    "categories": [
+      {
         "id": 1,
         "name": "Electronics",
-        "description": "Electronic devices"
-      },
-      "createdAt": "2024-01-15T10:30:00.000Z",
-      "updatedAt": "2024-01-15T10:30:00.000Z"
-    }
-  ],
-  "pagination": {
-    "total": 25,
-    "page": 1,
-    "limit": 50,
-    "totalPages": 1
-  }
-}
-```
-
-**Response Fields:**
-- `data` - Array of favorite product objects (includes all product fields plus `favoritedAt`)
-- `pagination.total` - Total number of favorite products
-- `pagination.page` - Current page number
-- `pagination.limit` - Number of items per page
-- `pagination.totalPages` - Total number of pages
-
-**Errors:**
-- `401` - Authentication required
-
----
-
-### Add to Favorites
-
-Add a product to the authenticated user's favorites.
-
-**Endpoint:** `POST /api/favorites`
-
-**Authentication:** Required
-
-**Headers:**
-```
-Authorization: Bearer <token>
-```
-
-**Request Body:**
-```json
-{
-  "productId": 1
-}
-```
-
-**Response:** `200 OK`
-```json
-{
-  "success": true,
-  "message": "Product added to favorites successfully",
-  "data": {
-    "id": 1,
-    "name": "Laptop",
-    "description": "High-performance laptop",
-    "price": "899.99",
-    "originalPrice": "999.99",
-    "images": [
-      "https://example.com/laptop-front.jpg",
-      "https://example.com/laptop-side.jpg"
+        "order": 1
+      }
     ],
-    "firstImage": "https://example.com/laptop-front.jpg",
-    "hasDiscount": true,
-    "discountAmount": "100.00",
-    "discountPercentage": 10,
-    "favoritedAt": "2024-01-15T12:00:00.000Z",
-    "stock": 50,
-    "categoryId": 1,
-    "category": {
-      "id": 1,
-      "name": "Electronics",
-      "description": "Electronic devices"
-    }
+    "isFavorite": false // Only included if user is authenticated
   }
 }
 ```
 
-**Notes:**
-- If the product is already favorited, it returns the existing favorite (no error)
-
-**Errors:**
-- `401` - Authentication required
-- `400` - Product ID is required
+**Error Responses**:
 - `404` - Product not found
-
----
-
-### Remove from Favorites
-
-Remove a product from the authenticated user's favorites.
-
-**Endpoint:** `DELETE /api/favorites/:productId`
-
-**Authentication:** Required
-
-**Headers:**
-```
-Authorization: Bearer <token>
-```
-
-**Parameters:**
-- `productId` (path) - Product ID
-
-**Response:** `200 OK`
-```json
-{
-  "success": true,
-  "message": "Product removed from favorites successfully",
-  "data": {
-    "id": 1,
-    "name": "Laptop",
-    "description": "High-performance laptop",
-    "price": "899.99",
-    "favoritedAt": "2024-01-15T12:00:00.000Z",
-    "stock": 50,
-    "categoryId": 1,
-    "category": {
-      "id": 1,
-      "name": "Electronics",
-      "description": "Electronic devices"
-    }
-  }
-}
-```
-
-**Errors:**
-- `401` - Authentication required
-- `404` - Product is not in favorites
-
----
-
-### Check Favorite Status
-
-Check if a specific product is favorited by the authenticated user.
-
-**Endpoint:** `GET /api/favorites/:productId/status`
-
-**Authentication:** Required
-
-**Headers:**
-```
-Authorization: Bearer <token>
-```
-
-**Parameters:**
-- `productId` (path) - Product ID
-
-**Response:** `200 OK`
-```json
-{
-  "success": true,
-  "message": "Favorite status retrieved successfully",
-  "data": {
-    "productId": 1,
-    "isFavorited": true
-  }
-}
-```
-
-**Errors:**
-- `401` - Authentication required
 
 ---
 
@@ -883,20 +622,26 @@ Authorization: Bearer <token>
 
 All cart endpoints require authentication.
 
-### Get Cart
+### Get User's Cart
 
-Retrieve the authenticated user's cart items.
+**Method**: `GET` (retrieves user's cart items - **NO request body**)
 
-**Endpoint:** `GET /api/cart`
+**Endpoint**: `GET /api/cart`
 
-**Authentication:** Required
+**Authentication**: Required
 
-**Headers:**
+**Headers**:
 ```
 Authorization: Bearer <token>
 ```
 
-**Response:** `200 OK`
+**Example Request**:
+```
+GET /api/cart
+Authorization: Bearer <token>
+```
+
+**Response**: `200 OK`
 ```json
 {
   "success": true,
@@ -909,46 +654,48 @@ Authorization: Bearer <token>
       "quantity": 2,
       "product": {
         "id": 1,
-        "name": "Laptop",
-        "description": "High-performance laptop",
+        "name": "iPhone 15",
         "price": "999.99",
-        "stock": 50,
-        "categoryId": 1
-      },
-      "createdAt": "2024-01-15T10:30:00.000Z",
-      "updatedAt": "2024-01-15T10:30:00.000Z"
+        "discount": "10.00",
+        "images": ["image1.jpg"]
+      }
     }
   ]
 }
 ```
 
-**Errors:**
+**Error Responses**:
 - `401` - Authentication required
 
 ---
 
-### Add to Cart
+### Add Item to Cart
 
-Add a product to the user's cart or update quantity if already exists.
+**Method**: `POST` (adds item to cart - **REQUIRES request body**)
 
-**Endpoint:** `POST /api/cart`
+**Endpoint**: `POST /api/cart`
 
-**Authentication:** Required
+**Authentication**: Required
 
-**Headers:**
+**Headers**:
 ```
 Authorization: Bearer <token>
+Content-Type: application/json
 ```
 
-**Request Body:**
+**Request Body** (JSON):
 ```json
 {
-  "productId": 1,  // Required, must exist
-  "quantity": 2    // Required, must be > 0
+  "productId": 1,
+  "quantity": 2
 }
 ```
 
-**Response:** `200 OK`
+**Required Fields**:
+- `productId` (number): Product ID to add
+- `quantity` (number): Quantity to add
+
+**Response**: `200 OK`
 ```json
 {
   "success": true,
@@ -960,50 +707,49 @@ Authorization: Bearer <token>
     "quantity": 2,
     "product": {
       "id": 1,
-      "name": "Laptop",
-      "description": "High-performance laptop",
+      "name": "iPhone 15",
       "price": "999.99",
-      "stock": 50,
-      "categoryId": 1
-    },
-    "createdAt": "2024-01-15T10:30:00.000Z",
-    "updatedAt": "2024-01-15T10:30:00.000Z"
+      "images": ["image1.jpg"]
+    }
   }
 }
 ```
 
-**Errors:**
+**Error Responses**:
+- `400` - Missing productId or quantity
 - `401` - Authentication required
-- `400` - Product ID and quantity are required
 - `404` - Product not found
-- `400` - Insufficient stock
 
 ---
 
-### Update Cart Item
+### Update Cart Item Quantity
 
-Update the quantity of an item in the cart.
+**Method**: `PUT` (updates quantity - **REQUIRES request body**)
 
-**Endpoint:** `PUT /api/cart/:productId`
+**Endpoint**: `PUT /api/cart/:productId`
 
-**Authentication:** Required
+**Authentication**: Required
 
-**Headers:**
+**Path Parameters**:
+- `productId` (number): Product ID in cart
+
+**Headers**:
 ```
 Authorization: Bearer <token>
+Content-Type: application/json
 ```
 
-**Parameters:**
-- `productId` (path) - Product ID
-
-**Request Body:**
+**Request Body** (JSON):
 ```json
 {
-  "quantity": 3  // Required, must be > 0
+  "quantity": 5
 }
 ```
 
-**Response:** `200 OK`
+**Required Fields**:
+- `quantity` (number): New quantity
+
+**Response**: `200 OK`
 ```json
 {
   "success": true,
@@ -1012,60 +758,55 @@ Authorization: Bearer <token>
     "id": 1,
     "userId": 1,
     "productId": 1,
-    "quantity": 3,
+    "quantity": 5,
     "product": {
       "id": 1,
-      "name": "Laptop",
-      "price": "999.99",
-      "stock": 50
-    },
-    "createdAt": "2024-01-15T10:30:00.000Z",
-    "updatedAt": "2024-01-15T11:00:00.000Z"
+      "name": "iPhone 15",
+      "price": "999.99"
+    }
   }
 }
 ```
 
-**Errors:**
+**Error Responses**:
+- `400` - Missing quantity
 - `401` - Authentication required
-- `400` - Quantity is required
 - `404` - Cart item not found
-- `400` - Insufficient stock
 
 ---
 
-### Remove from Cart
+### Remove Item from Cart
 
-Remove a product from the user's cart.
+**Method**: `DELETE` (removes item from cart - **NO request body**)
 
-**Endpoint:** `DELETE /api/cart/:productId`
+**Endpoint**: `DELETE /api/cart/:productId`
 
-**Authentication:** Required
+**Authentication**: Required
 
-**Headers:**
+**Path Parameters**:
+- `productId` (number): Product ID to remove
+
+**Headers**:
 ```
 Authorization: Bearer <token>
 ```
 
-**Parameters:**
-- `productId` (path) - Product ID
+**Example Request**:
+```
+DELETE /api/cart/1
+Authorization: Bearer <token>
+```
 
-**Response:** `200 OK`
+**Response**: `200 OK`
 ```json
 {
   "success": true,
   "message": "Item removed from cart successfully",
-  "data": {
-    "id": 1,
-    "userId": 1,
-    "productId": 1,
-    "quantity": 2,
-    "createdAt": "2024-01-15T10:30:00.000Z",
-    "updatedAt": "2024-01-15T10:30:00.000Z"
-  }
+  "data": null
 }
 ```
 
-**Errors:**
+**Error Responses**:
 - `401` - Authentication required
 - `404` - Cart item not found
 
@@ -1073,63 +814,70 @@ Authorization: Bearer <token>
 
 ### Clear Cart
 
-Remove all items from the user's cart.
+**Method**: `DELETE` (removes all items from cart - **NO request body**)
 
-**Endpoint:** `DELETE /api/cart`
+**Endpoint**: `DELETE /api/cart`
 
-**Authentication:** Required
+**Authentication**: Required
 
-**Headers:**
+**Headers**:
 ```
 Authorization: Bearer <token>
 ```
 
-**Response:** `200 OK`
+**Example Request**:
+```
+DELETE /api/cart
+Authorization: Bearer <token>
+```
+
+**Response**: `200 OK`
 ```json
 {
   "success": true,
-  "message": "Cart cleared successfully. 3 item(s) removed.",
-  "data": {
-    "deletedCount": 3
-  }
+  "message": "Cart cleared successfully",
+  "data": null
 }
 ```
 
-**Errors:**
+**Error Responses**:
 - `401` - Authentication required
 
 ---
 
 ## Orders Endpoints
 
-All order endpoints require authentication.
+### Create Order from Cart
 
-### Create Order
+**Method**: `POST` (creates order from cart - **REQUIRES request body**)
 
-Create an order from the user's cart. This will:
-1. Create an order with all cart items
-2. Clear the user's cart
-3. Reduce product stock
+**Endpoint**: `POST /api/orders`
 
-**Endpoint:** `POST /api/orders`
+**Authentication**: Required
 
-**Authentication:** Required
-
-**Headers:**
+**Headers**:
 ```
 Authorization: Bearer <token>
 Content-Type: application/json
 ```
 
-**Request Body:**
+**Request Body** (JSON):
 ```json
 {
-  "addressId": 1,              // Required - Delivery address ID
-  "deliveryTimeSlot": "14-18"  // Optional - Delivery time slot: "10-14", "14-18", "18-21", "21-00"
+  "addressId": 1,
+  "deliveryTimeSlot": "10-14"
 }
 ```
 
-**Response:** `201 Created`
+**Required Fields**:
+- `addressId` (number): Delivery address ID
+- `deliveryTimeSlot` (string): Delivery time slot. Valid values:
+  - `"10-14"` (Morning: 10:00 - 14:00)
+  - `"14-18"` (Afternoon: 14:00 - 18:00)
+  - `"18-21"` (Evening: 18:00 - 21:00)
+  - `"21-00"` (Night: 21:00 - 00:00)
+
+**Response**: `201 Created`
 ```json
 {
   "success": true,
@@ -1137,81 +885,202 @@ Content-Type: application/json
   "data": {
     "id": 1,
     "userId": 1,
-    "addressId": 1,
-    "deliveryTimeSlot": "14-18",
     "totalAmount": "1999.98",
     "status": "PENDING",
+    "deliveryTimeSlot": "10-14",
     "createdAt": "2024-01-15T10:30:00.000Z",
-    "updatedAt": "2024-01-15T10:30:00.000Z",
-    "address": {
-      "id": 1,
-      "fullName": "John Doe",
-      "phoneNumber": "12345678",
-      "provinceOrDistrict": "Ulaanbaatar",
-      "khorooOrSoum": "Bayangol",
-      "street": "Peace Avenue",
-      "neighborhood": "Downtown",
-      "residentialComplex": "Green Complex",
-      "building": "Building 5",
-      "entrance": "Entrance A",
-      "apartmentNumber": "Apt 12B",
-      "addressNote": "Next to the blue gate",
-      "label": "Home",
-      "isDefault": true
-    },
     "items": [
       {
         "id": 1,
-        "orderId": 1,
         "productId": 1,
         "quantity": 2,
         "price": "999.99",
         "product": {
           "id": 1,
-          "name": "Laptop",
-          "description": "High-performance laptop",
-          "category": {
-            "id": 1,
-            "name": "Electronics",
-            "description": "Electronic devices"
-          }
-        },
-        "createdAt": "2024-01-15T10:30:00.000Z",
-        "updatedAt": "2024-01-15T10:30:00.000Z"
+          "name": "iPhone 15"
+        }
       }
-    ]
+    ],
+    "address": {
+      "id": 1,
+      "street": "123 Main St",
+      "city": "City",
+      "state": "State",
+      "zipCode": "12345"
+    }
   }
 }
 ```
 
-**Validation Rules:**
-- `addressId`: Required, must be a valid address ID that belongs to the authenticated user
-- `deliveryTimeSlot`: Optional, must be one of: `"10-14"`, `"14-18"`, `"18-21"`, `"21-00"`
-
-**Errors:**
+**Error Responses**:
+- `400` - Missing required fields, invalid time slot, empty cart, or invalid address
 - `401` - Authentication required
-- `400` - Address ID is required for delivery
-- `400` - Cart is empty
-- `400` - Insufficient stock for one or more products
-- `404` - Address not found or does not belong to user
-- `400` - Invalid delivery time slot
+- `404` - Address not found
 
 ---
 
-### Get User Orders
+### Buy Now (Creates Draft Order)
 
-Retrieve the authenticated user's order history.
+**Method**: `POST` (creates draft order without cart - **REQUIRES request body**)
 
-**Endpoint:** `GET /api/orders`
+**Endpoint**: `POST /api/orders/buy-now`
 
-**Authentication:** Required
+**Authentication**: Optional (works for both authenticated and guest users)
 
-**Headers:**
+**Headers**:
+```
+Authorization: Bearer <token> // Optional - included if user is authenticated
+Content-Type: application/json
+```
+
+**Request Body** (JSON):
+```json
+{
+  "productId": 1,
+  "quantity": 2,
+  "sessionToken": "guest_session_token" // Optional, generated client-side (recommended for guests)
+}
+```
+
+**Required Fields**:
+- `productId` (number): Product ID to purchase
+- `quantity` (number): Quantity to purchase
+
+**Optional Fields**:
+- `sessionToken` (string): Session token for tracking draft order (recommended for guest checkout)
+
+**Note**: This endpoint always creates a **draft order**, regardless of authentication status. Address is **NOT required** at this step. You must call the `/finalize` endpoint to complete the order with address details.
+
+**Response**: `201 Created`
+```json
+{
+  "success": true,
+  "message": "Draft order created successfully. Please finalize order with address.",
+  "data": {
+    "draftOrder": {
+      "id": 1,
+      "sessionToken": "guest_session_token",
+      "productId": 1,
+      "quantity": 2,
+      "totalAmount": "1999.98",
+      "product": {
+        "id": 1,
+        "name": "iPhone 15",
+        "price": "999.99",
+        "images": ["image1.jpg"]
+      },
+      "createdAt": "2024-01-15T10:30:00.000Z",
+      "expiresAt": "2024-01-16T10:30:00.000Z"
+    },
+    "sessionToken": "guest_session_token",
+    "requiresAuth": false, // false if user is authenticated, true if guest
+    "nextStep": "finalize-order"
+  }
+}
+```
+
+**Response Fields**:
+- `draftOrder`: The draft order object with product details
+- `sessionToken`: Token to use when finalizing the order (save this!)
+- `requiresAuth`: 
+  - `false` if user is already authenticated
+  - `true` if user is a guest (will need to authenticate before finalizing)
+- `nextStep`: Always `"finalize-order"` - indicates you need to call `/finalize` endpoint
+
+**Error Responses**:
+- `400` - Missing required fields (productId, quantity) or insufficient stock
+- `404` - Product not found
+
+---
+
+### Finalize Order (Convert Draft to Real Order)
+
+**Method**: `POST` (converts draft order to real order - **REQUIRES request body**)
+
+**Endpoint**: `POST /api/orders/finalize`
+
+**Authentication**: Required (both authenticated users and guests must authenticate before finalizing)
+
+**Note**: This endpoint is called after `/buy-now` to complete the order with address and delivery details. Use the `sessionToken` returned from the buy-now response.
+
+**Headers**:
+```
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+**Request Body** (JSON):
+```json
+{
+  "sessionToken": "guest_session_token",
+  "addressId": 1,
+  "deliveryTimeSlot": "10-14"
+}
+```
+
+**OR with inline address**:
+```json
+{
+  "sessionToken": "guest_session_token",
+  "address": {
+    "street": "123 Main St",
+    "city": "City",
+    "state": "State",
+    "zipCode": "12345",
+    "isDefault": false
+  },
+  "deliveryTimeSlot": "10-14"
+}
+```
+
+**Required Fields**:
+- `sessionToken` (string): Session token from draft order
+- `deliveryTimeSlot` (string): Valid time slot
+- Either `addressId` OR `address` object
+
+**Response**: `201 Created`
+```json
+{
+  "success": true,
+  "message": "Order finalized successfully",
+  "data": {
+    "id": 1,
+    "userId": 1,
+    "totalAmount": "1999.98",
+    "status": "PENDING",
+    "items": [...],
+    "address": {...}
+  }
+}
+```
+
+**Error Responses**:
+- `400` - Missing required fields or invalid data
+- `401` - Authentication required
+- `404` - Draft order or address not found
+
+---
+
+### Get User's Orders
+
+**Method**: `GET` (retrieves user's order history - **NO request body**)
+
+**Endpoint**: `GET /api/orders`
+
+**Authentication**: Required
+
+**Headers**:
 ```
 Authorization: Bearer <token>
 ```
 
-**Response:** `200 OK`
+**Example Request**:
+```
+GET /api/orders
+Authorization: Bearer <token>
+```
+
+**Response**: `200 OK`
 ```json
 {
   "success": true,
@@ -1220,23 +1089,11 @@ Authorization: Bearer <token>
     {
       "id": 1,
       "userId": 1,
-      "addressId": 1,
-      "deliveryTimeSlot": "14-18",
       "totalAmount": "1999.98",
-      "status": "PENDING",
+      "status": "COMPLETED",
+      "deliveryTimeSlot": "10-14",
       "createdAt": "2024-01-15T10:30:00.000Z",
       "updatedAt": "2024-01-15T10:30:00.000Z",
-      "address": {
-        "id": 1,
-        "fullName": "John Doe",
-        "phoneNumber": "12345678",
-        "provinceOrDistrict": "Ulaanbaatar",
-        "khorooOrSoum": "Bayangol",
-        "street": "Peace Avenue",
-        "neighborhood": "Downtown",
-        "label": "Home",
-        "isDefault": true
-      },
       "items": [
         {
           "id": 1,
@@ -1246,43 +1103,50 @@ Authorization: Bearer <token>
           "price": "999.99",
           "product": {
             "id": 1,
-            "name": "Laptop",
-            "description": "High-performance laptop",
-            "category": {
-              "id": 1,
-              "name": "Electronics",
-              "description": "Electronic devices"
-            }
+            "name": "iPhone 15"
           }
         }
-      ]
+      ],
+      "address": {
+        "id": 1,
+        "street": "123 Main St",
+        "city": "City",
+        "state": "State",
+        "zipCode": "12345"
+      }
     }
   ]
 }
 ```
 
-**Errors:**
+**Error Responses**:
 - `401` - Authentication required
 
 ---
 
 ### Get Order by ID
 
-Retrieve a specific order by ID. Users can only view their own orders.
+**Method**: `GET` (retrieves specific order - **NO request body**)
 
-**Endpoint:** `GET /api/orders/:id`
+**Endpoint**: `GET /api/orders/:id`
 
-**Authentication:** Required
+**Authentication**: Required (users can only view their own orders)
 
-**Headers:**
+**Path Parameters**:
+- `id` (number): Order ID
+
+**Headers**:
 ```
 Authorization: Bearer <token>
 ```
 
-**Parameters:**
-- `id` (path) - Order ID
+**Example Request**:
+```
+GET /api/orders/1
+Authorization: Bearer <token>
+```
 
-**Response:** `200 OK`
+**Response**: `200 OK`
 ```json
 {
   "success": true,
@@ -1290,23 +1154,10 @@ Authorization: Bearer <token>
   "data": {
     "id": 1,
     "userId": 1,
-    "addressId": 1,
-    "deliveryTimeSlot": "14-18",
     "totalAmount": "1999.98",
     "status": "PENDING",
+    "deliveryTimeSlot": "10-14",
     "createdAt": "2024-01-15T10:30:00.000Z",
-    "updatedAt": "2024-01-15T10:30:00.000Z",
-    "address": {
-      "id": 1,
-      "fullName": "John Doe",
-      "phoneNumber": "12345678",
-      "provinceOrDistrict": "Ulaanbaatar",
-      "khorooOrSoum": "Bayangol",
-      "street": "Peace Avenue",
-      "neighborhood": "Downtown",
-      "label": "Home",
-      "isDefault": true
-    },
     "items": [
       {
         "id": 1,
@@ -1316,65 +1167,68 @@ Authorization: Bearer <token>
         "price": "999.99",
         "product": {
           "id": 1,
-          "name": "Laptop",
-          "description": "High-performance laptop",
-          "category": {
-            "id": 1,
-            "name": "Electronics",
-            "description": "Electronic devices"
-          }
+          "name": "iPhone 15",
+          "images": ["image1.jpg"]
         }
       }
-    ]
+    ],
+    "address": {
+      "id": 1,
+      "street": "123 Main St",
+      "city": "City",
+      "state": "State",
+      "zipCode": "12345"
+    }
   }
 }
 ```
 
-**Errors:**
+**Error Responses**:
 - `401` - Authentication required
-- `403` - Access denied (user trying to view another user's order)
+- `403` - Not authorized to view this order
 - `404` - Order not found
 
 ---
 
 ## Addresses Endpoints
 
-All address endpoints require authentication. Users can only manage their own addresses.
+All address endpoints require authentication.
 
 ### Create Address
 
-Create a new delivery address for the authenticated user.
+**Method**: `POST` (creates new address - **REQUIRES request body**)
 
-**Endpoint:** `POST /api/addresses`
+**Endpoint**: `POST /api/addresses`
 
-**Authentication:** Required
+**Authentication**: Required
 
-**Headers:**
+**Headers**:
 ```
 Authorization: Bearer <token>
 Content-Type: application/json
 ```
 
-**Request Body:**
+**Request Body** (JSON):
 ```json
 {
-  "label": "Home",                              // Optional - Address label (e.g., "Home", "Work")
-  "fullName": "John Doe",                       // Required - Full name (min 2 characters)
-  "phoneNumber": "12345678",                    // Required - Phone number (exactly 8 digits)
-  "provinceOrDistrict": "Ulaanbaatar",          // Required - Province or district (min 2 characters)
-  "khorooOrSoum": "Bayangol",                   // Required - Khoroo or soum (min 2 characters)
-  "street": "Peace Avenue",                     // Optional - Street name
-  "neighborhood": "Downtown",                   // Optional - Neighborhood
-  "residentialComplex": "Green Complex",        // Optional - Residential complex
-  "building": "Building 5",                     // Optional - Building number/name
-  "entrance": "Entrance A",                     // Optional - Entrance
-  "apartmentNumber": "Apt 12B",                 // Optional - Apartment number
-  "addressNote": "Next to the blue gate",       // Optional - Additional notes (max 500 characters)
-  "isDefault": true                             // Optional - Set as default address (boolean)
+  "street": "123 Main Street",
+  "city": "New York",
+  "state": "NY",
+  "zipCode": "10001",
+  "isDefault": false
 }
 ```
 
-**Response:** `201 Created`
+**Required Fields**:
+- `street` (string): Street address
+- `city` (string): City
+- `state` (string): State/Province
+- `zipCode` (string): ZIP/Postal code
+
+**Optional Fields**:
+- `isDefault` (boolean): Set as default address (default: false)
+
+**Response**: `201 Created`
 ```json
 {
   "success": true,
@@ -1382,53 +1236,42 @@ Content-Type: application/json
   "data": {
     "id": 1,
     "userId": 1,
-    "label": "Home",
-    "fullName": "John Doe",
-    "phoneNumber": "12345678",
-    "provinceOrDistrict": "Ulaanbaatar",
-    "khorooOrSoum": "Bayangol",
-    "street": "Peace Avenue",
-    "neighborhood": "Downtown",
-    "residentialComplex": "Green Complex",
-    "building": "Building 5",
-    "entrance": "Entrance A",
-    "apartmentNumber": "Apt 12B",
-    "addressNote": "Next to the blue gate",
-    "isDefault": true,
-    "createdAt": "2024-01-15T10:30:00.000Z",
-    "updatedAt": "2024-01-15T10:30:00.000Z"
+    "street": "123 Main Street",
+    "city": "New York",
+    "state": "NY",
+    "zipCode": "10001",
+    "isDefault": false,
+    "createdAt": "2024-01-15T10:30:00.000Z"
   }
 }
 ```
 
-**Validation Rules:**
-- `fullName`: Required, must be at least 2 characters
-- `phoneNumber`: Required, must be exactly 8 digits
-- `provinceOrDistrict`: Required, must be at least 2 characters
-- `khorooOrSoum`: Required, must be at least 2 characters
-- `addressNote`: Optional, maximum 500 characters if provided
-- `isDefault`: Optional, boolean. If set to `true`, other default addresses will be unset
-
-**Errors:**
+**Error Responses**:
+- `400` - Missing required fields or invalid data
 - `401` - Authentication required
-- `400` - Validation failed
 
 ---
 
-### Get User Addresses
+### Get User's Addresses
 
-Retrieve all addresses for the authenticated user. Addresses are sorted by default status (default first) and creation date (newest first).
+**Method**: `GET` (retrieves all user addresses - **NO request body**)
 
-**Endpoint:** `GET /api/addresses`
+**Endpoint**: `GET /api/addresses`
 
-**Authentication:** Required
+**Authentication**: Required
 
-**Headers:**
+**Headers**:
 ```
 Authorization: Bearer <token>
 ```
 
-**Response:** `200 OK`
+**Example Request**:
+```
+GET /api/addresses
+Authorization: Bearer <token>
+```
+
+**Response**: `200 OK`
 ```json
 {
   "success": true,
@@ -1437,48 +1280,45 @@ Authorization: Bearer <token>
     {
       "id": 1,
       "userId": 1,
-      "label": "Home",
-      "fullName": "John Doe",
-      "phoneNumber": "12345678",
-      "provinceOrDistrict": "Ulaanbaatar",
-      "khorooOrSoum": "Bayangol",
-      "street": "Peace Avenue",
-      "neighborhood": "Downtown",
-      "residentialComplex": "Green Complex",
-      "building": "Building 5",
-      "entrance": "Entrance A",
-      "apartmentNumber": "Apt 12B",
-      "addressNote": "Next to the blue gate",
+      "street": "123 Main Street",
+      "city": "New York",
+      "state": "NY",
+      "zipCode": "10001",
       "isDefault": true,
-      "createdAt": "2024-01-15T10:30:00.000Z",
-      "updatedAt": "2024-01-15T10:30:00.000Z"
+      "createdAt": "2024-01-15T10:30:00.000Z"
     }
   ]
 }
 ```
 
-**Errors:**
+**Error Responses**:
 - `401` - Authentication required
 
 ---
 
 ### Get Address by ID
 
-Retrieve a specific address by ID. Users can only view their own addresses.
+**Method**: `GET` (retrieves single address - **NO request body**)
 
-**Endpoint:** `GET /api/addresses/:id`
+**Endpoint**: `GET /api/addresses/:id`
 
-**Authentication:** Required
+**Authentication**: Required (users can only view their own addresses)
 
-**Headers:**
+**Path Parameters**:
+- `id` (number): Address ID
+
+**Headers**:
 ```
 Authorization: Bearer <token>
 ```
 
-**Parameters:**
-- `id` (path) - Address ID
+**Example Request**:
+```
+GET /api/addresses/1
+Authorization: Bearer <token>
+```
 
-**Response:** `200 OK`
+**Response**: `200 OK`
 ```json
 {
   "success": true,
@@ -1486,69 +1326,59 @@ Authorization: Bearer <token>
   "data": {
     "id": 1,
     "userId": 1,
-    "label": "Home",
-    "fullName": "John Doe",
-    "phoneNumber": "12345678",
-    "provinceOrDistrict": "Ulaanbaatar",
-    "khorooOrSoum": "Bayangol",
-    "street": "Peace Avenue",
-    "neighborhood": "Downtown",
-    "residentialComplex": "Green Complex",
-    "building": "Building 5",
-    "entrance": "Entrance A",
-    "apartmentNumber": "Apt 12B",
-    "addressNote": "Next to the blue gate",
+    "street": "123 Main Street",
+    "city": "New York",
+    "state": "NY",
+    "zipCode": "10001",
     "isDefault": true,
-    "createdAt": "2024-01-15T10:30:00.000Z",
-    "updatedAt": "2024-01-15T10:30:00.000Z"
+    "createdAt": "2024-01-15T10:30:00.000Z"
   }
 }
 ```
 
-**Errors:**
+**Error Responses**:
 - `401` - Authentication required
-- `403` - Access denied (trying to view another user's address)
+- `403` - Not authorized to view this address
 - `404` - Address not found
 
 ---
 
 ### Update Address
 
-Update an existing address. Users can only update their own addresses.
+**Method**: `PUT` (updates address - **REQUIRES request body**)
 
-**Endpoint:** `PUT /api/addresses/:id`
+**Endpoint**: `PUT /api/addresses/:id`
 
-**Authentication:** Required
+**Authentication**: Required (users can only update their own addresses)
 
-**Headers:**
+**Path Parameters**:
+- `id` (number): Address ID
+
+**Headers**:
 ```
 Authorization: Bearer <token>
 Content-Type: application/json
 ```
 
-**Parameters:**
-- `id` (path) - Address ID
-
-**Request Body:** (All fields are optional)
+**Request Body** (JSON):
 ```json
 {
-  "label": "Work",
-  "fullName": "John Doe",
-  "phoneNumber": "87654321",
-  "provinceOrDistrict": "Ulaanbaatar",
-  "khorooOrSoum": "Sukhbaatar",
-  "street": "Main Street",
-  "neighborhood": "Business District",
-  "residentialComplex": null,
-  "building": "Office Building",
-  "entrance": "Main Entrance",
-  "apartmentNumber": "Suite 200",
-  "addressNote": "Call when arrived",
+  "street": "456 New Street",
+  "city": "Los Angeles",
+  "state": "CA",
+  "zipCode": "90001",
   "isDefault": false
 }
 ```
 
-**Response:** `200 OK`
+**All Fields Optional** (only include fields to update):
+- `street` (string): Street address
+- `city` (string): City
+- `state` (string): State/Province
+- `zipCode` (string): ZIP/Postal code
+- `isDefault` (boolean): Set as default address
+
+**Response**: `200 OK`
 ```json
 {
   "success": true,
@@ -1556,420 +1386,352 @@ Content-Type: application/json
   "data": {
     "id": 1,
     "userId": 1,
-    "label": "Work",
-    "fullName": "John Doe",
-    "phoneNumber": "87654321",
-    "provinceOrDistrict": "Ulaanbaatar",
-    "khorooOrSoum": "Sukhbaatar",
-    "street": "Main Street",
-    "neighborhood": "Business District",
-    "residentialComplex": null,
-    "building": "Office Building",
-    "entrance": "Main Entrance",
-    "apartmentNumber": "Suite 200",
-    "addressNote": "Call when arrived",
+    "street": "456 New Street",
+    "city": "Los Angeles",
+    "state": "CA",
+    "zipCode": "90001",
     "isDefault": false,
-    "createdAt": "2024-01-15T10:30:00.000Z",
-    "updatedAt": "2024-01-15T11:00:00.000Z"
+    "updatedAt": "2024-01-15T11:30:00.000Z"
   }
 }
 ```
 
-**Errors:**
+**Error Responses**:
+- `400` - Invalid data
 - `401` - Authentication required
-- `403` - Access denied (trying to update another user's address)
+- `403` - Not authorized to update this address
 - `404` - Address not found
-- `400` - Validation failed
 
 ---
 
 ### Delete Address
 
-Delete an address. Users can only delete their own addresses. Addresses that are used in existing orders cannot be deleted.
+**Method**: `DELETE` (deletes address - **NO request body**)
 
-**Endpoint:** `DELETE /api/addresses/:id`
+**Endpoint**: `DELETE /api/addresses/:id`
 
-**Authentication:** Required
+**Authentication**: Required (users can only delete their own addresses)
 
-**Headers:**
+**Path Parameters**:
+- `id` (number): Address ID
+
+**Headers**:
 ```
 Authorization: Bearer <token>
 ```
 
-**Parameters:**
-- `id` (path) - Address ID
+**Example Request**:
+```
+DELETE /api/addresses/1
+Authorization: Bearer <token>
+```
 
-**Response:** `200 OK`
+**Response**: `200 OK`
 ```json
 {
   "success": true,
   "message": "Address deleted successfully",
-  "data": {
-    "id": 1,
-    "userId": 1,
-    "label": "Home",
-    "fullName": "John Doe",
-    "phoneNumber": "12345678",
-    "provinceOrDistrict": "Ulaanbaatar",
-    "khorooOrSoum": "Bayangol",
-    "isDefault": true,
-    "createdAt": "2024-01-15T10:30:00.000Z",
-    "updatedAt": "2024-01-15T10:30:00.000Z"
-  }
+  "data": null
 }
 ```
 
-**Errors:**
+**Error Responses**:
 - `401` - Authentication required
-- `403` - Access denied (trying to delete another user's address)
+- `403` - Not authorized to delete this address
 - `404` - Address not found
-- `400` - Cannot delete address that is used in existing orders
 
 ---
 
 ### Set Default Address
 
-Set an address as the default address for the user. This will automatically unset other default addresses.
+**Method**: `PATCH` (sets address as default - **NO request body needed, but can include empty body**)
 
-**Endpoint:** `PATCH /api/addresses/:id/set-default`
+**Endpoint**: `PATCH /api/addresses/:id/set-default`
 
-**Authentication:** Required
+**Authentication**: Required (users can only set their own addresses as default)
 
-**Headers:**
+**Path Parameters**:
+- `id` (number): Address ID to set as default
+
+**Headers**:
 ```
 Authorization: Bearer <token>
 ```
 
-**Parameters:**
-- `id` (path) - Address ID
+**Example Request**:
+```
+PATCH /api/addresses/1/set-default
+Authorization: Bearer <token>
+```
 
-**Response:** `200 OK`
+**Response**: `200 OK`
 ```json
 {
   "success": true,
-  "message": "Default address updated successfully",
+  "message": "Default address set successfully",
   "data": {
     "id": 1,
     "userId": 1,
-    "label": "Home",
-    "fullName": "John Doe",
-    "phoneNumber": "12345678",
-    "provinceOrDistrict": "Ulaanbaatar",
-    "khorooOrSoum": "Bayangol",
+    "street": "123 Main Street",
+    "city": "New York",
+    "state": "NY",
+    "zipCode": "10001",
     "isDefault": true,
-    "createdAt": "2024-01-15T10:30:00.000Z",
-    "updatedAt": "2024-01-15T11:00:00.000Z"
+    "updatedAt": "2024-01-15T11:30:00.000Z"
   }
 }
 ```
 
-**Errors:**
+**Error Responses**:
 - `401` - Authentication required
-- `403` - Access denied (trying to set another user's address as default)
+- `403` - Not authorized
 - `404` - Address not found
 
 ---
 
-## Data Models
+## Favorites Endpoints
 
-### User
-```typescript
+All favorites endpoints require authentication.
+
+### Get User's Favorites
+
+**Method**: `GET` (retrieves all favorite products - **NO request body**)
+
+**Endpoint**: `GET /api/favorites`
+
+**Authentication**: Required
+
+**Headers**:
+```
+Authorization: Bearer <token>
+```
+
+**Example Request**:
+```
+GET /api/favorites
+Authorization: Bearer <token>
+```
+
+**Response**: `200 OK`
+```json
 {
-  id: number;
-  phoneNumber: string;  // 8 digits, unique
-  name: string;
-  role: "USER" | "ADMIN";
-  createdAt: string;    // ISO 8601 date
-  updatedAt: string;    // ISO 8601 date
+  "success": true,
+  "message": "Favorites retrieved successfully",
+  "data": [
+    {
+      "id": 1,
+      "userId": 1,
+      "productId": 1,
+      "product": {
+        "id": 1,
+        "name": "iPhone 15",
+        "price": "999.99",
+        "discount": "10.00",
+        "images": ["image1.jpg"],
+        "stock": 50
+      },
+      "createdAt": "2024-01-15T10:30:00.000Z"
+    }
+  ]
 }
 ```
 
-### Category
-```typescript
-{
-  id: number;
-  name: string;         // Unique
-  description: string | null;
-  createdAt: string;    // ISO 8601 date
-  updatedAt: string;    // ISO 8601 date
-}
-```
-
-### Product
-```typescript
-{
-  id: number;
-  name: string;
-  description: string;
-  price: string;             // Decimal as string (e.g., "999.99") - current selling price
-  originalPrice: string | null; // Original price before discount (null if no discount)
-  images: string[];          // Array of image URLs
-  firstImage: string | null; // First image URL for easy access
-  hasDiscount: boolean;      // Whether product has a discount
-  discountAmount: string | null; // Discount amount saved
-  discountPercentage: number | null; // Discount percentage (0-100)
-  isFavorite?: boolean;      // Whether product is favorited (only if authenticated)
-  stock: number;             // Integer, >= 0
-  categories: Category[];    // Array of categories this product belongs to
-  categoryId: number | null; // First category ID (for backward compatibility)
-  category?: Category;       // First category object (for backward compatibility)
-  createdAt: string;         // ISO 8601 date
-  updatedAt: string;         // ISO 8601 date
-}
-```
-
-### CartItem
-```typescript
-{
-  id: number;
-  userId: number;
-  productId: number;
-  quantity: number;
-  createdAt: string;    // ISO 8601 date
-  updatedAt: string;    // ISO 8601 date
-  product?: Product;    // Included in responses
-}
-```
-
-### Address
-```typescript
-{
-  id: number;
-  userId: number;
-  label: string | null;
-  fullName: string;
-  phoneNumber: string;        // 8 digits
-  provinceOrDistrict: string;
-  khorooOrSoum: string;
-  street: string | null;
-  neighborhood: string | null;
-  residentialComplex: string | null;
-  building: string | null;
-  entrance: string | null;
-  apartmentNumber: string | null;
-  addressNote: string | null; // Max 500 characters
-  isDefault: boolean;
-  createdAt: string;          // ISO 8601 date
-  updatedAt: string;          // ISO 8601 date
-}
-```
-
-### Order
-```typescript
-{
-  id: number;
-  userId: number;
-  addressId: number | null;
-  deliveryTimeSlot: string | null; // "10-14" | "14-18" | "18-21" | "21-00" | null
-  totalAmount: string;        // Decimal as string
-  status: string;             // Default: "PENDING" (can be "PENDING", "COMPLETED", "CANCELLED", etc.)
-  createdAt: string;          // ISO 8601 date
-  updatedAt: string;          // ISO 8601 date
-  items?: OrderItem[];        // Included in responses
-  address?: Address;          // Included in order responses
-}
-```
-
-### OrderItem
-```typescript
-{
-  id: number;
-  orderId: number;
-  productId: number;
-  quantity: number;
-  price: string;             // Decimal as string (snapshot price at time of order)
-  createdAt: string;         // ISO 8601 date
-  updatedAt: string;         // ISO 8601 date
-  product?: Product;         // Included in responses
-  product?.category?: Category; // Included in order item product
-}
-```
+**Error Responses**:
+- `401` - Authentication required
 
 ---
 
-## Examples
+### Check Favorite Status
 
-### Complete Authentication Flow
+**Method**: `GET` (checks if product is favorited - **NO request body**)
 
-```javascript
-// 1. Register
-const registerResponse = await fetch('http://localhost:3000/api/auth/register', {
-  method: 'POST',
-  headers: {
-    'Content-Type': 'application/json',
-  },
-  body: JSON.stringify({
-    phoneNumber: '12345678',
-    pin: '1234',
-    name: 'John Doe'
-  })
-});
+**Endpoint**: `GET /api/favorites/:productId/status`
 
-const { data } = await registerResponse.json();
-const token = data.token; // Save this token!
+**Authentication**: Required
 
-// 2. Use token for authenticated requests
-const productsResponse = await fetch('http://localhost:3000/api/products', {
-  headers: {
-    'Authorization': `Bearer ${token}`
+**Path Parameters**:
+- `productId` (number): Product ID to check
+
+**Headers**:
+```
+Authorization: Bearer <token>
+```
+
+**Example Request**:
+```
+GET /api/favorites/1/status
+Authorization: Bearer <token>
+```
+
+**Response**: `200 OK`
+```json
+{
+  "success": true,
+  "message": "Favorite status retrieved successfully",
+  "data": {
+    "productId": 1,
+    "isFavorite": true,
+    "favoriteId": 1
   }
-});
+}
 ```
 
-### Adding Item to Cart
+**Error Responses**:
+- `401` - Authentication required
+- `404` - Product not found
 
-```javascript
-const addToCartResponse = await fetch('http://localhost:3000/api/cart', {
-  method: 'POST',
-  headers: {
-    'Content-Type': 'application/json',
-    'Authorization': `Bearer ${token}`
-  },
-  body: JSON.stringify({
-    productId: 1,
-    quantity: 2
-  })
-});
+---
 
-const result = await addToCartResponse.json();
+### Add to Favorites
+
+**Method**: `POST` (adds product to favorites - **REQUIRES request body**)
+
+**Endpoint**: `POST /api/favorites`
+
+**Authentication**: Required
+
+**Headers**:
+```
+Authorization: Bearer <token>
+Content-Type: application/json
 ```
 
-### Creating an Order
-
-```javascript
-const createOrderResponse = await fetch('http://localhost:3000/api/orders', {
-  method: 'POST',
-  headers: {
-    'Content-Type': 'application/json',
-    'Authorization': `Bearer ${token}`
-  },
-  body: JSON.stringify({
-    addressId: 1,
-    deliveryTimeSlot: '14-18' // Optional: "10-14", "14-18", "18-21", "21-00"
-  })
-});
-
-const order = await createOrderResponse.json();
-console.log('Order created:', order.data.id);
+**Request Body** (JSON):
+```json
+{
+  "productId": 1
+}
 ```
 
-### Managing Addresses
+**Required Fields**:
+- `productId` (number): Product ID to add to favorites
 
-```javascript
-// Create a new address
-const createAddressResponse = await fetch('http://localhost:3000/api/addresses', {
-  method: 'POST',
-  headers: {
-    'Content-Type': 'application/json',
-    'Authorization': `Bearer ${token}`
-  },
-  body: JSON.stringify({
-    label: 'Home',
-    fullName: 'John Doe',
-    phoneNumber: '12345678',
-    provinceOrDistrict: 'Ulaanbaatar',
-    khorooOrSoum: 'Bayangol',
-    street: 'Peace Avenue',
-    apartmentNumber: 'Apt 12B',
-    isDefault: true
-  })
-});
-
-// Get all addresses
-const addressesResponse = await fetch('http://localhost:3000/api/addresses', {
-  headers: {
-    'Authorization': `Bearer ${token}`
+**Response**: `201 Created`
+```json
+{
+  "success": true,
+  "message": "Product added to favorites successfully",
+  "data": {
+    "id": 1,
+    "userId": 1,
+    "productId": 1,
+    "product": {
+      "id": 1,
+      "name": "iPhone 15",
+      "price": "999.99",
+      "images": ["image1.jpg"]
+    },
+    "createdAt": "2024-01-15T10:30:00.000Z"
   }
-});
-
-// Set default address
-const setDefaultResponse = await fetch('http://localhost:3000/api/addresses/1/set-default', {
-  method: 'PATCH',
-  headers: {
-    'Authorization': `Bearer ${token}`
-  }
-});
+}
 ```
 
-### Fetching Products with Filters
+**Error Responses**:
+- `400` - Missing productId or product already in favorites
+- `401` - Authentication required
+- `404` - Product not found
 
-```javascript
-// Get products in category 1 that are in stock
-const url = new URL('http://localhost:3000/api/products');
-url.searchParams.append('categoryId', '1');
-url.searchParams.append('inStock', 'true');
-url.searchParams.append('search', 'laptop');
+---
 
-const productsResponse = await fetch(url, {
-  headers: {
-    'Authorization': `Bearer ${token}`
-  }
-});
+### Remove from Favorites
 
-const products = await productsResponse.json();
+**Method**: `DELETE` (removes product from favorites - **NO request body**)
+
+**Endpoint**: `DELETE /api/favorites/:productId`
+
+**Authentication**: Required
+
+**Path Parameters**:
+- `productId` (number): Product ID to remove from favorites
+
+**Headers**:
+```
+Authorization: Bearer <token>
 ```
 
-### Error Handling Example
+**Example Request**:
+```
+DELETE /api/favorites/1
+Authorization: Bearer <token>
+```
+
+**Response**: `200 OK`
+```json
+{
+  "success": true,
+  "message": "Product removed from favorites successfully",
+  "data": null
+}
+```
+
+**Error Responses**:
+- `401` - Authentication required
+- `404` - Favorite not found
+
+---
+
+## Summary: GET vs POST Quick Reference
+
+### When to Use GET
+- ✅ Fetching data (products, categories, cart, orders)
+- ✅ Viewing resources (single product, order details)
+- ✅ Checking status (favorite status)
+- ❌ **Never send a request body with GET**
+
+### When to Use POST
+- ✅ Creating new resources (register, add to cart, create order)
+- ✅ Performing actions (login, password reset)
+- ✅ Submitting forms
+- ✅ **Always include JSON body with POST**
+
+### Example JavaScript Usage
 
 ```javascript
-try {
-  const response = await fetch('http://localhost:3000/api/products/999', {
+// ✅ GET Request - No body
+const getProducts = async () => {
+  const response = await fetch('http://localhost:3000/api/products?page=1', {
+    method: 'GET',
     headers: {
       'Authorization': `Bearer ${token}`
     }
   });
+  return response.json();
+};
 
-  const result = await response.json();
-
-  if (!result.success) {
-    console.error('Error:', result.error.message);
-    console.error('Error code:', result.error.code);
-    
-    if (result.error.details) {
-      console.error('Details:', result.error.details);
-    }
-  } else {
-    console.log('Product:', result.data);
-  }
-} catch (error) {
-  console.error('Network error:', error);
-}
+// ✅ POST Request - With body
+const addToCart = async (productId, quantity) => {
+  const response = await fetch('http://localhost:3000/api/cart', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`
+    },
+    body: JSON.stringify({
+      productId: productId,
+      quantity: quantity
+    })
+  });
+  return response.json();
+};
 ```
 
 ---
 
-## Important Notes
+## Notes for Frontend Development
 
-1. **Token Storage**: Store the JWT token securely (e.g., in localStorage, sessionStorage, or secure cookies). Include it in the `Authorization` header for all protected endpoints.
-
-2. **Price Format**: Prices are returned as strings to preserve decimal precision. When displaying, you may need to parse them: `parseFloat(price)`.
-
-3. **Stock Management**: The API automatically manages stock when orders are created. If a product's stock is insufficient, the order will fail.
-
-4. **Cart Behavior**: When adding a product that already exists in the cart, the quantity will be updated (not duplicated).
-
-5. **Order Status**: Orders are created with status "PENDING" by default.
-
-6. **Address Management**: Users can have multiple addresses. Only one address can be set as default at a time. Addresses used in orders cannot be deleted.
-
-7. **Delivery Time Slots**: Valid time slots are `"10-14"`, `"14-18"`, `"18-21"`, and `"21-00"`. Time slots are optional when creating orders.
-
-8. **CORS**: The API has CORS enabled. Make sure your frontend origin is allowed in the backend configuration.
-
-7. **Rate Limiting**: Currently, there is no rate limiting implemented. Consider implementing client-side throttling if needed.
-
-8. **Phone Number Format**: Phone numbers must be exactly 8 digits (no spaces, dashes, or other characters).
-
-9. **PIN Format**: PINs must be exactly 4 digits.
-
-10. **Address Requirements**: When creating an order, an `addressId` is required. The address must belong to the authenticated user.
+1. **Token Management**: Store JWT token securely (e.g., localStorage, httpOnly cookie)
+2. **Error Handling**: Always check `success` field in responses and handle errors appropriately
+3. **Loading States**: Show loading indicators during API calls
+4. **Validation**: Implement client-side validation before API calls
+5. **Content-Type Header**: Always include `Content-Type: application/json` for POST/PUT/PATCH requests
+6. **Price Formatting**: Prices are returned as strings, format them for display
+7. **Date Formatting**: All dates are ISO 8601 strings, format them for display
+8. **Delivery Time Slots**: Format time slots for display (e.g., "10:00 - 14:00" instead of "10-14")
+9. **Address Display**: Show full delivery address in order details, handle null/optional fields gracefully
+10. **Category Hierarchy**: Categories may have nested subcategories in the `children` field
+11. **Guest Checkout**: Use `buy-now` endpoint for guest checkout, then `finalize` after authentication
+12. **Pagination**: Use `page` and `limit` query parameters for paginated endpoints
 
 ---
 
-## Support
-
-For questions or issues, please contact the backend development team or refer to the source code.
-
-**API Version:** 1.0.0  
-**Last Updated:** 2025-01-08
-
+**Last Updated**: 2024-01-15

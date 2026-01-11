@@ -24,32 +24,26 @@ class OrderController {
     }
 
     /**
-     * Buy now - Create draft order (no auth required) or real order (if authenticated)
+     * Buy now - Create draft order (works for both authenticated and guest users)
      * POST /api/orders/buy-now
      */
     async buyNow(req, res, next) {
         try {
             const { productId, quantity, sessionToken } = req.body;
             
-            // If user is authenticated, create real order directly (existing behavior)
-            if (req.user && req.user.id) {
-                const { addressId, deliveryTimeSlot } = req.body;
-                const order = await orderService.buyNow(req.user.id, productId, quantity, addressId, deliveryTimeSlot);
-                return res.status(201).json({
-                    success: true,
-                    message: 'Order created successfully',
-                    data: order
-                });
-            }
-
-            // Guest checkout - create draft order
+            // Validate required fields
             if (!productId || !quantity) {
                 const error = new Error('Product ID and quantity are required');
                 error.statusCode = 400;
                 throw error;
             }
 
+            // Create draft order (works for both authenticated and guest users)
             const draftOrder = await draftOrderService.createDraftOrder(productId, quantity, sessionToken);
+
+            // Determine if authentication is required
+            // If user is not authenticated, they'll need to authenticate to finalize
+            const requiresAuth = !req.user || !req.user.id;
 
             res.status(201).json({
                 success: true,
@@ -57,7 +51,7 @@ class OrderController {
                 data: {
                     draftOrder,
                     sessionToken: draftOrder.sessionToken,
-                    requiresAuth: true,
+                    requiresAuth: requiresAuth,
                     nextStep: 'finalize-order'
                 }
             });

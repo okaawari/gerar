@@ -4,6 +4,11 @@ const { PrismaMariaDb } = require("@prisma/adapter-mariadb");
 
 // Parse DATABASE_URL: mysql://user:password@host:port/database
 const dbUrl = process.env.DATABASE_URL;
+
+if (!dbUrl) {
+  throw new Error('DATABASE_URL environment variable is not set');
+}
+
 const urlMatch = dbUrl.match(/^mysql:\/\/([^:]+):([^@]*)@([^:]+):(\d+)\/(.+)$/);
 
 if (!urlMatch) {
