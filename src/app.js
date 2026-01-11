@@ -1,22 +1,51 @@
+// Load environment variables FIRST - before anything else
+require('dotenv').config();
+
 const express = require('express');
 const cors = require('cors');
-const dotenv = require('dotenv');
 const errorHandler = require('./middleware/errorMiddleware');
 const { handleJsonErrors } = require('./middleware/validation');
-const authRoutes = require('./routes/authRoutes');
-const categoryRoutes = require('./routes/categoryRoutes');
-const productRoutes = require('./routes/productRoutes');
-const cartRoutes = require('./routes/cartRoutes');
-const orderRoutes = require('./routes/orderRoutes');
-const addressRoutes = require('./routes/addressRoutes');
-const favoriteRoutes = require('./routes/favoriteRoutes');
-const adminRoutes = require('./routes/admin');
 const { notFoundHandler } = require('./middleware/errorMiddleware');
 
-// Load environment variables
-dotenv.config();
-
 const app = express();
+
+// Log that app is being created
+process.stderr.write('\n📦 Creating Express app...\n');
+
+// Load routes AFTER app creation - load individually with error handling
+const createErrorRouter = (errorMsg) => {
+    const express = require('express');
+    const router = express.Router();
+    router.all('*', (req, res) => {
+        res.status(500).json({
+            success: false,
+            message: 'Route not available',
+            error: errorMsg
+        });
+    });
+    return router;
+};
+
+let authRoutes, categoryRoutes, productRoutes, cartRoutes, orderRoutes, addressRoutes, favoriteRoutes, adminRoutes;
+
+// Load each route individually - if one fails, others still work
+const loadRoute = (path, name) => {
+    try {
+        return require(path);
+    } catch (error) {
+        process.stderr.write(`❌ Failed to load ${name}: ${error.message}\n`);
+        return createErrorRouter(`Route ${name} failed to load: ${error.message}`);
+    }
+};
+
+authRoutes = loadRoute('./routes/authRoutes', 'authRoutes');
+categoryRoutes = loadRoute('./routes/categoryRoutes', 'categoryRoutes');
+productRoutes = loadRoute('./routes/productRoutes', 'productRoutes');
+cartRoutes = loadRoute('./routes/cartRoutes', 'cartRoutes');
+orderRoutes = loadRoute('./routes/orderRoutes', 'orderRoutes');
+addressRoutes = loadRoute('./routes/addressRoutes', 'addressRoutes');
+favoriteRoutes = loadRoute('./routes/favoriteRoutes', 'favoriteRoutes');
+adminRoutes = loadRoute('./routes/admin', 'adminRoutes');
 
 // Add request logging to see if requests are reaching the app
 app.use((req, res, next) => {

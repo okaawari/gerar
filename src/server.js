@@ -1,40 +1,15 @@
-// Log startup information immediately - use stderr for Passenger
-process.stderr.write('\n🚀 Starting server.js...\n');
-process.stderr.write('📁 Working directory: ' + process.cwd() + '\n');
-process.stderr.write('🔧 Node version: ' + process.version + '\n');
-
-require('dotenv').config();
-
-console.log('📦 Environment variables loaded');
-console.log('🔐 NODE_ENV:', process.env.NODE_ENV || 'not set');
-
-const { connectDatabase, disconnectDatabase } = require('./config/database');
-
-console.log('✅ Database module loaded');
-
-// Import app synchronously - must not block
+// Load app.js FIRST - before anything else
+// Passenger needs the app exported immediately
 let app;
 try {
-    process.stderr.write('\n📦 Loading app.js...\n');
     app = require('./app');
-    process.stderr.write('✅ app.js loaded successfully\n');
     
-    // Test if app is actually an Express app
+    // Validate it's an Express app
     if (!app || typeof app.use !== 'function') {
         throw new Error('app.js did not export a valid Express app');
     }
-    process.stderr.write('✅ Express app is valid\n');
 } catch (error) {
-    // Write to stderr so Passenger captures it
-    process.stderr.write('\n❌ FAILED TO LOAD app.js\n');
-    process.stderr.write('Error: ' + (error.message || 'Unknown error') + '\n');
-    if (error.stack) {
-        process.stderr.write('Stack: ' + error.stack + '\n');
-    }
-    process.stderr.write('\n');
-    
-    console.error('❌ Failed to load app.js:', error);
-    // Create a minimal error app
+    // If app.js fails, create minimal error app
     const express = require('express');
     app = express();
     app.get('*', (req, res) => {
@@ -44,42 +19,37 @@ try {
             error: error.message
         });
     });
-    process.stderr.write('⚠️ Created minimal error app\n');
 }
 
+// Export app IMMEDIATELY - Passenger needs this right away
+module.exports = app;
+
+// Everything below runs AFTER Passenger gets the app
+// Load environment and database config in background
+require('dotenv').config();
+
+const { connectDatabase, disconnectDatabase } = require('./config/database');
 const PORT = process.env.PORT || 3000;
 const NODE_ENV = process.env.NODE_ENV || 'development';
 
 // Connect to database on startup - NON-BLOCKING for Passenger
-// Don't await - let it connect in background
 setImmediate(async () => {
     try {
         process.stderr.write('\n🔄 Attempting database connection (background)...\n');
         await connectDatabase();
         process.stderr.write('✅ Database connected\n');
     } catch (error) {
-        // Write to stderr so Passenger captures it
         process.stderr.write('\n❌ DATABASE CONNECTION FAILED (async)\n');
         process.stderr.write('Error: ' + (error.message || 'Unknown error') + '\n');
         if (error.stack) {
             process.stderr.write('Stack: ' + error.stack + '\n');
         }
         process.stderr.write('\n');
-        
-        console.error('❌ Database connection failed:', error);
-        // Don't exit - let the app start anyway (for Passenger)
     }
 });
 
 // Check if running under Passenger
 const isPassenger = process.env.PASSENGER_APP_ENV || process.env.PASSENGER_APP_ROOT;
-console.log('🚌 Running under Passenger:', !!isPassenger);
-if (isPassenger) {
-    console.log('📋 Passenger env vars:', {
-        PASSENGER_APP_ENV: process.env.PASSENGER_APP_ENV,
-        PASSENGER_APP_ROOT: process.env.PASSENGER_APP_ROOT
-    });
-}
 
 if (!isPassenger) {
     // Standalone mode - start HTTP server
@@ -98,7 +68,6 @@ if (!isPassenger) {
                 console.log('='.repeat(50));
             });
 
-            // Graceful shutdown handler
             const gracefulShutdown = async (signal) => {
                 console.log(`\n${signal} received. Starting graceful shutdown...`);
                 
@@ -131,42 +100,28 @@ if (!isPassenger) {
     };
 
     startServer();
-} else {
-    // Passenger mode - just export the app, Passenger handles HTTP server
-    console.log('✅ Running under Passenger');
-    console.log(`📦 Environment: ${NODE_ENV}`);
 }
 
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (err) => {
     process.stderr.write('\n💥 UNHANDLED REJECTION!\n');
     process.stderr.write('Error: ' + (err.message || 'Unknown') + '\n');
-    process.stderr.write('Name: ' + (err.name || 'Error') + '\n');
     if (err.stack) {
         process.stderr.write('Stack: ' + err.stack + '\n');
     }
-    process.stderr.write('\n');
-    
-    console.error('UNHANDLED REJECTION! 💥', err);
 });
 
 // Handle uncaught exceptions
 process.on('uncaughtException', async (err) => {
     process.stderr.write('\n💥 UNCAUGHT EXCEPTION!\n');
     process.stderr.write('Error: ' + (err.message || 'Unknown') + '\n');
-    process.stderr.write('Name: ' + (err.name || 'Error') + '\n');
     if (err.stack) {
         process.stderr.write('Stack: ' + err.stack + '\n');
     }
-    process.stderr.write('\n');
-    
-    console.error('UNCAUGHT EXCEPTION! 💥', err);
-    await disconnectDatabase();
+    try {
+        await disconnectDatabase();
+    } catch (e) {
+        // Ignore disconnect errors
+    }
     process.exit(1);
 });
-
-// Log that we're exporting app
-process.stderr.write('\n✅ Exporting app for Passenger\n');
-
-// Export app for Passenger - MUST be synchronous, no async operations
-module.exports = app;
