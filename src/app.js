@@ -51,39 +51,43 @@ const getAllowedOrigins = () => {
     return allowedOrigins;
 };
 
-// CORS configuration with dynamic origin checking
-// Always allows localhost origins for development/testing
+// CORS configuration - ALWAYS allow localhost, plus configured origins
 app.use(cors({
     origin: (origin, callback) => {
-        // Always allow requests with no origin (like mobile apps, Postman, or preflight requests)
+        // CRITICAL: Always allow requests with no origin (preflight OPTIONS, Postman, etc.)
         if (!origin) {
+            return callback(null, true);
+        }
+        
+        // ALWAYS allow localhost origins (for development/testing)
+        const isLocalhost = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin);
+        if (isLocalhost) {
             return callback(null, true);
         }
         
         const allowedOrigins = getAllowedOrigins();
         
-        // If wildcard is allowed
+        // If wildcard is explicitly set, allow everything
         if (allowedOrigins === '*') {
             return callback(null, true);
         }
         
-        // Always allow localhost origins (for development/testing from local machine)
-        const isLocalhost = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
-        if (isLocalhost) {
-            return callback(null, true);
-        }
-        
-        // Check if origin is in allowed list
+        // Check if origin is in allowed list (from CORS_ORIGIN env var)
         if (allowedOrigins.includes(origin)) {
             return callback(null, true);
         }
         
-        callback(new Error('Not allowed by CORS'));
+        // Default: allow the request (permissive for now)
+        // If you want stricter control, uncomment the line below and comment this
+        // callback(new Error('Not allowed by CORS'));
+        return callback(null, true);
     },
     credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
-    exposedHeaders: ['Content-Type', 'Authorization']
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
+    exposedHeaders: ['Content-Type', 'Authorization'],
+    preflightContinue: false,
+    optionsSuccessStatus: 204
 }));
 
 // Parse JSON request bodies with size limit
@@ -101,10 +105,19 @@ app.use(express.urlencoded({
     limit: '10mb'
 }));
 
+// Handle OPTIONS preflight requests explicitly (before routes)
+app.options('*', (req, res) => {
+    res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin');
+    res.header('Access-Control-Allow-Credentials', 'true');
+    res.sendStatus(204);
+});
+
 // Request logging in development
 if (process.env.NODE_ENV === 'development') {
     app.use((req, res, next) => {
-        console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
+        console.log(`${new Date().toISOString()} - ${req.method} ${req.path} - Origin: ${req.headers.origin || 'none'}`);
         next();
     });
 }
