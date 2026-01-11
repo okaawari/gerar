@@ -127,6 +127,32 @@ app.use('/api/favorites', favoriteRoutes);
 // Admin API routes (requires authentication and admin role)
 app.use('/api/admin', adminRoutes);
 
+// Handle cPanel/server error page requests
+// These are typically triggered by server-level restrictions or mod_security
+app.use((req, res, next) => {
+    const errorPages = ['/403.shtml', '/404.shtml', '/500.shtml', '/401.shtml'];
+    if (errorPages.includes(req.path)) {
+        // Extract the intended status code from the path
+        const statusMatch = req.path.match(/(\d{3})\.shtml/);
+        const statusCode = statusMatch ? parseInt(statusMatch[1], 10) : 403;
+        
+        return res.status(statusCode).json({
+            success: false,
+            message: `Server error: ${statusCode}`,
+            error: {
+                code: 'SERVER_ERROR',
+                message: statusCode === 403 
+                    ? 'Access forbidden. This may be due to server-level restrictions.'
+                    : statusCode === 404
+                    ? 'Resource not found'
+                    : 'Internal server error'
+            },
+            timestamp: new Date().toISOString()
+        });
+    }
+    next();
+});
+
 // Handle 404 errors for undefined routes
 app.use(notFoundHandler);
 
