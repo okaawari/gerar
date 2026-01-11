@@ -1,7 +1,28 @@
-# .htaccess for cPanel Node.js Application
-# This file helps with mod_security and routing issues
+# DO NOT REMOVE. CLOUDLINUX PASSENGER CONFIGURATION BEGIN
+PassengerAppRoot "/home/gerarmn/api.gerar.mn"
+PassengerBaseURI "/"
+PassengerNodejs "/home/gerarmn/nodevenv/api.gerar.mn/22/bin/node"
+PassengerAppType node
+PassengerStartupFile /home/gerarmn/api.gerar.mn/src/server.js
+# DO NOT REMOVE. CLOUDLINUX PASSENGER CONFIGURATION END
 
-# Allow PUT, PATCH, DELETE methods
+# php -- BEGIN cPanel-generated handler, do not edit
+# Set the "ea-php81" package as the default "PHP" programming language.
+<IfModule mime_module>
+  AddHandler application/x-httpd-ea-php81 .php .php8 .phtml
+</IfModule>
+# php -- END cPanel-generated handler, do not edit
+
+# DO NOT REMOVE OR MODIFY. CLOUDLINUX ENV VARS CONFIGURATION BEGIN
+<IfModule Litespeed>
+</IfModule>
+# DO NOT REMOVE OR MODIFY. CLOUDLINUX ENV VARS CONFIGURATION END
+
+# ============================================
+# ADDITIONAL CONFIGURATION FOR API
+# ============================================
+
+# Allow PUT, PATCH, DELETE methods (for mod_security compatibility)
 <Limit PUT PATCH DELETE>
     Require all granted
 </Limit>
@@ -10,32 +31,32 @@
 # Uncomment these lines if mod_security is blocking legitimate API requests
 # <IfModule mod_security.c>
 #     SecRuleRemoveById 300015 300016 300017
+#     # Or disable entirely for this directory (use with caution):
+#     # SecFilterEngine Off
+#     # SecFilterScanPOST Off
 # </IfModule>
-
-# Rewrite rules for Node.js app
-# If your Node.js app is behind Apache, ensure requests reach Node.js
-<IfModule mod_rewrite.c>
-    RewriteEngine On
-    
-    # Don't rewrite requests for static files that exist
-    RewriteCond %{REQUEST_FILENAME} !-f
-    RewriteCond %{REQUEST_FILENAME} !-d
-    
-    # Don't rewrite error pages
-    RewriteCond %{REQUEST_URI} !^/403\.shtml$
-    RewriteCond %{REQUEST_URI} !^/404\.shtml$
-    RewriteCond %{REQUEST_URI} !^/500\.shtml$
-    
-    # Proxy all other requests to Node.js app (if using proxy)
-    # Uncomment if you're using Apache as reverse proxy to Node.js
-    # RewriteRule ^(.*)$ http://localhost:3000/$1 [P,L]
-</IfModule>
 
 # Enable CORS for API endpoints (additional layer)
 <IfModule mod_headers.c>
-    # Allow requests from any origin (adjust as needed)
+    # Allow requests from any origin (adjust as needed for production)
     Header set Access-Control-Allow-Origin "*"
     Header set Access-Control-Allow-Methods "GET, POST, PUT, PATCH, DELETE, OPTIONS"
     Header set Access-Control-Allow-Headers "Content-Type, Authorization"
     Header set Access-Control-Allow-Credentials "true"
+    
+    # Handle preflight OPTIONS requests
+    <IfModule mod_rewrite.c>
+        RewriteEngine On
+        RewriteCond %{REQUEST_METHOD} OPTIONS
+        RewriteRule ^(.*)$ $1 [R=200,L]
+    </IfModule>
 </IfModule>
+
+# Don't interfere with Passenger routing
+# Passenger handles all routing to the Node.js application
+# The rewrite rules below are commented out since Passenger manages this
+# <IfModule mod_rewrite.c>
+#     RewriteEngine On
+#     RewriteCond %{REQUEST_FILENAME} !-f
+#     RewriteCond %{REQUEST_FILENAME} !-d
+# </IfModule>
