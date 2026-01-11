@@ -27,13 +27,31 @@ PassengerStartupFile /home/gerarmn/api.gerar.mn/src/server.js
     Require all granted
 </Limit>
 
-# Disable mod_security for API routes (if needed)
-# Uncomment these lines if mod_security is blocking legitimate API requests
-# <IfModule mod_security.c>
-#     SecRuleRemoveById 300015 300016 300017
-#     # Or disable entirely for this directory (use with caution):
-#     # SecFilterEngine Off
-#     # SecFilterScanPOST Off
+# Disable mod_security for API routes
+# This is necessary because mod_security blocks PUT/PATCH/DELETE requests before they reach Node.js
+# Try multiple approaches as different hosting providers use different mod_security versions
+
+# Approach 1: Disable mod_security entirely for this directory (mod_security v1)
+<IfModule mod_security.c>
+    SecFilterEngine Off
+    SecFilterScanPOST Off
+    SecFilterScanGET Off
+</IfModule>
+
+# Approach 2: Disable mod_security v2/v3 (CloudLinux/WHM/cPanel)
+<IfModule mod_security2.c>
+    SecRuleEngine Off
+</IfModule>
+
+# Approach 3: Remove specific rules that commonly block API methods
+# Common rule IDs that block PUT/PATCH/DELETE: 300015, 300016, 300017, 949110, 980130
+# Uncomment and adjust based on your mod_security logs:
+# <IfModule mod_security2.c>
+#     SecRuleRemoveById 300015
+#     SecRuleRemoveById 300016
+#     SecRuleRemoveById 300017
+#     SecRuleRemoveById 949110
+#     SecRuleRemoveById 980130
 # </IfModule>
 
 # Enable CORS for API endpoints

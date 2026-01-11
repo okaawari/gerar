@@ -188,35 +188,45 @@ curl https://yourdomain.com/api/
 
 **Problem**: PUT/PATCH requests returning 403 errors or `/403.shtml` errors
 - **Cause**: mod_security is blocking requests before they reach Node.js
-- **Solutions**:
-  1. **Check mod_security logs in cPanel**:
+- **Solutions** (try in order):
+
+  1. **Deploy the updated `.htaccess` file**:
+     - The `.htaccess` file now includes directives to disable mod_security for the API directory
+     - Deploy the updated file and test again
+  
+  2. **Check mod_security logs in cPanel**:
      - Go to **Security → ModSecurity Tools** (or **Security → ModSecurity™**)
      - Check recent blocks and rule IDs
-     - Whitelist your API domain if needed
+     - Look for the specific rule ID blocking PUT/PATCH requests
+     - Update `.htaccess` with the specific rule IDs if needed
   
-  2. **Disable mod_security for API directory** (if possible):
-     - In `.htaccess`, add:
-       ```apache
-       <IfModule mod_security.c>
-           SecFilterEngine Off
-           SecFilterScanPOST Off
-       </IfModule>
-       ```
-     - **Note**: Only do this if your hosting provider allows it
+  3. **CloudLinux/WHM specific solutions**:
+     - **Option A**: In WHM (Web Host Manager), go to **Security Center → ModSecurity™ Configuration**
+       - Find your domain and disable mod_security for it
+       - Or create an exception for the `/api/` path
+     
+     - **Option B**: In cPanel, go to **Security → ModSecurity™ Tools**
+       - Look for whitelisting options
+       - Add your API path or domain to the whitelist
+     
+     - **Option C**: If you have WHM access, create a custom rule:
+       - WHM → **Security Center → ModSecurity™ Tools**
+       - Create exception for PUT/PATCH/DELETE methods on `/api/*` paths
   
-  3. **Contact hosting support**:
-     - Ask them to whitelist your API routes
-     - Provide them with the mod_security rule IDs from logs
-     - Request that PUT/PATCH methods be allowed for your API directory
-  
-  4. **Use `.htaccess` file**:
-     - Ensure `.htaccess` is deployed with your application
-     - It includes rules to allow PUT/PATCH/DELETE methods
-     - May need to adjust based on your hosting configuration
+  4. **Contact hosting support** (if .htaccess doesn't work):
+     - CloudLinux/cPanel often doesn't allow disabling mod_security via `.htaccess`
+     - Ask them to:
+       - Whitelist your API directory (`/home/gerarmn/api.gerar.mn/`)
+       - Allow PUT/PATCH/DELETE methods for your API routes
+       - Provide them with the mod_security rule IDs from logs
+       - Request they disable mod_security for your Node.js application directory
 
 **Problem**: Error message "Access forbidden. This may be due to server-level restrictions."
 - **Cause**: Apache/mod_security blocking the request and redirecting to `/403.shtml`
-- **Solution**: Check server logs, mod_security configuration, and ensure `.htaccess` is properly deployed
+- **Quick Check**: 
+  - Verify `.htaccess` is deployed in `/home/gerarmn/api.gerar.mn/`
+  - Check if mod_security directives in `.htaccess` are working (some hosts block `.htaccess` mod_security config)
+  - If `.htaccess` doesn't work, you MUST use WHM/cPanel interface or contact support
 
 ## Quick Reference
 
