@@ -5,13 +5,19 @@
 const { formatTimestamp } = require('../utils/response');
 
 const errorHandler = (err, req, res, next) => {
-    // Log error for debugging
-    console.error('Error:', {
-        message: err.message,
-        code: err.code,
-        statusCode: err.statusCode,
-        stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
-    });
+    // Log error for debugging - ALWAYS log full details for debugging
+    console.error('='.repeat(80));
+    console.error('ERROR HANDLED:', new Date().toISOString());
+    console.error('Error Message:', err.message);
+    console.error('Error Code:', err.code);
+    console.error('Status Code:', err.statusCode);
+    console.error('Error Name:', err.name);
+    console.error('Request URL:', req.originalUrl);
+    console.error('Request Method:', req.method);
+    if (err.stack) {
+        console.error('Stack Trace:', err.stack);
+    }
+    console.error('='.repeat(80));
 
     // Default error values
     let statusCode = err.statusCode || 500;
@@ -89,12 +95,18 @@ const errorHandler = (err, req, res, next) => {
         errorResponse.error.details = err.details;
     }
 
-    // Add stack trace in development mode
-    if (process.env.NODE_ENV === 'development' && err.stack) {
+    // Add stack trace in development mode (or always for debugging)
+    if (err.stack && (process.env.NODE_ENV === 'development' || process.env.LOG_STACK_TRACES === 'true')) {
         errorResponse.error.stack = err.stack;
     }
 
-    res.status(statusCode).json(errorResponse);
+    // Ensure response hasn't been sent already
+    if (!res.headersSent) {
+        res.status(statusCode).json(errorResponse);
+    } else {
+        // If headers already sent, log it
+        console.error('⚠️ WARNING: Cannot send error response - headers already sent');
+    }
 };
 
 /**

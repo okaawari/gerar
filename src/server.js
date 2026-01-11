@@ -1,6 +1,27 @@
+// Log startup information immediately
+console.log('🚀 Starting server.js...');
+console.log('📁 Working directory:', process.cwd());
+console.log('🔧 Node version:', process.version);
+
 require('dotenv').config();
-const app = require('./app');
+
+console.log('📦 Environment variables loaded');
+console.log('🔐 NODE_ENV:', process.env.NODE_ENV || 'not set');
+
 const { connectDatabase, disconnectDatabase } = require('./config/database');
+
+console.log('✅ Database module loaded');
+
+try {
+    var app = require('./app');
+    console.log('✅ app.js loaded successfully');
+} catch (error) {
+    console.error('❌ Failed to load app.js:', error);
+    console.error('Error message:', error.message);
+    console.error('Stack:', error.stack);
+    // Try to continue anyway - might work
+    throw error;
+}
 
 const PORT = process.env.PORT || 3000;
 const NODE_ENV = process.env.NODE_ENV || 'development';
@@ -8,16 +29,25 @@ const NODE_ENV = process.env.NODE_ENV || 'development';
 // Connect to database on startup
 (async () => {
     try {
+        console.log('🔄 Attempting database connection...');
         await connectDatabase();
         console.log('✅ Database connected');
     } catch (error) {
-        console.error('❌ Database connection failed:', error);
+        console.error('❌ Database connection failed:', error.message);
+        console.error('Stack:', error.stack);
         // Don't exit - let the app start anyway (for Passenger)
     }
 })();
 
 // Check if running under Passenger
 const isPassenger = process.env.PASSENGER_APP_ENV || process.env.PASSENGER_APP_ROOT;
+console.log('🚌 Running under Passenger:', !!isPassenger);
+if (isPassenger) {
+    console.log('📋 Passenger env vars:', {
+        PASSENGER_APP_ENV: process.env.PASSENGER_APP_ENV,
+        PASSENGER_APP_ROOT: process.env.PASSENGER_APP_ROOT
+    });
+}
 
 if (!isPassenger) {
     // Standalone mode - start HTTP server
