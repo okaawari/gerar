@@ -1,0 +1,41 @@
+# .htaccess for cPanel Node.js Application
+# This file helps with mod_security and routing issues
+
+# Allow PUT, PATCH, DELETE methods
+<Limit PUT PATCH DELETE>
+    Require all granted
+</Limit>
+
+# Disable mod_security for API routes (if needed)
+# Uncomment these lines if mod_security is blocking legitimate API requests
+# <IfModule mod_security.c>
+#     SecRuleRemoveById 300015 300016 300017
+# </IfModule>
+
+# Rewrite rules for Node.js app
+# If your Node.js app is behind Apache, ensure requests reach Node.js
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    
+    # Don't rewrite requests for static files that exist
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    
+    # Don't rewrite error pages
+    RewriteCond %{REQUEST_URI} !^/403\.shtml$
+    RewriteCond %{REQUEST_URI} !^/404\.shtml$
+    RewriteCond %{REQUEST_URI} !^/500\.shtml$
+    
+    # Proxy all other requests to Node.js app (if using proxy)
+    # Uncomment if you're using Apache as reverse proxy to Node.js
+    # RewriteRule ^(.*)$ http://localhost:3000/$1 [P,L]
+</IfModule>
+
+# Enable CORS for API endpoints (additional layer)
+<IfModule mod_headers.c>
+    # Allow requests from any origin (adjust as needed)
+    Header set Access-Control-Allow-Origin "*"
+    Header set Access-Control-Allow-Methods "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+    Header set Access-Control-Allow-Headers "Content-Type, Authorization"
+    Header set Access-Control-Allow-Credentials "true"
+</IfModule>

@@ -136,13 +136,31 @@ app.use((req, res, next) => {
         const statusMatch = req.path.match(/(\d{3})\.shtml/);
         const statusCode = statusMatch ? parseInt(statusMatch[1], 10) : 403;
         
+        // Log for debugging - check what might have triggered this
+        console.error('Server-level error page requested:', {
+            path: req.path,
+            method: req.method,
+            originalUrl: req.originalUrl,
+            referer: req.get('referer'),
+            userAgent: req.get('user-agent'),
+            ip: req.ip || req.connection.remoteAddress
+        });
+        
+        // Build helpful error message
+        let errorMessage = 'Access forbidden. This may be due to server-level restrictions.';
+        if (statusCode === 403) {
+            errorMessage += ' Common causes: mod_security rules blocking the request, .htaccess restrictions, or file permissions.';
+            errorMessage += ' If using PUT/PATCH methods, check mod_security settings in cPanel.';
+        }
+        
         return res.status(statusCode).json({
             success: false,
             message: `Server error: ${statusCode}`,
             error: {
                 code: 'SERVER_ERROR',
-                message: statusCode === 403 
-                    ? 'Access forbidden. This may be due to server-level restrictions.'
+                message: errorMessage,
+                hint: statusCode === 403 
+                    ? 'Check mod_security logs in cPanel and ensure PUT/PATCH methods are allowed. The original request was likely blocked by Apache/mod_security before reaching the Node.js application.'
                     : statusCode === 404
                     ? 'Resource not found'
                     : 'Internal server error'

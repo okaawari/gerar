@@ -25,6 +25,9 @@ deployment:
     - /bin/cp package-lock.json $DEPLOYPATH
     - /bin/cp prisma.config.ts $DEPLOYPATH
     
+    # Copy .htaccess for mod_security and routing configuration
+    - /bin/cp .htaccess $DEPLOYPATH 2>/dev/null || true
+    
     # Copy documentation (optional - remove if you don't want docs on server)
     - /bin/cp README.md $DEPLOYPATH 2>/dev/null || true
     - /bin/cp API_DOCUMENTATION.md $DEPLOYPATH 2>/dev/null || true

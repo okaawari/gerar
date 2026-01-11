@@ -184,6 +184,40 @@ curl https://yourdomain.com/api/
 - **Solution**: Run `npm ci --production` manually
 - **Check**: `node_modules` directory exists
 
+### 403 Forbidden Errors (mod_security)
+
+**Problem**: PUT/PATCH requests returning 403 errors or `/403.shtml` errors
+- **Cause**: mod_security is blocking requests before they reach Node.js
+- **Solutions**:
+  1. **Check mod_security logs in cPanel**:
+     - Go to **Security → ModSecurity Tools** (or **Security → ModSecurity™**)
+     - Check recent blocks and rule IDs
+     - Whitelist your API domain if needed
+  
+  2. **Disable mod_security for API directory** (if possible):
+     - In `.htaccess`, add:
+       ```apache
+       <IfModule mod_security.c>
+           SecFilterEngine Off
+           SecFilterScanPOST Off
+       </IfModule>
+       ```
+     - **Note**: Only do this if your hosting provider allows it
+  
+  3. **Contact hosting support**:
+     - Ask them to whitelist your API routes
+     - Provide them with the mod_security rule IDs from logs
+     - Request that PUT/PATCH methods be allowed for your API directory
+  
+  4. **Use `.htaccess` file**:
+     - Ensure `.htaccess` is deployed with your application
+     - It includes rules to allow PUT/PATCH/DELETE methods
+     - May need to adjust based on your hosting configuration
+
+**Problem**: Error message "Access forbidden. This may be due to server-level restrictions."
+- **Cause**: Apache/mod_security blocking the request and redirecting to `/403.shtml`
+- **Solution**: Check server logs, mod_security configuration, and ensure `.htaccess` is properly deployed
+
 ## Quick Reference
 
 ### Essential Commands (run in deployment directory)
