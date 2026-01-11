@@ -1,4 +1,5 @@
 const orderService = require('../services/orderService');
+const draftOrderService = require('../services/draftOrderService');
 
 class OrderController {
     /**
@@ -15,6 +16,89 @@ class OrderController {
             res.status(201).json({
                 success: true,
                 message: 'Order created successfully',
+                data: order
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    /**
+     * Buy now - Create draft order (no auth required) or real order (if authenticated)
+     * POST /api/orders/buy-now
+     */
+    async buyNow(req, res, next) {
+        try {
+            const { productId, quantity, sessionToken } = req.body;
+            
+            // If user is authenticated, create real order directly (existing behavior)
+            if (req.user && req.user.id) {
+                const { addressId, deliveryTimeSlot } = req.body;
+                const order = await orderService.buyNow(req.user.id, productId, quantity, addressId, deliveryTimeSlot);
+                return res.status(201).json({
+                    success: true,
+                    message: 'Order created successfully',
+                    data: order
+                });
+            }
+
+            // Guest checkout - create draft order
+            if (!productId || !quantity) {
+                const error = new Error('Product ID and quantity are required');
+                error.statusCode = 400;
+                throw error;
+            }
+
+            const draftOrder = await draftOrderService.createDraftOrder(productId, quantity, sessionToken);
+
+            res.status(201).json({
+                success: true,
+                message: 'Draft order created successfully. Please finalize order with address.',
+                data: {
+                    draftOrder,
+                    sessionToken: draftOrder.sessionToken,
+                    requiresAuth: true,
+                    nextStep: 'finalize-order'
+                }
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    /**
+     * Finalize order - Convert draft order to real order (requires authentication)
+     * POST /api/orders/finalize
+     */
+    async finalizeOrder(req, res, next) {
+        try {
+            const userId = req.user.id;
+            const { sessionToken, addressId, deliveryTimeSlot, address } = req.body;
+
+            if (!sessionToken) {
+                const error = new Error('Session token is required');
+                error.statusCode = 400;
+                throw error;
+            }
+
+            // Get draft order
+            const draftOrder = await draftOrderService.getDraftOrder(sessionToken);
+
+            // Finalize the order (convert draft to real order)
+            const order = await orderService.finalizeOrderFromDraft(
+                userId,
+                draftOrder,
+                addressId,
+                address,
+                deliveryTimeSlot
+            );
+
+            // Delete draft order after successful conversion
+            await draftOrderService.deleteDraftOrder(sessionToken);
+
+            res.status(201).json({
+                success: true,
+                message: 'Order finalized successfully',
                 data: order
             });
         } catch (error) {

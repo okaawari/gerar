@@ -234,6 +234,381 @@ class OrderService {
     }
 
     /**
+     * Buy now - Create order directly from a single product (bypasses cart)
+     * @param {number} userId - User ID
+     * @param {number} productId - Product ID
+     * @param {number} quantity - Quantity to purchase
+     * @param {number} addressId - Delivery address ID (required)
+     * @param {string} deliveryTimeSlot - Delivery time slot (optional)
+     * @returns {Object} - Created order with items
+     */
+    async buyNow(userId, productId, quantity, addressId, deliveryTimeSlot = null) {
+        const userIdInt = parseInt(userId);
+        const prodId = parseInt(productId);
+        const qty = parseInt(quantity);
+
+        // Validate required fields
+        if (!productId) {
+            const error = new Error('Product ID is required');
+            error.statusCode = 400;
+            throw error;
+        }
+
+        if (!quantity || qty <= 0) {
+            const error = new Error('Quantity must be a positive number');
+            error.statusCode = 400;
+            throw error;
+        }
+
+        if (!addressId) {
+            const error = new Error('Address ID is required for delivery');
+            error.statusCode = 400;
+            throw error;
+        }
+
+        // Validate address belongs to user
+        const addressExists = await addressService.validateAddressOwnership(addressId, userIdInt);
+        if (!addressExists) {
+            const error = new Error('Address not found or does not belong to user');
+            error.statusCode = 404;
+            throw error;
+        }
+
+        // Validate delivery time slot if provided
+        if (deliveryTimeSlot && !this.validateDeliveryTimeSlot(deliveryTimeSlot)) {
+            const error = new Error('Invalid delivery time slot. Must be one of: "10-14", "14-18", "18-21", "21-00"');
+            error.statusCode = 400;
+            throw error;
+        }
+
+        // Validate stock availability (also validates product exists)
+        const stockCheck = await productService.checkStockAvailability(prodId, qty);
+        if (!stockCheck.hasStock) {
+            const error = new Error(
+                `Insufficient stock for product "${stockCheck.product.name}". Available: ${stockCheck.product.stock}, Requested: ${qty}`
+            );
+            error.statusCode = 400;
+            throw error;
+        }
+
+        // Calculate total amount from product price
+        const price = parseFloat(stockCheck.product.price);
+        const totalAmount = price * qty;
+
+        // Use transaction to ensure atomicity
+        // Create order, order item, and reduce stock in one transaction
+        const order = await prisma.$transaction(async (tx) => {
+            // Create order
+            const newOrder = await tx.order.create({
+                data: {
+                    userId: userIdInt,
+                    addressId: parseInt(addressId),
+                    deliveryTimeSlot: deliveryTimeSlot || null,
+                    totalAmount: totalAmount,
+                    status: 'PENDING'
+                }
+            });
+
+            // Create order item
+            const orderItem = await tx.orderItem.create({
+                data: {
+                    orderId: newOrder.id,
+                    productId: prodId,
+                    quantity: qty,
+                    price: price
+                },
+                include: {
+                    product: {
+                        include: {
+                            categories: {
+                                include: {
+                                    category: {
+                                        select: {
+                                            id: true,
+                                            name: true,
+                                            description: true
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+
+            // Reduce stock
+            await tx.product.update({
+                where: { id: prodId },
+                data: {
+                    stock: {
+                        decrement: qty
+                    }
+                }
+            });
+
+            // Format order item to extract categories
+            const formattedItem = { ...orderItem };
+            if (orderItem.product && orderItem.product.categories) {
+                formattedItem.product = { ...orderItem.product };
+                formattedItem.product.categories = orderItem.product.categories.map(pc => pc.category);
+                formattedItem.product.categoryId = formattedItem.product.categories.length > 0 
+                    ? formattedItem.product.categories[0].id 
+                    : null;
+                formattedItem.product.category = formattedItem.product.categories.length > 0 
+                    ? formattedItem.product.categories[0] 
+                    : null;
+            }
+
+            // Return order with items
+            return {
+                ...newOrder,
+                items: [formattedItem]
+            };
+        });
+
+        // Fetch order with full details including user and address
+        const orderWithDetails = await prisma.order.findUnique({
+            where: { id: order.id },
+            include: {
+                items: {
+                    include: {
+                        product: {
+                            include: {
+                                categories: {
+                                    include: {
+                                        category: {
+                                            select: {
+                                                id: true,
+                                                name: true,
+                                                description: true
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                address: true,
+                user: {
+                    select: {
+                        id: true,
+                        phoneNumber: true,
+                        name: true
+                    }
+                }
+            }
+        });
+
+        // Format products to extract categories
+        if (orderWithDetails && orderWithDetails.items) {
+            orderWithDetails.items = orderWithDetails.items.map(item => {
+                const formatted = { ...item };
+                if (item.product && item.product.categories) {
+                    formatted.product = { ...item.product };
+                    formatted.product.categories = item.product.categories.map(pc => pc.category);
+                    formatted.product.categoryId = formatted.product.categories.length > 0 
+                        ? formatted.product.categories[0].id 
+                        : null;
+                    formatted.product.category = formatted.product.categories.length > 0 
+                        ? formatted.product.categories[0] 
+                        : null;
+                }
+                return formatted;
+            });
+        }
+
+        return orderWithDetails;
+    }
+
+    /**
+     * Finalize order from draft order (guest checkout -> authenticated order)
+     * @param {number} userId - User ID (must be authenticated)
+     * @param {Object} draftOrder - Draft order object
+     * @param {number} addressId - Optional existing address ID
+     * @param {Object} address - Optional new address object to create
+     * @param {string} deliveryTimeSlot - Delivery time slot (optional)
+     * @returns {Object} - Created order with items
+     */
+    async finalizeOrderFromDraft(userId, draftOrder, addressId = null, address = null, deliveryTimeSlot = null) {
+        const userIdInt = parseInt(userId);
+        const prodId = draftOrder.productId;
+        const qty = draftOrder.quantity;
+
+        // Validate that either addressId or address object is provided
+        if (!addressId && !address) {
+            const error = new Error('Either addressId or address object is required');
+            error.statusCode = 400;
+            throw error;
+        }
+
+        // If address object is provided, create it first
+        let finalAddressId = addressId;
+        if (address && !addressId) {
+            const validation = addressService.validateAddress(address);
+            if (!validation.isValid) {
+                const error = new Error(`Invalid address: ${validation.errors.join(', ')}`);
+                error.statusCode = 400;
+                throw error;
+            }
+
+            const newAddress = await addressService.createAddress(userIdInt, address);
+            finalAddressId = newAddress.id;
+        }
+
+        // Validate address belongs to user
+        if (finalAddressId) {
+            const addressExists = await addressService.validateAddressOwnership(finalAddressId, userIdInt);
+            if (!addressExists) {
+                const error = new Error('Address not found or does not belong to user');
+                error.statusCode = 404;
+                throw error;
+            }
+        }
+
+        // Validate delivery time slot if provided
+        if (deliveryTimeSlot && !this.validateDeliveryTimeSlot(deliveryTimeSlot)) {
+            const error = new Error('Invalid delivery time slot. Must be one of: "10-14", "14-18", "18-21", "21-00"');
+            error.statusCode = 400;
+            throw error;
+        }
+
+        // Re-validate stock availability (stock may have changed since draft was created)
+        const stockCheck = await productService.checkStockAvailability(prodId, qty);
+        if (!stockCheck.hasStock) {
+            const error = new Error(
+                `Insufficient stock for product "${stockCheck.product.name}". Available: ${stockCheck.product.stock}, Requested: ${qty}`
+            );
+            error.statusCode = 400;
+            throw error;
+        }
+
+        // Use transaction to ensure atomicity
+        const order = await prisma.$transaction(async (tx) => {
+            // Create order
+            const newOrder = await tx.order.create({
+                data: {
+                    userId: userIdInt,
+                    addressId: finalAddressId ? parseInt(finalAddressId) : null,
+                    deliveryTimeSlot: deliveryTimeSlot || null,
+                    totalAmount: draftOrder.totalAmount,
+                    status: 'PENDING'
+                }
+            });
+
+            // Create order item
+            const orderItem = await tx.orderItem.create({
+                data: {
+                    orderId: newOrder.id,
+                    productId: prodId,
+                    quantity: qty,
+                    price: parseFloat(draftOrder.product.price)
+                },
+                include: {
+                    product: {
+                        include: {
+                            categories: {
+                                include: {
+                                    category: {
+                                        select: {
+                                            id: true,
+                                            name: true,
+                                            description: true
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+
+            // Reduce stock
+            await tx.product.update({
+                where: { id: prodId },
+                data: {
+                    stock: {
+                        decrement: qty
+                    }
+                }
+            });
+
+            // Format order item to extract categories
+            const formattedItem = { ...orderItem };
+            if (orderItem.product && orderItem.product.categories) {
+                formattedItem.product = { ...orderItem.product };
+                formattedItem.product.categories = orderItem.product.categories.map(pc => pc.category);
+                formattedItem.product.categoryId = formattedItem.product.categories.length > 0 
+                    ? formattedItem.product.categories[0].id 
+                    : null;
+                formattedItem.product.category = formattedItem.product.categories.length > 0 
+                    ? formattedItem.product.categories[0] 
+                    : null;
+            }
+
+            // Return order with items
+            return {
+                ...newOrder,
+                items: [formattedItem]
+            };
+        });
+
+        // Fetch order with full details including user and address
+        const orderWithDetails = await prisma.order.findUnique({
+            where: { id: order.id },
+            include: {
+                items: {
+                    include: {
+                        product: {
+                            include: {
+                                categories: {
+                                    include: {
+                                        category: {
+                                            select: {
+                                                id: true,
+                                                name: true,
+                                                description: true
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                address: true,
+                user: {
+                    select: {
+                        id: true,
+                        phoneNumber: true,
+                        name: true
+                    }
+                }
+            }
+        });
+
+        // Format products to extract categories
+        if (orderWithDetails && orderWithDetails.items) {
+            orderWithDetails.items = orderWithDetails.items.map(item => {
+                const formatted = { ...item };
+                if (item.product && item.product.categories) {
+                    formatted.product = { ...item.product };
+                    formatted.product.categories = item.product.categories.map(pc => pc.category);
+                    formatted.product.categoryId = formatted.product.categories.length > 0 
+                        ? formatted.product.categories[0].id 
+                        : null;
+                    formatted.product.category = formatted.product.categories.length > 0 
+                        ? formatted.product.categories[0] 
+                        : null;
+                }
+                return formatted;
+            });
+        }
+
+        return orderWithDetails;
+    }
+
+    /**
      * Get order by ID
      * @param {number} orderId - Order ID
      * @param {number} userId - User ID (for access control)
