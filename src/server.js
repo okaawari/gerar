@@ -5,84 +5,89 @@ const { connectDatabase, disconnectDatabase } = require('./config/database');
 const PORT = process.env.PORT || 3000;
 const NODE_ENV = process.env.NODE_ENV || 'development';
 
-let server;
-
-// Start server with database connection
-const startServer = async () => {
+// Connect to database on startup
+(async () => {
     try {
-        // Connect to database first
         await connectDatabase();
-        
-        // Start the server
-        server = app.listen(PORT, () => {
-            console.log('='.repeat(50));
-            console.log(`✅ Server is running on port ${PORT}`);
-            console.log(`📦 Environment: ${NODE_ENV}`);
-            console.log(`🌐 API Base URL: http://localhost:${PORT}/api`);
-            console.log(`📚 Health Check: http://localhost:${PORT}/`);
-            console.log('='.repeat(50));
-        });
-
-        // Graceful shutdown handler
-        const gracefulShutdown = async (signal) => {
-            console.log(`\n${signal} received. Starting graceful shutdown...`);
-            
-            // Stop accepting new connections
-            if (server) {
-                server.close(async () => {
-                    console.log('HTTP server closed');
-                    
-                    // Disconnect from database
-                    await disconnectDatabase();
-                    
-                    console.log('Graceful shutdown completed');
-                    process.exit(0);
-                });
-                
-                // Force close server after 10 seconds
-                setTimeout(() => {
-                    console.error('Forced shutdown after timeout');
-                    process.exit(1);
-                }, 10000);
-            } else {
-                await disconnectDatabase();
-                process.exit(0);
-            }
-        };
-
-        // Handle termination signals
-        process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
-        process.on('SIGINT', () => gracefulShutdown('SIGINT'));
-
+        console.log('✅ Database connected');
     } catch (error) {
-        console.error('Failed to start server:', error);
-        await disconnectDatabase();
-        process.exit(1);
+        console.error('❌ Database connection failed:', error);
+        // Don't exit - let the app start anyway (for Passenger)
     }
-};
+})();
+
+// Check if running under Passenger
+const isPassenger = process.env.PASSENGER_APP_ENV || process.env.PASSENGER_APP_ROOT;
+
+if (!isPassenger) {
+    // Standalone mode - start HTTP server
+    let server;
+    
+    const startServer = async () => {
+        try {
+            await connectDatabase();
+            
+            server = app.listen(PORT, () => {
+                console.log('='.repeat(50));
+                console.log(`✅ Server is running on port ${PORT}`);
+                console.log(`📦 Environment: ${NODE_ENV}`);
+                console.log(`🌐 API Base URL: http://localhost:${PORT}/api`);
+                console.log(`📚 Health Check: http://localhost:${PORT}/`);
+                console.log('='.repeat(50));
+            });
+
+            // Graceful shutdown handler
+            const gracefulShutdown = async (signal) => {
+                console.log(`\n${signal} received. Starting graceful shutdown...`);
+                
+                if (server) {
+                    server.close(async () => {
+                        console.log('HTTP server closed');
+                        await disconnectDatabase();
+                        console.log('Graceful shutdown completed');
+                        process.exit(0);
+                    });
+                    
+                    setTimeout(() => {
+                        console.error('Forced shutdown after timeout');
+                        process.exit(1);
+                    }, 10000);
+                } else {
+                    await disconnectDatabase();
+                    process.exit(0);
+                }
+            };
+
+            process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+            process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
+        } catch (error) {
+            console.error('Failed to start server:', error);
+            await disconnectDatabase();
+            process.exit(1);
+        }
+    };
+
+    startServer();
+} else {
+    // Passenger mode - just export the app, Passenger handles HTTP server
+    console.log('✅ Running under Passenger');
+    console.log(`📦 Environment: ${NODE_ENV}`);
+}
 
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (err) => {
-    console.error('UNHANDLED REJECTION! 💥 Shutting down...');
-    console.error(err.name, err.message);
-    if (server) {
-        server.close(async () => {
-            await disconnectDatabase();
-            process.exit(1);
-        });
-    } else {
-        disconnectDatabase().then(() => process.exit(1));
-    }
+    console.error('UNHANDLED REJECTION! 💥', err.name, err.message);
+    if (err.stack) console.error(err.stack);
 });
 
 // Handle uncaught exceptions
 process.on('uncaughtException', async (err) => {
-    console.error('UNCAUGHT EXCEPTION! 💥 Shutting down...');
-    console.error(err.name, err.message);
-    console.error(err.stack);
+    console.error('UNCAUGHT EXCEPTION! 💥', err.name, err.message);
+    if (err.stack) console.error(err.stack);
     await disconnectDatabase();
     process.exit(1);
 });
 
-// Start the server
-startServer();
+// Export app for Passenger
+module.exports = app;
