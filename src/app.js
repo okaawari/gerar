@@ -28,7 +28,7 @@ const getAllowedOrigins = () => {
         return '*';
     }
     
-    // Default allowed origins including localhost
+    // Default allowed origins including localhost (always allow localhost for development)
     const defaultOrigins = [
         'http://localhost:3000',
         'http://localhost:3001',
@@ -52,17 +52,24 @@ const getAllowedOrigins = () => {
 };
 
 // CORS configuration with dynamic origin checking
+// Always allows localhost origins for development/testing
 app.use(cors({
     origin: (origin, callback) => {
-        const allowedOrigins = getAllowedOrigins();
-        
-        // Allow requests with no origin (like mobile apps or Postman)
+        // Always allow requests with no origin (like mobile apps, Postman, or preflight requests)
         if (!origin) {
             return callback(null, true);
         }
         
+        const allowedOrigins = getAllowedOrigins();
+        
         // If wildcard is allowed
         if (allowedOrigins === '*') {
+            return callback(null, true);
+        }
+        
+        // Always allow localhost origins (for development/testing from local machine)
+        const isLocalhost = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+        if (isLocalhost) {
             return callback(null, true);
         }
         
@@ -71,15 +78,12 @@ app.use(cors({
             return callback(null, true);
         }
         
-        // For localhost with any port, allow it if any localhost is in the list
-        const isLocalhost = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
-        if (isLocalhost && allowedOrigins.some(o => o.includes('localhost') || o.includes('127.0.0.1'))) {
-            return callback(null, true);
-        }
-        
         callback(new Error('Not allowed by CORS'));
     },
-    credentials: true
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    exposedHeaders: ['Content-Type', 'Authorization']
 }));
 
 // Parse JSON request bodies with size limit

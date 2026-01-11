@@ -36,21 +36,10 @@ PassengerStartupFile /home/gerarmn/api.gerar.mn/src/server.js
 #     # SecFilterScanPOST Off
 # </IfModule>
 
-# Enable CORS for API endpoints (additional layer)
-<IfModule mod_headers.c>
-    # Allow requests from any origin (adjust as needed for production)
-    Header set Access-Control-Allow-Origin "*"
-    Header set Access-Control-Allow-Methods "GET, POST, PUT, PATCH, DELETE, OPTIONS"
-    Header set Access-Control-Allow-Headers "Content-Type, Authorization"
-    Header set Access-Control-Allow-Credentials "true"
-    
-    # Handle preflight OPTIONS requests
-    <IfModule mod_rewrite.c>
-        RewriteEngine On
-        RewriteCond %{REQUEST_METHOD} OPTIONS
-        RewriteRule ^(.*)$ $1 [R=200,L]
-    </IfModule>
-</IfModule>
+# Enable CORS for API endpoints
+# Note: Since Passenger handles routing to Node.js, CORS is primarily handled by the Node.js app.
+# DO NOT intercept OPTIONS requests - let Passenger pass them to Node.js so the CORS middleware can handle them.
+# The Node.js CORS middleware will properly handle preflight OPTIONS requests with the correct origin.
 
 # Don't interfere with Passenger routing
 # Passenger handles all routing to the Node.js application
