@@ -1,7 +1,7 @@
-// Log startup information immediately
-console.log('🚀 Starting server.js...');
-console.log('📁 Working directory:', process.cwd());
-console.log('🔧 Node version:', process.version);
+// Log startup information immediately - use stderr for Passenger
+process.stderr.write('\n🚀 Starting server.js...\n');
+process.stderr.write('📁 Working directory: ' + process.cwd() + '\n');
+process.stderr.write('🔧 Node version: ' + process.version + '\n');
 
 require('dotenv').config();
 
@@ -12,11 +12,12 @@ const { connectDatabase, disconnectDatabase } = require('./config/database');
 
 console.log('✅ Database module loaded');
 
+// Import app synchronously - must not block
 let app;
 try {
+    process.stderr.write('\n📦 Loading app.js...\n');
     app = require('./app');
-    process.stderr.write('\n✅ app.js loaded successfully\n');
-    console.log('✅ app.js loaded successfully');
+    process.stderr.write('✅ app.js loaded successfully\n');
     
     // Test if app is actually an Express app
     if (!app || typeof app.use !== 'function') {
@@ -49,12 +50,13 @@ try {
 const PORT = process.env.PORT || 3000;
 const NODE_ENV = process.env.NODE_ENV || 'development';
 
-// Connect to database on startup
-(async () => {
+// Connect to database on startup - NON-BLOCKING for Passenger
+// Don't await - let it connect in background
+setImmediate(async () => {
     try {
-        console.log('🔄 Attempting database connection...');
+        process.stderr.write('\n🔄 Attempting database connection (background)...\n');
         await connectDatabase();
-        console.log('✅ Database connected');
+        process.stderr.write('✅ Database connected\n');
     } catch (error) {
         // Write to stderr so Passenger captures it
         process.stderr.write('\n❌ DATABASE CONNECTION FAILED (async)\n');
@@ -67,7 +69,7 @@ const NODE_ENV = process.env.NODE_ENV || 'development';
         console.error('❌ Database connection failed:', error);
         // Don't exit - let the app start anyway (for Passenger)
     }
-})();
+});
 
 // Check if running under Passenger
 const isPassenger = process.env.PASSENGER_APP_ENV || process.env.PASSENGER_APP_ROOT;
@@ -163,5 +165,8 @@ process.on('uncaughtException', async (err) => {
     process.exit(1);
 });
 
-// Export app for Passenger
+// Log that we're exporting app
+process.stderr.write('\n✅ Exporting app for Passenger\n');
+
+// Export app for Passenger - MUST be synchronous, no async operations
 module.exports = app;
