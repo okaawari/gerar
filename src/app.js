@@ -28,7 +28,7 @@ const getAllowedOrigins = () => {
         return '*';
     }
     
-    // Default allowed origins including localhost
+    // Default allowed origins including localhost and production domains
     const defaultOrigins = [
         'http://localhost:3000',
         'http://localhost:3001',
@@ -37,7 +37,13 @@ const getAllowedOrigins = () => {
         'http://127.0.0.1:3000',
         'http://127.0.0.1:3001',
         'http://127.0.0.1:5173',
-        'http://127.0.0.1:8080'
+        'http://127.0.0.1:8080',
+        'https://admin.gerar.mn',
+        'http://admin.gerar.mn',
+        'https://api.gerar.mn',
+        'http://api.gerar.mn',
+        'https://gerar.mn',
+        'http://gerar.mn'
     ];
     
     // Parse comma-separated origins from environment variable
@@ -74,6 +80,12 @@ app.use(cors({
         // For localhost with any port, allow it if any localhost is in the list
         const isLocalhost = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
         if (isLocalhost && allowedOrigins.some(o => o.includes('localhost') || o.includes('127.0.0.1'))) {
+            return callback(null, true);
+        }
+        
+        // Allow subdomains of gerar.mn (admin.gerar.mn, api.gerar.mn, etc.)
+        const isGerarDomain = /^https?:\/\/[a-zA-Z0-9-]+\.gerar\.mn(?::\d+)?$/.test(origin);
+        if (isGerarDomain) {
             return callback(null, true);
         }
         

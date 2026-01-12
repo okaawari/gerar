@@ -52,10 +52,13 @@ PassengerStartupFile /home/gerarmn/api2.gerar.mn/src/server.js
 </IfModule>
 
 # Enable CORS for API endpoints (additional layer)
+# Note: Node.js CORS middleware handles most CORS logic
+# This is a fallback, but the Node.js app's CORS configuration takes precedence
 <IfModule mod_headers.c>
-    # Allow requests from any origin (adjust as needed)
-    Header set Access-Control-Allow-Origin "*"
+    # Don't set Access-Control-Allow-Origin here when using credentials
+    # The Node.js app's CORS middleware will handle this properly
+    # Setting wildcard with credentials causes browser to reject the request
     Header set Access-Control-Allow-Methods "GET, POST, PUT, PATCH, DELETE, OPTIONS"
-    Header set Access-Control-Allow-Headers "Content-Type, Authorization"
-    Header set Access-Control-Allow-Credentials "true"
+    Header set Access-Control-Allow-Headers "Content-Type, Authorization, X-Requested-With, Accept, Origin"
+    Header set Access-Control-Max-Age "3600"
 </IfModule>
