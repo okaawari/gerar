@@ -1,42 +1,30 @@
-// Simple, non-blocking Prisma setup
 require('dotenv').config();
 const { PrismaClient } = require("@prisma/client");
+const { PrismaMariaDb } = require("@prisma/adapter-mariadb");
 
-let adapter = null;
+// Parse DATABASE_URL: mysql://user:password@host:port/database
+const dbUrl = process.env.DATABASE_URL;
 
-try {
-    const dbUrl = process.env.DATABASE_URL;
-    
-    if (dbUrl) {
-        const urlMatch = dbUrl.match(/^mysql:\/\/([^:]+):([^@]*)@([^:]+):(\d+)\/(.+)$/);
-        
-        if (urlMatch) {
-            try {
-                // Try to load adapter (might not be installed)
-                const { PrismaMariaDb } = require("@prisma/adapter-mariadb");
-                const [, user, password, host, port, database] = urlMatch;
-                
-                adapter = new PrismaMariaDb({
-                    host: host,
-                    port: parseInt(port, 10),
-                    user: user || undefined,
-                    password: password || undefined,
-                    database: database,
-                });
-            } catch (adapterError) {
-                // Adapter not available or failed - use default
-                // PrismaClient will use default adapter
-            }
-        }
-    }
-} catch (error) {
-    // Ignore - will use default PrismaClient
+if (!dbUrl) {
+  throw new Error('DATABASE_URL environment variable is not set');
 }
 
-// Create PrismaClient - this is fast and non-blocking
-// It doesn't connect until you call $connect() or make a query
-const prisma = adapter 
-    ? new PrismaClient({ adapter })
-    : new PrismaClient();
+const urlMatch = dbUrl.match(/^mysql:\/\/([^:]+):([^@]*)@([^:]+):(\d+)\/(.+)$/);
+
+if (!urlMatch) {
+  throw new Error('Invalid DATABASE_URL format. Expected: mysql://user:password@host:port/database');
+}
+
+const [, user, password, host, port, database] = urlMatch;
+
+const adapter = new PrismaMariaDb({
+  host: host,
+  port: parseInt(port, 10),
+  user: user || undefined,
+  password: password || undefined,
+  database: database,
+});
+
+const prisma = new PrismaClient({ adapter });
 
 module.exports = prisma;

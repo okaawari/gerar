@@ -1,9 +1,9 @@
 # DO NOT REMOVE. CLOUDLINUX PASSENGER CONFIGURATION BEGIN
-PassengerAppRoot "/home/gerarmn/api.gerar.mn"
+PassengerAppRoot "/home/gerarmn/api2.gerar.mn"
 PassengerBaseURI "/"
-PassengerNodejs "/home/gerarmn/nodevenv/api.gerar.mn/22/bin/node"
+PassengerNodejs "/home/gerarmn/nodevenv/api2.gerar.mn/22/bin/node"
 PassengerAppType node
-PassengerStartupFile /home/gerarmn/api.gerar.mn/src/server.js
+PassengerStartupFile /home/gerarmn/api2.gerar.mn/src/server.js
 # DO NOT REMOVE. CLOUDLINUX PASSENGER CONFIGURATION END
 
 # php -- BEGIN cPanel-generated handler, do not edit
@@ -18,32 +18,44 @@ PassengerStartupFile /home/gerarmn/api.gerar.mn/src/server.js
 </IfModule>
 # DO NOT REMOVE OR MODIFY. CLOUDLINUX ENV VARS CONFIGURATION END
 
-# ============================================
-# ADDITIONAL CONFIGURATION FOR API
-# ============================================
+# .htaccess for cPanel Node.js Application
+# This file helps with mod_security and routing issues
 
-# Allow PUT, PATCH, DELETE methods (for mod_security compatibility)
+# Allow PUT, PATCH, DELETE methods
 <Limit PUT PATCH DELETE>
     Require all granted
 </Limit>
 
-# Note: mod_security directives (SecRuleEngine, SecFilterEngine, etc.) are NOT allowed in .htaccess
-# These must be configured via WHM/cPanel or contact hosting support
-# If you need to disable mod_security, you must do it via:
-# 1. WHM → Security Center → ModSecurity™ Configuration
-# 2. Contact hosting support to whitelist your API directory
-# 3. Ask them to allow PUT/PATCH/DELETE methods for your API routes
-
-# Enable CORS for API endpoints
-# Note: Since Passenger handles routing to Node.js, CORS is primarily handled by the Node.js app.
-# DO NOT intercept OPTIONS requests - let Passenger pass them to Node.js so the CORS middleware can handle them.
-# The Node.js CORS middleware will properly handle preflight OPTIONS requests with the correct origin.
-
-# Don't interfere with Passenger routing
-# Passenger handles all routing to the Node.js application
-# The rewrite rules below are commented out since Passenger manages this
-# <IfModule mod_rewrite.c>
-#     RewriteEngine On
-#     RewriteCond %{REQUEST_FILENAME} !-f
-#     RewriteCond %{REQUEST_FILENAME} !-d
+# Disable mod_security for API routes (if needed)
+# Uncomment these lines if mod_security is blocking legitimate API requests
+# <IfModule mod_security.c>
+#     SecRuleRemoveById 300015 300016 300017
 # </IfModule>
+
+# Rewrite rules for Node.js app
+# If your Node.js app is behind Apache, ensure requests reach Node.js
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    
+    # Don't rewrite requests for static files that exist
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    
+    # Don't rewrite error pages
+    RewriteCond %{REQUEST_URI} !^/403\.shtml$
+    RewriteCond %{REQUEST_URI} !^/404\.shtml$
+    RewriteCond %{REQUEST_URI} !^/500\.shtml$
+    
+    # Proxy all other requests to Node.js app (if using proxy)
+    # Uncomment if you're using Apache as reverse proxy to Node.js
+    # RewriteRule ^(.*)$ http://localhost:3000/$1 [P,L]
+</IfModule>
+
+# Enable CORS for API endpoints (additional layer)
+<IfModule mod_headers.c>
+    # Allow requests from any origin (adjust as needed)
+    Header set Access-Control-Allow-Origin "*"
+    Header set Access-Control-Allow-Methods "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+    Header set Access-Control-Allow-Headers "Content-Type, Authorization"
+    Header set Access-Control-Allow-Credentials "true"
+</IfModule>
