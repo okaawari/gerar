@@ -11,7 +11,7 @@ router.use(authenticateUser, authorizeAdmin);
 // GET route must come before routes with :id parameter
 router.get('/', productController.getAllProducts);
 router.post('/', productController.createProduct);
-router.put('/:id', productController.updateProduct);
-router.delete('/:id', productController.deleteProduct);
+router.post('/:id/update', productController.updateProduct);
+router.post('/:id/delete', productController.deleteProduct);
 
 module.exports = router;

@@ -10,7 +10,7 @@ router.use(authenticateUser, authorizeAdmin);
 // Admin category management routes
 router.get('/', categoryController.getAllCategories); // View all categories with subcategories
 router.post('/', categoryController.createCategory);
-router.put('/:id', categoryController.updateCategory);
-router.delete('/:id', categoryController.deleteCategory);
+router.post('/:id/update', categoryController.updateCategory);
+router.post('/:id/delete', categoryController.deleteCategory);
 
 module.exports = router;

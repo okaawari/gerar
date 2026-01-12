@@ -11,6 +11,6 @@ router.use(authenticateUser, authorizeAdmin);
 router.get('/', userController.getAllUsers);
 router.get('/:id', userController.getUserById);
 router.post('/:id/reset-password', userController.generateResetCode);
-router.put('/:id/reset-password', userController.resetPassword);
+router.post('/:id/reset-password/execute', userController.resetPassword);
 
 module.exports = router;

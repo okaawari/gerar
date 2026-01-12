@@ -12,8 +12,8 @@ router.use(authenticateUser);
 router.post('/', validateAddressCreation, addressController.createAddress);
 router.get('/', addressController.getUserAddresses);
 router.get('/:id', addressController.getAddressById);
-router.put('/:id', validateAddressUpdate, addressController.updateAddress);
-router.delete('/:id', addressController.deleteAddress);
+router.post('/:id/update', validateAddressUpdate, addressController.updateAddress);
+router.post('/:id/delete', addressController.deleteAddress);
 router.patch('/:id/set-default', addressController.setDefaultAddress);
 
 module.exports = router;

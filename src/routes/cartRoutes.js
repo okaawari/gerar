@@ -14,13 +14,13 @@ router.get('/', cartController.getCart);
 router.post('/', cartController.addToCart);
 
 // Clear user's cart (must come before parameterized routes)
-router.delete('/', cartController.clearCart);
+router.post('/clear', cartController.clearCart);
 
 // Update cart item quantity
-router.put('/:productId', cartController.updateCartItem);
+router.post('/:productId/update', cartController.updateCartItem);
 
 // Remove item from cart
-router.delete('/:productId', cartController.removeFromCart);
+router.post('/:productId/remove', cartController.removeFromCart);
 
 module.exports = router;
 

@@ -17,6 +17,6 @@ router.get('/:productId/status', favoriteController.checkFavoriteStatus);
 router.post('/', favoriteController.addFavorite);
 
 // Remove product from favorites
-router.delete('/:productId', favoriteController.removeFavorite);
+router.post('/:productId/remove', favoriteController.removeFavorite);
 
 module.exports = router;

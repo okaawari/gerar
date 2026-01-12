@@ -1,9 +1,9 @@
 # DO NOT REMOVE. CLOUDLINUX PASSENGER CONFIGURATION BEGIN
-PassengerAppRoot "/home/gerarmn/api2.gerar.mn"
+PassengerAppRoot "/home/gerarmn/api.gerar.mn"
 PassengerBaseURI "/"
-PassengerNodejs "/home/gerarmn/nodevenv/api2.gerar.mn/22/bin/node"
+PassengerNodejs "/home/gerarmn/nodevenv/api.gerar.mn/20/bin/node"
 PassengerAppType node
-PassengerStartupFile /home/gerarmn/api2.gerar.mn/src/server.js
+PassengerStartupFile /home/gerarmn/api.gerar.mn/src/server.js
 # DO NOT REMOVE. CLOUDLINUX PASSENGER CONFIGURATION END
 
 # php -- BEGIN cPanel-generated handler, do not edit
