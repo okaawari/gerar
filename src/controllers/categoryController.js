@@ -82,7 +82,7 @@ class CategoryController {
 
     /**
      * Update a category
-     * PUT /api/categories/:id
+     * POST /api/admin/categories/:id/update
      */
     async updateCategory(req, res, next) {
         try {
@@ -102,7 +102,7 @@ class CategoryController {
 
     /**
      * Delete a category
-     * DELETE /api/categories/:id
+     * POST /api/admin/categories/:id/delete
      */
     async deleteCategory(req, res, next) {
         try {

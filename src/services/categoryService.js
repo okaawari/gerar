@@ -130,12 +130,19 @@ class CategoryService {
                     }
                 },
                 products: {
-                    select: {
-                        id: true,
-                        name: true,
-                        price: true,
-                        stock: true,
-                        createdAt: true
+                    include: {
+                        product: {
+                            select: {
+                                id: true,
+                                name: true,
+                                price: true,
+                                stock: true,
+                                createdAt: true
+                            }
+                        }
+                    },
+                    orderBy: {
+                        order: 'asc'
                     }
                 }
             }
@@ -147,7 +154,13 @@ class CategoryService {
             throw error;
         }
 
-        return category;
+        // Format products to extract the actual product objects
+        const formattedCategory = {
+            ...category,
+            products: category.products.map(pc => pc.product)
+        };
+
+        return formattedCategory;
     }
 
     /**

@@ -110,10 +110,8 @@ fetch('http://localhost:3000/api/cart', {
 | Method | Request Body? | When to Use |
 |--------|--------------|-------------|
 | **GET** | ❌ **NO** | Retrieve data, fetch resources |
-| **POST** | ✅ **YES** | Create new resources, submit forms |
-| **PUT** | ✅ **YES** | Update existing resources (full update) |
+| **POST** | ✅ **YES** | Create new resources, submit forms, update/delete (all modifications use POST) |
 | **PATCH** | ✅ **YES** | Partial update of resources |
-| **DELETE** | ❌ Usually **NO** | Delete resources |
 
 ---
 
@@ -169,7 +167,7 @@ All API responses follow a consistent format:
 
 ### HTTP Status Codes
 
-- `200 OK` - Successful GET, PUT, PATCH, DELETE requests
+- `200 OK` - Successful GET, POST, PATCH requests
 - `201 Created` - Successful POST request that created a resource
 - `400 Bad Request` - Invalid request data or missing required fields
 - `401 Unauthorized` - Missing or invalid authentication token
@@ -724,9 +722,9 @@ Content-Type: application/json
 
 ### Update Cart Item Quantity
 
-**Method**: `PUT` (updates quantity - **REQUIRES request body**)
+**Method**: `POST` (updates quantity - **REQUIRES request body**)
 
-**Endpoint**: `PUT /api/cart/:productId`
+**Endpoint**: `POST /api/cart/:productId/update`
 
 **Authentication**: Required
 
@@ -777,9 +775,9 @@ Content-Type: application/json
 
 ### Remove Item from Cart
 
-**Method**: `DELETE` (removes item from cart - **NO request body**)
+**Method**: `POST` (removes item from cart - **REQUIRES request body**)
 
-**Endpoint**: `DELETE /api/cart/:productId`
+**Endpoint**: `POST /api/cart/:productId/remove`
 
 **Authentication**: Required
 
@@ -789,12 +787,19 @@ Content-Type: application/json
 **Headers**:
 ```
 Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+**Request Body** (JSON - can be empty object):
+```json
+{}
 ```
 
 **Example Request**:
 ```
-DELETE /api/cart/1
+POST /api/cart/1/remove
 Authorization: Bearer <token>
+Content-Type: application/json
 ```
 
 **Response**: `200 OK`
@@ -814,21 +819,28 @@ Authorization: Bearer <token>
 
 ### Clear Cart
 
-**Method**: `DELETE` (removes all items from cart - **NO request body**)
+**Method**: `POST` (removes all items from cart - **REQUIRES request body**)
 
-**Endpoint**: `DELETE /api/cart`
+**Endpoint**: `POST /api/cart/clear`
 
 **Authentication**: Required
 
 **Headers**:
 ```
 Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+**Request Body** (JSON - can be empty object):
+```json
+{}
 ```
 
 **Example Request**:
 ```
-DELETE /api/cart
+POST /api/cart/clear
 Authorization: Bearer <token>
+Content-Type: application/json
 ```
 
 **Response**: `200 OK`
@@ -1396,9 +1408,9 @@ Authorization: Bearer <token>
 
 ### Update Address
 
-**Method**: `PUT` (updates address - **REQUIRES request body**)
+**Method**: `POST` (updates address - **REQUIRES request body**)
 
-**Endpoint**: `PUT /api/addresses/:id`
+**Endpoint**: `POST /api/addresses/:id/update`
 
 **Authentication**: Required (users can only update their own addresses)
 
@@ -1457,9 +1469,9 @@ Content-Type: application/json
 
 ### Delete Address
 
-**Method**: `DELETE` (deletes address - **NO request body**)
+**Method**: `POST` (deletes address - **REQUIRES request body**)
 
-**Endpoint**: `DELETE /api/addresses/:id`
+**Endpoint**: `POST /api/addresses/:id/delete`
 
 **Authentication**: Required (users can only delete their own addresses)
 
@@ -1469,12 +1481,19 @@ Content-Type: application/json
 **Headers**:
 ```
 Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+**Request Body** (JSON - can be empty object):
+```json
+{}
 ```
 
 **Example Request**:
 ```
-DELETE /api/addresses/1
+POST /api/addresses/1/delete
 Authorization: Bearer <token>
+Content-Type: application/json
 ```
 
 **Response**: `200 OK`
@@ -1686,9 +1705,9 @@ Content-Type: application/json
 
 ### Remove from Favorites
 
-**Method**: `DELETE` (removes product from favorites - **NO request body**)
+**Method**: `POST` (removes product from favorites - **REQUIRES request body**)
 
-**Endpoint**: `DELETE /api/favorites/:productId`
+**Endpoint**: `POST /api/favorites/:productId/remove`
 
 **Authentication**: Required
 
@@ -1698,12 +1717,19 @@ Content-Type: application/json
 **Headers**:
 ```
 Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+**Request Body** (JSON - can be empty object):
+```json
+{}
 ```
 
 **Example Request**:
 ```
-DELETE /api/favorites/1
+POST /api/favorites/1/remove
 Authorization: Bearer <token>
+Content-Type: application/json
 ```
 
 **Response**: `200 OK`
@@ -1774,7 +1800,7 @@ const addToCart = async (productId, quantity) => {
 2. **Error Handling**: Always check `success` field in responses and handle errors appropriately
 3. **Loading States**: Show loading indicators during API calls
 4. **Validation**: Implement client-side validation before API calls
-5. **Content-Type Header**: Always include `Content-Type: application/json` for POST/PUT/PATCH requests
+5. **Content-Type Header**: Always include `Content-Type: application/json` for POST/PATCH requests
 6. **Price Formatting**: Prices are returned as strings, format them for display
 7. **Date Formatting**: All dates are ISO 8601 strings, format them for display
 8. **Delivery Time Slots**: Format time slots for display (e.g., "10:00 - 14:00" instead of "10-14")

@@ -180,8 +180,8 @@ class ProductController {
 
     /**
      * Update a product
-     * PUT /api/products/:id
-     * Body: { name?, description?, price?, originalPrice?, images?, stock?, categoryIds[] or categoryId? }
+     * POST /api/admin/products/:id/update
+     * Body: { name?, description?, price?, originalPrice?, images?, stock?, categoryIds[] or categoryId?, categoryOrders? }
      */
     async updateProduct(req, res, next) {
         try {
@@ -211,7 +211,7 @@ class ProductController {
 
     /**
      * Delete a product
-     * DELETE /api/products/:id
+     * POST /api/admin/products/:id/delete
      */
     async deleteProduct(req, res, next) {
         try {

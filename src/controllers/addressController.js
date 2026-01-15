@@ -62,7 +62,7 @@ class AddressController {
 
     /**
      * Update an address
-     * PUT /api/addresses/:id
+     * POST /api/addresses/:id/update
      */
     async updateAddress(req, res, next) {
         try {
@@ -83,7 +83,7 @@ class AddressController {
 
     /**
      * Delete an address
-     * DELETE /api/addresses/:id
+     * POST /api/addresses/:id/delete
      */
     async deleteAddress(req, res, next) {
         try {

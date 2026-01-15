@@ -180,7 +180,7 @@ Create a new category or subcategory.
 
 Update an existing category.
 
-**Endpoint:** `PUT /api/admin/categories/:id`
+**Endpoint:** `POST /api/admin/categories/:id/update`
 
 **Authentication:** Required (Admin only)
 
@@ -227,7 +227,7 @@ Update an existing category.
 
 Delete a category. Note: Categories with products or subcategories may have restrictions.
 
-**Endpoint:** `DELETE /api/admin/categories/:id`
+**Endpoint:** `POST /api/admin/categories/:id/delete`
 
 **Authentication:** Required (Admin only)
 
@@ -530,7 +530,7 @@ Create a new product.
 
 Update an existing product.
 
-**Endpoint:** `PUT /api/admin/products/:id`
+**Endpoint:** `POST /api/admin/products/:id/update`
 
 **Authentication:** Required (Admin only)
 
@@ -618,7 +618,8 @@ Update an existing product.
   - Lower order numbers appear first in the category listing
   - Default order is `0` if not specified
   - Can be provided as an object `{categoryId: order}` or array `[{categoryId, order}]`
-  - Must be provided together with `categoryIds` to set orders for the new categories
+  - Can be provided alone (without `categoryIds`) to update orders for existing categories
+  - If provided with `categoryIds`, sets orders for the new categories
 - If `originalPrice` is provided and greater than `price`, discount will be automatically calculated
 - To remove discount, set `originalPrice` to `null`
 - To update categories, provide `categoryIds` array with all desired category IDs (existing ones will be removed)
@@ -641,7 +642,7 @@ Update an existing product.
 
 Delete a product.
 
-**Endpoint:** `DELETE /api/admin/products/:id`
+**Endpoint:** `POST /api/admin/products/:id/delete`
 
 **Authentication:** Required (Admin only)
 
@@ -1031,7 +1032,7 @@ Generate a password reset code and link for a user. This allows admins to help u
 
 Reset a user's password directly. This bypasses the reset code verification and allows admins to set a new PIN for users.
 
-**Endpoint:** `PUT /api/admin/users/:id/reset-password`
+**Endpoint:** `POST /api/admin/users/:id/reset-password/execute`
 
 **Authentication:** Required (Admin only)
 
@@ -1248,7 +1249,7 @@ curl -X POST http://localhost:3000/api/admin/categories \
 #### Update Product
 ```bash
 # Update price and stock
-curl -X PUT http://localhost:3000/api/admin/products/1 \
+curl -X POST http://localhost:3000/api/admin/products/1/update \
   -H "Authorization: Bearer YOUR_JWT_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -1257,7 +1258,7 @@ curl -X PUT http://localhost:3000/api/admin/products/1 \
   }'
 
 # Update categories (replaces all existing categories)
-curl -X PUT http://localhost:3000/api/admin/products/1 \
+curl -X POST http://localhost:3000/api/admin/products/1/update \
   -H "Authorization: Bearer YOUR_JWT_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -1327,8 +1328,8 @@ const productSingle = await createProduct({
 #### Update Category
 ```javascript
 const updateCategory = async (categoryId, updates, token) => {
-  const response = await fetch(`http://localhost:3000/api/admin/categories/${categoryId}`, {
-    method: 'PUT',
+  const response = await fetch(`http://localhost:3000/api/admin/categories/${categoryId}/update`, {
+    method: 'POST',
     headers: {
       'Authorization': `Bearer ${token}`,
       'Content-Type': 'application/json'
@@ -1429,8 +1430,8 @@ const generateResetCode = async (userId, token) => {
 #### Reset User Password
 ```javascript
 const resetUserPassword = async (userId, newPin, token, resetCode = null, resetToken = null) => {
-  const response = await fetch(`http://localhost:3000/api/admin/users/${userId}/reset-password`, {
-    method: 'PUT',
+  const response = await fetch(`http://localhost:3000/api/admin/users/${userId}/reset-password/execute`, {
+    method: 'POST',
     headers: {
       'Authorization': `Bearer ${token}`,
       'Content-Type': 'application/json'
@@ -1480,7 +1481,7 @@ const createCategory = (categoryData) => {
 
 // Update product
 const updateProduct = (productId, updates) => {
-  return api.put(`/products/${productId}`, updates);
+  return api.post(`/products/${productId}/update`, updates);
 };
 
 // Example: Update product with multiple categories
@@ -1490,7 +1491,7 @@ updateProduct(1, {
 
 // Delete product
 const deleteProduct = (productId) => {
-  return api.delete(`/products/${productId}`);
+  return api.post(`/products/${productId}/delete`, {});
 };
 
 // Get all orders
@@ -1515,7 +1516,7 @@ const generateResetCode = (userId) => {
 
 // Reset user password (admin)
 const resetUserPassword = (userId, newPin, resetCode = null, resetToken = null) => {
-  return api.put(`/users/${userId}/reset-password`, {
+  return api.post(`/users/${userId}/reset-password/execute`, {
     newPin,
     resetCode,
     resetToken
@@ -1562,19 +1563,19 @@ While not admin-specific, admins can also use these public endpoints for viewing
 ### Category Endpoints
 - `GET /api/admin/categories` - Get all categories with nested subcategories
 - `POST /api/admin/categories` - Create category
-- `PUT /api/admin/categories/:id` - Update category
+- `POST /api/admin/categories/:id/update` - Update category
+- `POST /api/admin/categories/:id/delete` - Delete category
 
 ### User Endpoints
 - `GET /api/admin/users` - Get all users (with pagination and filters)
 - `GET /api/admin/users/:id` - Get user by ID (with orders, addresses, statistics)
 - `POST /api/admin/users/:id/reset-password` - Generate password reset code
-- `PUT /api/admin/users/:id/reset-password` - Reset user password
-- `DELETE /api/admin/categories/:id` - Delete category
+- `POST /api/admin/users/:id/reset-password/execute` - Reset user password
 
 ### Product Endpoints
 - `POST /api/admin/products` - Create product
-- `PUT /api/admin/products/:id` - Update product
-- `DELETE /api/admin/products/:id` - Delete product
+- `POST /api/admin/products/:id/update` - Update product
+- `POST /api/admin/products/:id/delete` - Delete product
 
 ### Order Endpoints
 - `GET /api/admin/orders/all` - Get all orders

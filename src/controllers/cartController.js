@@ -49,7 +49,7 @@ class CartController {
 
     /**
      * Update cart item quantity
-     * PUT /api/cart/:productId
+     * POST /api/cart/:productId/update
      */
     async updateCartItem(req, res, next) {
         try {
@@ -77,7 +77,7 @@ class CartController {
 
     /**
      * Remove item from cart
-     * DELETE /api/cart/:productId
+     * POST /api/cart/:productId/remove
      */
     async removeFromCart(req, res, next) {
         try {
@@ -98,7 +98,7 @@ class CartController {
 
     /**
      * Clear user's cart
-     * DELETE /api/cart
+     * POST /api/cart/clear
      */
     async clearCart(req, res, next) {
         try {

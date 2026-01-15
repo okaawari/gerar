@@ -69,7 +69,7 @@ class UserController {
 
     /**
      * Reset user password (Admin can reset for any user)
-     * PUT /api/admin/users/:id/reset-password
+     * POST /api/admin/users/:id/reset-password/execute
      */
     async resetPassword(req, res, next) {
         try {

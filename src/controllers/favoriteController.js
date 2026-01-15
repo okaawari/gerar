@@ -53,7 +53,7 @@ class FavoriteController {
 
     /**
      * Remove product from favorites
-     * DELETE /api/favorites/:productId
+     * POST /api/favorites/:productId/remove
      */
     async removeFavorite(req, res, next) {
         try {
