@@ -33,27 +33,32 @@ class OrderService {
     }
 
     /**
-     * Create order from user's cart
-     * @param {number} userId - User ID
-     * @param {number} addressId - Delivery address ID (required)
+     * Create order from user's cart or guest cart
+     * @param {number|null} userId - User ID (for authenticated users)
+     * @param {string|null} sessionToken - Session token (for guest users)
+     * @param {number|null} addressId - Delivery address ID (for authenticated users)
+     * @param {Object|null} address - Address object (for guest users)
      * @param {string} deliveryTimeSlot - Delivery time slot (optional)
      * @returns {Object} - Created order with items
      */
-    async createOrderFromCart(userId, addressId, deliveryTimeSlot = null) {
-        const userIdInt = parseInt(userId);
-
-        // Validate addressId is provided
-        if (!addressId) {
-            const error = new Error('Address ID is required for delivery');
+    async createOrderFromCart(userId = null, sessionToken = null, addressId = null, address = null, deliveryTimeSlot = null) {
+        // Validate that either userId or sessionToken is provided
+        if (!userId && !sessionToken) {
+            const error = new Error('Either userId or sessionToken must be provided');
             error.statusCode = 400;
             throw error;
         }
 
-        // Validate address belongs to user
-        const addressExists = await addressService.validateAddressOwnership(addressId, userIdInt);
-        if (!addressExists) {
-            const error = new Error('Address not found or does not belong to user');
-            error.statusCode = 404;
+        // Validate address is provided (either addressId for authenticated or address object for guest)
+        if (userId && !addressId) {
+            const error = new Error('Address ID is required for authenticated users');
+            error.statusCode = 400;
+            throw error;
+        }
+
+        if (sessionToken && !address) {
+            const error = new Error('Address object is required for guest checkout');
+            error.statusCode = 400;
             throw error;
         }
 
@@ -64,8 +69,10 @@ class OrderService {
             throw error;
         }
 
-        // Get user's cart
-        const cartItems = await cartService.getCart(userIdInt);
+        // Get cart items
+        const cartItems = userId 
+            ? await cartService.getCart(userId, null)
+            : await cartService.getCartBySession(sessionToken);
 
         if (!cartItems || cartItems.length === 0) {
             const error = new Error('Cart is empty. Cannot create order.');
@@ -93,18 +100,46 @@ class OrderService {
         // Calculate total amount
         const totalAmount = this.calculateOrderTotal(cartItems);
 
+        // Handle address for guest orders
+        let finalAddressId = addressId;
+        if (sessionToken && address) {
+            // Validate guest address
+            const validation = addressService.validateAddress(address);
+            if (!validation.isValid) {
+                const error = new Error(`Invalid address: ${validation.errors.join(', ')}`);
+                error.statusCode = 400;
+                throw error;
+            }
+
+            // Create guest address (userId will be null)
+            const guestAddress = await addressService.createGuestAddress(address);
+            finalAddressId = guestAddress.id;
+        } else if (userId && addressId) {
+            // Validate address belongs to user
+            const userIdInt = parseInt(userId);
+            const addressExists = await addressService.validateAddressOwnership(addressId, userIdInt);
+            if (!addressExists) {
+                const error = new Error('Address not found or does not belong to user');
+                error.statusCode = 404;
+                throw error;
+            }
+            finalAddressId = parseInt(addressId);
+        }
+
         // Use transaction to ensure atomicity
         // Create order, order items, reduce stock, and clear cart in one transaction
         const order = await prisma.$transaction(async (tx) => {
             // Create order
+            const orderData = {
+                userId: userId ? parseInt(userId) : null,
+                addressId: finalAddressId,
+                deliveryTimeSlot: deliveryTimeSlot || null,
+                totalAmount: totalAmount,
+                status: 'PENDING'
+            };
+
             const newOrder = await tx.order.create({
-                data: {
-                    userId: userIdInt,
-                    addressId: parseInt(addressId),
-                    deliveryTimeSlot: deliveryTimeSlot || null,
-                    totalAmount: totalAmount,
-                    status: 'PENDING'
-                }
+                data: orderData
             });
 
             // Create order items and reduce stock
@@ -151,8 +186,12 @@ class OrderService {
             }
 
             // Clear cart after successful order creation
+            const cartWhereClause = userId
+                ? { userId: parseInt(userId) }
+                : { sessionToken: sessionToken };
+            
             await tx.cartitem.deleteMany({
-                where: { userId: userIdInt }
+                where: cartWhereClause
             });
 
             // Format order items to extract categories
@@ -656,10 +695,19 @@ class OrderService {
         }
 
         // Check access control: users can only see their own orders, admins can see all
-        if (!isAdmin && order.userId !== parseInt(userId)) {
-            const error = new Error('Access denied. You can only view your own orders.');
-            error.statusCode = 403;
-            throw error;
+        // Guest orders (userId is null) can only be viewed by admins
+        if (!isAdmin) {
+            if (order.userId === null) {
+                // Guest order - only admins can view
+                const error = new Error('Access denied. Guest orders can only be viewed by administrators.');
+                error.statusCode = 403;
+                throw error;
+            } else if (order.userId !== parseInt(userId)) {
+                // User order - must belong to the requesting user
+                const error = new Error('Access denied. You can only view your own orders.');
+                error.statusCode = 403;
+                throw error;
+            }
         }
 
         // Format products to extract categories

@@ -1,4 +1,5 @@
 const prisma = require('../lib/prisma');
+const { isValidDistrict, isValidKhorooForDistrict } = require('../constants/districts');
 
 class AddressService {
     /**
@@ -22,10 +23,14 @@ class AddressService {
 
         if (!data.provinceOrDistrict || typeof data.provinceOrDistrict !== 'string' || data.provinceOrDistrict.trim().length < 2) {
             errors.push('Province or district is required and must be at least 2 characters');
+        } else if (!isValidDistrict(data.provinceOrDistrict.trim())) {
+            errors.push('Invalid province or district. Please select from the available options.');
         }
 
         if (!data.khorooOrSoum || typeof data.khorooOrSoum !== 'string' || data.khorooOrSoum.trim().length < 2) {
             errors.push('Khoroo or soum is required and must be at least 2 characters');
+        } else if (data.provinceOrDistrict && !isValidKhorooForDistrict(data.provinceOrDistrict.trim(), data.khorooOrSoum.trim())) {
+            errors.push('Invalid khoroo for the selected district. Please select a valid khoroo option.');
         }
 
         // Optional fields validation
@@ -135,6 +140,43 @@ class AddressService {
                 apartmentNumber: addressData.apartmentNumber?.trim() || null,
                 addressNote: addressData.addressNote?.trim() || null,
                 isDefault: addressData.isDefault === true
+            }
+        });
+
+        return address;
+    }
+
+    /**
+     * Create a guest address (for guest checkout)
+     * @param {Object} addressData - Address data
+     * @returns {Promise<Object>} - Created address (with userId = null)
+     */
+    async createGuestAddress(addressData) {
+        const validation = this.validateAddress(addressData);
+        if (!validation.isValid) {
+            const error = new Error('Validation failed');
+            error.statusCode = 400;
+            error.details = { errors: validation.errors };
+            throw error;
+        }
+
+        // Guest addresses don't have userId and can't be set as default
+        const address = await prisma.address.create({
+            data: {
+                userId: null, // Guest address
+                label: addressData.label || null,
+                fullName: addressData.fullName.trim(),
+                phoneNumber: addressData.phoneNumber.trim(),
+                provinceOrDistrict: addressData.provinceOrDistrict.trim(),
+                khorooOrSoum: addressData.khorooOrSoum.trim(),
+                street: addressData.street?.trim() || null,
+                neighborhood: addressData.neighborhood?.trim() || null,
+                residentialComplex: addressData.residentialComplex?.trim() || null,
+                building: addressData.building?.trim() || null,
+                entrance: addressData.entrance?.trim() || null,
+                apartmentNumber: addressData.apartmentNumber?.trim() || null,
+                addressNote: addressData.addressNote?.trim() || null,
+                isDefault: false // Guest addresses can't be default
             }
         });
 

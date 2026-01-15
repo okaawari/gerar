@@ -5,10 +5,14 @@ const { validateAddressCreation, validateAddressUpdate } = require('../middlewar
 
 const router = express.Router();
 
-// All routes require authentication
+// Public endpoints (no authentication needed, just return data)
+router.get('/districts', addressController.getDistricts);
+router.get('/khoroo', addressController.getKhorooOptions);
+
+// All other routes require authentication
 router.use(authenticateUser);
 
-// Address routes
+// User address management routes
 router.post('/', validateAddressCreation, addressController.createAddress);
 router.get('/', addressController.getUserAddresses);
 router.get('/:id', addressController.getAddressById);

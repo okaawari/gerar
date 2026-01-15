@@ -73,23 +73,27 @@ model product {
 }
 
 model cartitem {
-  id        Int      @id @default(autoincrement())
-  userId    Int
-  productId Int
-  quantity  Int
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id           Int       @id @default(autoincrement())
+  userId       Int?      // Nullable for guest carts
+  sessionToken String?   @unique // Session token for guest carts
+  productId    Int
+  quantity     Int
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
-  user      user     @relation(fields: [userId], references: [id])
-  product   product  @relation(fields: [productId], references: [id])
+  user         user?     @relation(fields: [userId], references: [id])
+  product      product   @relation(fields: [productId], references: [id])
 
   @@unique([userId, productId])
+  @@unique([sessionToken, productId])
+  @@index([sessionToken])
+  @@index([userId])
   @@map("cartitem")
 }
 
 model order {
   id              Int         @id @default(autoincrement())
-  userId          Int
+  userId          Int?        // Nullable for guest orders
   addressId       Int?
   deliveryTimeSlot String?    @db.VarChar(5)
   totalAmount     Decimal     @db.Decimal(10, 2)
@@ -97,7 +101,7 @@ model order {
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
 
-  user            user        @relation(fields: [userId], references: [id])
+  user            user?       @relation(fields: [userId], references: [id])
   address         address?    @relation(fields: [addressId], references: [id])
   items           orderitem[]
 
@@ -110,7 +114,7 @@ model order {
 
 model address {
   id                  Int       @id @default(autoincrement())
-  userId              Int
+  userId              Int?      // Nullable for guest addresses
   label               String?
   fullName            String
   phoneNumber         String
@@ -127,7 +131,7 @@ model address {
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
 
-  user                user      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user                user?     @relation(fields: [userId], references: [id], onDelete: Cascade)
   orders              order[]
 
   @@index([userId])

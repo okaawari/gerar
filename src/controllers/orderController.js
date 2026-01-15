@@ -4,20 +4,50 @@ const addressService = require('../services/addressService');
 
 class OrderController {
     /**
-     * Create order from user's cart
+     * Create order from user's cart or guest cart
      * POST /api/orders
      */
     async createOrder(req, res, next) {
         try {
-            const userId = req.user.id;
-            const { addressId, deliveryTimeSlot } = req.body;
+            const { addressId, address, deliveryTimeSlot, sessionToken } = req.body;
             
-            const order = await orderService.createOrderFromCart(userId, addressId, deliveryTimeSlot);
+            let order;
+            let isGuest = false;
+
+            // Check if user is authenticated
+            if (req.user && req.user.id) {
+                // Authenticated user - use addressId
+                if (!addressId) {
+                    const error = new Error('Address ID is required for authenticated users');
+                    error.statusCode = 400;
+                    throw error;
+                }
+                order = await orderService.createOrderFromCart(req.user.id, null, addressId, null, deliveryTimeSlot);
+            } else {
+                // Guest user - use address object and sessionToken
+                const guestSessionToken = sessionToken || req.headers['x-session-token'];
+                
+                if (!guestSessionToken) {
+                    const error = new Error('Session token is required for guest checkout');
+                    error.statusCode = 400;
+                    throw error;
+                }
+
+                if (!address) {
+                    const error = new Error('Address object is required for guest checkout');
+                    error.statusCode = 400;
+                    throw error;
+                }
+
+                order = await orderService.createOrderFromCart(null, guestSessionToken, null, address, deliveryTimeSlot);
+                isGuest = true;
+            }
 
             res.status(201).json({
                 success: true,
                 message: 'Order created successfully',
-                data: order
+                data: order,
+                isGuest: isGuest
             });
         } catch (error) {
             next(error);

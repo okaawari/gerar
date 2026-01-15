@@ -1,4 +1,5 @@
 const addressService = require('../services/addressService');
+const { getDistricts, getKhorooOptions, isValidDistrict } = require('../constants/districts');
 
 class AddressController {
     /**
@@ -115,6 +116,59 @@ class AddressController {
                 success: true,
                 message: 'Default address updated successfully',
                 data: address
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    /**
+     * Get list of available districts
+     * GET /api/addresses/districts
+     */
+    async getDistricts(req, res, next) {
+        try {
+            const districts = getDistricts();
+
+            res.status(200).json({
+                success: true,
+                message: 'Districts retrieved successfully',
+                data: districts
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    /**
+     * Get khoroo options for a specific district
+     * GET /api/addresses/khoroo?district=Багануур дүүрэг
+     */
+    async getKhorooOptions(req, res, next) {
+        try {
+            const { district } = req.query;
+
+            if (!district) {
+                const error = new Error('District parameter is required');
+                error.statusCode = 400;
+                throw error;
+            }
+
+            if (!isValidDistrict(district)) {
+                const error = new Error('Invalid district');
+                error.statusCode = 400;
+                throw error;
+            }
+
+            const khorooOptions = getKhorooOptions(district);
+
+            res.status(200).json({
+                success: true,
+                message: 'Khoroo options retrieved successfully',
+                data: {
+                    district,
+                    khorooOptions
+                }
             });
         } catch (error) {
             next(error);
