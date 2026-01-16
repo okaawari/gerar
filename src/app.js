@@ -94,10 +94,10 @@ app.use(cors({
         callback(new Error('Not allowed by CORS'));
     },
     credentials: true,
-    methods: ['GET', 'POST', 'PATCH', 'OPTIONS', 'HEAD'],
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin', 'x-session-token'],
     exposedHeaders: ['Content-Type', 'Authorization'],
-    preflightContinue: false,
+    preflightContinue: true, // Allow explicit OPTIONS handler to run as fallback
     optionsSuccessStatus: 204
 }));
 
@@ -123,6 +123,41 @@ if (process.env.NODE_ENV === 'development') {
         next();
     });
 }
+
+// Explicit OPTIONS handler for CORS preflight requests
+// This ensures preflight requests are handled even if middleware has issues
+app.options('*', (req, res) => {
+    const origin = req.headers.origin;
+    const allowedOrigins = getAllowedOrigins();
+    
+    // Check if origin is allowed
+    let isAllowed = false;
+    if (!origin) {
+        isAllowed = true; // Allow requests with no origin
+    } else if (allowedOrigins === '*') {
+        isAllowed = true;
+    } else if (allowedOrigins.includes(origin)) {
+        isAllowed = true;
+    } else {
+        // Check localhost pattern
+        const isLocalhost = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+        if (isLocalhost && allowedOrigins.some(o => o.includes('localhost') || o.includes('127.0.0.1'))) {
+            isAllowed = true;
+        }
+    }
+    
+    if (isAllowed && origin) {
+        res.header('Access-Control-Allow-Origin', origin);
+    } else if (isAllowed) {
+        res.header('Access-Control-Allow-Origin', '*');
+    }
+    
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin, x-session-token');
+    res.header('Access-Control-Allow-Credentials', 'true');
+    res.header('Access-Control-Max-Age', '3600');
+    res.sendStatus(204);
+});
 
 // Basic health check route
 app.get('/', (req, res) => {
