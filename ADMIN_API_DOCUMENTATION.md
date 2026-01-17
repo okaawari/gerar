@@ -106,11 +106,12 @@ Retrieve all categories with nested subcategories. This endpoint shows the hiera
 ```
 
 **Notes:**
-- Categories are returned with top-level categories first
+- Categories are returned sorted by `order` field (ascending), then by `createdAt` (descending)
 - Subcategories are nested inside the `children` array of their parent category
 - Each category object includes all its child categories recursively
 - Empty `children` arrays indicate categories with no subcategories
-- If `includeSubcategories=false`, returns a flat list of all categories (both parents and children)
+- If `includeSubcategories=false`, returns a flat list of all categories (both parents and children) sorted by order
+- Lower `order` values appear first in listings
 
 **Errors:**
 - `401` - Authentication required
@@ -131,7 +132,8 @@ Create a new category or subcategory.
 {
   "name": "Electronics",              // Required, string, unique per parent
   "description": "Electronic devices", // Optional, string
-  "parentId": null                    // Optional, number | null (null for top-level categories)
+  "parentId": null,                   // Optional, number | null (null for top-level categories)
+  "order": 0                          // Optional, integer (>= 0) - Display order (lower = shows first, default: 0)
 }
 ```
 
@@ -162,6 +164,7 @@ Create a new category or subcategory.
     "name": "Electronics",
     "description": "Electronic devices",
     "parentId": null,
+    "order": 0,
     "createdAt": "2024-01-15T10:30:00.000Z",
     "updatedAt": "2024-01-15T10:30:00.000Z"
   }
@@ -194,7 +197,8 @@ Update an existing category.
 {
   "name": "Updated Electronics",      // Optional, string
   "description": "Updated description", // Optional, string
-  "parentId": null                    // Optional, number | null
+  "parentId": null,                   // Optional, number | null
+  "order": 0                          // Optional, integer (>= 0) - Display order (lower = shows first, default: 0)
 }
 ```
 
@@ -208,6 +212,7 @@ Update an existing category.
     "name": "Updated Electronics",
     "description": "Updated description",
     "parentId": null,
+    "order": 0,
     "createdAt": "2024-01-15T10:30:00.000Z",
     "updatedAt": "2024-01-15T11:00:00.000Z"
   }
@@ -488,6 +493,10 @@ Create a new product.
         "description": "Gaming products"
       }
     ],
+    "categoryOrders": {
+      "1": 0,
+      "2": 1
+    },
     "categoryId": 1,
     "category": {
       "id": 1,
@@ -598,6 +607,10 @@ Update an existing product.
         "description": "Computer products"
       }
     ],
+    "categoryOrders": {
+      "1": 0,
+      "3": 1
+    },
     "categoryId": 1,
     "category": {
       "id": 1,
@@ -622,6 +635,7 @@ Update an existing product.
   - Can be provided as an object `{categoryId: order}` or array `[{categoryId, order}]`
   - Can be provided alone (without `categoryIds`) to update orders for existing categories
   - If provided with `categoryIds`, sets orders for the new categories
+  - The response includes `categoryOrders` object mapping each `categoryId` to its `order` value
 - If `originalPrice` is provided and greater than `price`, discount will be automatically calculated
 - To remove discount, set `originalPrice` to `null`
 - To update categories, provide `categoryIds` array with all desired category IDs (existing ones will be removed)

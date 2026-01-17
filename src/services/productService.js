@@ -370,6 +370,13 @@ class ProductService {
             formatted.categories = product.categories
                 ? product.categories.map(pc => pc.category)
                 : [];
+            // Include categoryOrders mapping (categoryId -> order)
+            formatted.categoryOrders = {};
+            if (product.categories) {
+                product.categories.forEach(pc => {
+                    formatted.categoryOrders[pc.categoryId] = pc.order;
+                });
+            }
             // For backward compatibility, keep categoryId as first category if exists
             formatted.categoryId = formatted.categories.length > 0 ? formatted.categories[0].id : null;
             formatted.category = formatted.categories.length > 0 ? formatted.categories[0] : null;
@@ -430,6 +437,13 @@ class ProductService {
         formatted.categories = product.categories
             ? product.categories.map(pc => pc.category)
             : [];
+        // Include categoryOrders mapping (categoryId -> order)
+        formatted.categoryOrders = {};
+        if (product.categories) {
+            product.categories.forEach(pc => {
+                formatted.categoryOrders[pc.categoryId] = pc.order;
+            });
+        }
         // For backward compatibility, keep categoryId as first category if exists
         formatted.categoryId = formatted.categories.length > 0 ? formatted.categories[0].id : null;
         formatted.category = formatted.categories.length > 0 ? formatted.categories[0] : null;
@@ -550,6 +564,13 @@ class ProductService {
         formatted.categories = product.categories
             ? product.categories.map(pc => pc.category)
             : [];
+        // Include categoryOrders mapping (categoryId -> order)
+        formatted.categoryOrders = {};
+        if (product.categories) {
+            product.categories.forEach(pc => {
+                formatted.categoryOrders[pc.categoryId] = pc.order;
+            });
+        }
         formatted.categoryId = formatted.categories.length > 0 ? formatted.categories[0].id : null;
         formatted.category = formatted.categories.length > 0 ? formatted.categories[0] : null;
         return formatted;

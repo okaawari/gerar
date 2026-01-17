@@ -1,8 +1,8 @@
 const DELIVERY_TIME_SLOTS = {
-  MORNING: "10-14",      // 10:00 to 14:00
-  AFTERNOON: "14-18",    // 14:00 to 18:00
-  EVENING: "18-21",      // 18:00 to 21:00
-  NIGHT: "21-00"         // 21:00 to 00:00
+  MORNING: "10-14",
+  AFTERNOON: "14-18",
+  EVENING: "18-21",
+  NIGHT: "21-00"
 };
 
 const VALID_DELIVERY_TIME_SLOTS = Object.values(DELIVERY_TIME_SLOTS);

@@ -40,6 +40,7 @@ model category {
   name        String
   description String?   @db.Text
   parentId    Int?
+  order       Int       @default(0) // Order/position of category (lower = shows first)
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
@@ -49,6 +50,7 @@ model category {
 
   @@unique([name, parentId])
   @@index([parentId])
+  @@index([parentId, order]) // Index for efficient sorting by parent and order
   @@map("category")
 }
 

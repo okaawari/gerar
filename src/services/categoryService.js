@@ -29,6 +29,13 @@ class CategoryService {
             }
         }
 
+        if (data.order !== undefined && data.order !== null) {
+            const order = parseInt(data.order);
+            if (isNaN(order) || order < 0) {
+                errors.push('Order must be a valid non-negative integer');
+            }
+        }
+
         return {
             isValid: errors.length === 0,
             errors
@@ -82,11 +89,12 @@ class CategoryService {
      */
     async getAllCategories(includeSubcategories = true) {
         if (!includeSubcategories) {
-            // Return all categories in a flat list
+            // Return all categories in a flat list, sorted by order then createdAt
             return await prisma.category.findMany({
-                orderBy: {
-                    createdAt: 'desc'
-                }
+                orderBy: [
+                    { order: 'asc' },
+                    { createdAt: 'desc' }
+                ]
             });
         }
 
@@ -97,14 +105,16 @@ class CategoryService {
             },
             include: {
                 children: {
-                    orderBy: {
-                        createdAt: 'desc'
-                    }
+                    orderBy: [
+                        { order: 'asc' },
+                        { createdAt: 'desc' }
+                    ]
                 }
             },
-            orderBy: {
-                createdAt: 'desc'
-            }
+            orderBy: [
+                { order: 'asc' },
+                { createdAt: 'desc' }
+            ]
         });
     }
 
@@ -125,9 +135,10 @@ class CategoryService {
                     }
                 },
                 children: {
-                    orderBy: {
-                        createdAt: 'desc'
-                    }
+                    orderBy: [
+                        { order: 'asc' },
+                        { createdAt: 'desc' }
+                    ]
                 },
                 products: {
                     include: {
@@ -260,6 +271,13 @@ class CategoryService {
             formatted.categories = product.categories
                 ? product.categories.map(pc => pc.category)
                 : [];
+            // Include categoryOrders mapping (categoryId -> order)
+            formatted.categoryOrders = {};
+            if (product.categories) {
+                product.categories.forEach(pc => {
+                    formatted.categoryOrders[pc.categoryId] = pc.order;
+                });
+            }
             formatted.categoryId = formatted.categories.length > 0 ? formatted.categories[0].id : null;
             formatted.category = formatted.categories.length > 0 ? formatted.categories[0] : null;
             return formatted;
@@ -333,7 +351,7 @@ class CategoryService {
     /**
      * Update a category
      * @param {number} id - Category ID
-     * @param {Object} data - { name?, description?, parentId? }
+     * @param {Object} data - { name?, description?, parentId?, order? }
      * @returns {Object} - Updated category
      */
     async updateCategory(id, data) {
@@ -416,6 +434,9 @@ class CategoryService {
         if (data.parentId !== undefined) {
             updateData.parentId = parentId;
         }
+        if (data.order !== undefined && data.order !== null) {
+            updateData.order = parseInt(data.order);
+        }
 
         const category = await prisma.category.update({
             where: { id: parseInt(id) },
@@ -428,9 +449,10 @@ class CategoryService {
                     }
                 },
                 children: {
-                    orderBy: {
-                        createdAt: 'desc'
-                    }
+                    orderBy: [
+                        { order: 'asc' },
+                        { createdAt: 'desc' }
+                    ]
                 }
             }
         });
