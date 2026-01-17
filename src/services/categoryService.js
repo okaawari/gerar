@@ -167,9 +167,10 @@ class CategoryService {
      * Get products by category ID (including products from subcategories if requested)
      * @param {number} categoryId - Category ID
      * @param {boolean} includeSubcategories - Whether to include products from subcategories
+     * @param {number} userId - Optional user ID to include favorite status
      * @returns {Array} - List of products in category
      */
-    async getCategoryProducts(categoryId, includeSubcategories = false) {
+    async getCategoryProducts(categoryId, includeSubcategories = false, userId = null) {
         // Verify category exists
         const category = await prisma.category.findUnique({
             where: { id: parseInt(categoryId) },
@@ -243,9 +244,19 @@ class CategoryService {
             products = products.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
         }
 
-        // Format products to extract categories
+        // Get favorite statuses if userId is provided
+        let favoriteStatuses = {};
+        if (userId) {
+            const favoriteService = require('./favoriteService');
+            const productIds = products.map(p => p.id);
+            favoriteStatuses = await favoriteService.getFavoriteStatuses(userId, productIds);
+        }
+
+        // Format products with discount information and favorite status
+        const productService = require('./productService');
         return products.map(product => {
-            const formatted = { ...product };
+            const isFavorite = favoriteStatuses[product.id] || false;
+            const formatted = productService.formatProductWithDiscount(product, isFavorite);
             formatted.categories = product.categories
                 ? product.categories.map(pc => pc.category)
                 : [];

@@ -49,7 +49,9 @@ class CategoryController {
             const { id } = req.params;
             const { includeSubcategories } = req.query;
             const includeSubcats = includeSubcategories === 'true' || includeSubcategories === true;
-            const products = await categoryService.getCategoryProducts(id, includeSubcats);
+            // Include userId if user is authenticated (for favorite status)
+            const userId = req.user && req.user.id ? req.user.id : null;
+            const products = await categoryService.getCategoryProducts(id, includeSubcats, userId);
 
             res.status(200).json({
                 success: true,

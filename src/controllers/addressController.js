@@ -104,7 +104,7 @@ class AddressController {
 
     /**
      * Set address as default
-     * PATCH /api/addresses/:id/set-default
+     * POST /api/addresses/:id/set-default
      */
     async setDefaultAddress(req, res, next) {
         try {

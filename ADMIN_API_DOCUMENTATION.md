@@ -9,6 +9,8 @@ This document provides comprehensive API documentation for admin endpoints to bu
 - [Admin API Endpoints](#admin-api-endpoints)
   - [Categories](#categories-endpoints)
   - [Products](#products-endpoints)
+  - [File Upload](#file-upload-endpoints)
+  - [Constants](#constants-endpoints)
   - [Orders](#orders-endpoints)
   - [Users](#users-endpoints)
 - [Data Models](#data-models)
@@ -678,6 +680,345 @@ Delete a product.
 - `401` - Authentication required
 - `403` - Admin privileges required
 - `404` - Product not found
+
+---
+
+## File Upload Endpoints
+
+All file upload endpoints are under `/api/admin/upload`.
+
+### Upload Single Image
+
+Upload a single product image file.
+
+**Endpoint:** `POST /api/admin/upload`
+
+**Authentication:** Required (Admin only)
+
+**Request:**
+- Content-Type: `multipart/form-data`
+- Field name: `file` or `image` (both are accepted)
+- File types: JPEG, PNG, GIF, WebP
+- Maximum file size: 10MB
+
+**Response:** `200 OK`
+```json
+{
+  "success": true,
+  "data": {
+    "url": "https://api.gerar.mn/uploads/product-1234567890-987654321.jpg"
+  },
+  "url": "https://api.gerar.mn/uploads/product-1234567890-987654321.jpg",
+  "imageUrl": "https://api.gerar.mn/uploads/product-1234567890-987654321.jpg",
+  "path": "/uploads/product-1234567890-987654321.jpg"
+}
+```
+
+**Notes:**
+- The endpoint accepts files with field name `file` or `image`
+- Returns multiple response formats for compatibility:
+  - `data.url` - Standard format
+  - `url` - Alternative format
+  - `imageUrl` - Alternative format
+  - `path` - Relative path
+- Files are stored in `public/uploads/` directory
+- Files are accessible at `/uploads/{filename}`
+- Filenames are automatically generated with timestamp and random number to prevent conflicts
+
+**Errors:**
+- `400` - No file uploaded
+- `400` - Invalid file type (only JPEG, PNG, GIF, WebP allowed)
+- `400` - File too large (maximum 10MB)
+- `401` - Authentication required
+- `403` - Admin privileges required
+
+---
+
+### Upload Multiple Images
+
+Upload multiple product image files at once.
+
+**Endpoint:** `POST /api/admin/upload/multiple`
+
+**Authentication:** Required (Admin only)
+
+**Request:**
+- Content-Type: `multipart/form-data`
+- Field name: `files` (array)
+- File types: JPEG, PNG, GIF, WebP
+- Maximum file size per file: 10MB
+- Maximum number of files: 10
+
+**Response:** `200 OK`
+```json
+{
+  "success": true,
+  "data": {
+    "files": [
+      {
+        "url": "https://api.gerar.mn/uploads/product-1234567890-987654321.jpg",
+        "filename": "product-1234567890-987654321.jpg",
+        "originalname": "product-image.jpg",
+        "size": 245678,
+        "mimetype": "image/jpeg"
+      },
+      {
+        "url": "https://api.gerar.mn/uploads/product-1234567891-123456789.jpg",
+        "filename": "product-1234567891-123456789.jpg",
+        "originalname": "product-image-2.jpg",
+        "size": 189234,
+        "mimetype": "image/png"
+      }
+    ],
+    "urls": [
+      "https://api.gerar.mn/uploads/product-1234567890-987654321.jpg",
+      "https://api.gerar.mn/uploads/product-1234567891-123456789.jpg"
+    ]
+  },
+  "files": [
+    {
+      "url": "https://api.gerar.mn/uploads/product-1234567890-987654321.jpg",
+      "filename": "product-1234567890-987654321.jpg",
+      "originalname": "product-image.jpg",
+      "size": 245678,
+      "mimetype": "image/jpeg"
+    }
+  ]
+}
+```
+
+**Notes:**
+- Returns array of file objects with detailed information
+- `data.urls` provides a simple array of URLs for easy use
+- All files are validated individually
+- If any file fails validation, the entire request fails
+
+**Errors:**
+- `400` - No files uploaded
+- `400` - Invalid file type (only JPEG, PNG, GIF, WebP allowed)
+- `400` - File too large (maximum 10MB per file)
+- `400` - Too many files (maximum 10 files)
+- `401` - Authentication required
+- `403` - Admin privileges required
+
+---
+
+### Delete Image
+
+Delete an uploaded image file from the server.
+
+**Endpoint:** `POST /api/admin/upload/delete`
+
+**Authentication:** Required (Admin only)
+
+**Request Body:**
+```json
+{
+  "imageUrl": "https://api.gerar.mn/uploads/product-1234567890-987654321.jpg",
+  "path": "/uploads/product-1234567890-987654321.jpg"
+}
+```
+
+**Notes:**
+- Either `imageUrl` or `path` is required (both can be provided)
+- The endpoint extracts the filename from the provided URL or path
+- If the file doesn't exist, returns success (idempotent operation)
+- Only files in the `/uploads/` directory can be deleted (security check)
+- Prevents directory traversal attacks
+
+**Response:** `200 OK`
+```json
+{
+  "success": true,
+  "message": "Image deleted successfully",
+  "data": {
+    "filename": "product-1234567890-987654321.jpg",
+    "deleted": true
+  }
+}
+```
+
+**Response (if file doesn't exist):** `200 OK`
+```json
+{
+  "success": true,
+  "message": "Image deleted successfully (file did not exist)",
+  "data": {
+    "filename": "product-1234567890-987654321.jpg",
+    "deleted": false,
+    "reason": "File not found"
+  }
+}
+```
+
+**Errors:**
+- `400` - Neither imageUrl nor path provided
+- `400` - Invalid filename (contains invalid characters)
+- `403` - Permission denied or invalid file path
+- `401` - Authentication required
+- `403` - Admin privileges required
+
+**Use Cases:**
+- Delete images that were uploaded but not used in product creation
+- Remove images when editing products and removing image URLs
+- Clean up orphaned images from failed uploads
+- Prevent storage bloat by removing unused images
+
+---
+
+## Constants Endpoints
+
+All constants management endpoints are under `/api/admin/constants`.
+
+These endpoints allow admins to update the configuration files:
+- `src/constants/deliveryTimeSlots.js`
+- `src/constants/districts.js`
+
+Updates are validated and written to disk, so changes persist across server restarts.
+
+### Get Delivery Time Slots
+
+Retrieve the current delivery time slots.
+
+**Endpoint:** `GET /api/admin/constants/delivery-time-slots`
+
+**Authentication:** Required (Admin only)
+
+**Response:** `200 OK`
+```json
+{
+  "success": true,
+  "data": {
+    "slots": {
+      "MORNING": "10-14",
+      "AFTERNOON": "14-18",
+      "EVENING": "18-21",
+      "NIGHT": "21-00"
+    },
+    "validSlots": ["10-14", "14-18", "18-21", "21-00"]
+  }
+}
+```
+
+**Notes:**
+- `validSlots` is derived from the values in `slots`
+- Slot values follow the `HH-HH` format (24h clock)
+
+---
+
+### Update Delivery Time Slots
+
+Replace all delivery time slots.
+
+**Endpoint:** `POST /api/admin/constants/delivery-time-slots`
+
+**Authentication:** Required (Admin only)
+
+**Request Body:**
+```json
+{
+  "slots": {
+    "MORNING": "10-14",
+    "AFTERNOON": "14-18",
+    "EVENING": "18-21",
+    "NIGHT": "21-00"
+  }
+}
+```
+
+**Response:** `200 OK`
+```json
+{
+  "success": true,
+  "message": "Delivery time slots updated successfully.",
+  "data": {
+    "slots": {
+      "MORNING": "10-14",
+      "AFTERNOON": "14-18",
+      "EVENING": "18-21",
+      "NIGHT": "21-00"
+    },
+    "validSlots": ["10-14", "14-18", "18-21", "21-00"]
+  }
+}
+```
+
+**Validation Rules:**
+- `slots` must be a non-empty object
+- Keys must be non-empty strings
+- Values must match `HH-HH` format with hours between 0 and 24
+
+**Errors:**
+- `400` - Validation failed
+- `401` - Authentication required
+- `403` - Admin privileges required
+
+---
+
+### Get Districts
+
+Retrieve the current districts map.
+
+**Endpoint:** `GET /api/admin/constants/districts`
+
+**Authentication:** Required (Admin only)
+
+**Response:** `200 OK`
+```json
+{
+  "success": true,
+  "data": {
+    "districts": {
+      "Баянзүрх дүүрэг": 25,
+      "Сүхбаатар дүүрэг": 20
+    }
+  }
+}
+```
+
+---
+
+### Update Districts
+
+Replace all districts and their khoroo counts.
+
+**Endpoint:** `POST /api/admin/constants/districts`
+
+**Authentication:** Required (Admin only)
+
+**Request Body:**
+```json
+{
+  "districts": {
+    "Баянзүрх дүүрэг": 25,
+    "Сүхбаатар дүүрэг": 20
+  }
+}
+```
+
+**Response:** `200 OK`
+```json
+{
+  "success": true,
+  "message": "Districts updated successfully.",
+  "data": {
+    "districts": {
+      "Баянзүрх дүүрэг": 25,
+      "Сүхбаатар дүүрэг": 20
+    }
+  }
+}
+```
+
+**Validation Rules:**
+- `districts` must be a non-empty object
+- Keys must be non-empty strings
+- Values must be positive integers (khoroo count)
+
+**Errors:**
+- `400` - Validation failed
+- `401` - Authentication required
+- `403` - Admin privileges required
 
 ---
 
@@ -1580,6 +1921,12 @@ While not admin-specific, admins can also use these public endpoints for viewing
 ### Order Endpoints
 - `GET /api/admin/orders/all` - Get all orders
 
+### Constants Endpoints
+- `GET /api/admin/constants/delivery-time-slots` - Get delivery time slots
+- `POST /api/admin/constants/delivery-time-slots` - Update delivery time slots
+- `GET /api/admin/constants/districts` - Get districts
+- `POST /api/admin/constants/districts` - Update districts
+
 ---
 
-*Last Updated: January 2025*
+*Last Updated: January 2026*

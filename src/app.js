@@ -1,6 +1,8 @@
 const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
+const path = require('path');
+const fs = require('fs');
 const errorHandler = require('./middleware/errorMiddleware');
 const { handleJsonErrors } = require('./middleware/validation');
 const authRoutes = require('./routes/authRoutes');
@@ -17,6 +19,15 @@ const { notFoundHandler } = require('./middleware/errorMiddleware');
 dotenv.config();
 
 const app = express();
+
+// Ensure public/uploads directory exists
+const uploadsDir = path.join(__dirname, '../public/uploads');
+if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
+// Serve static files from public directory (for uploaded images)
+app.use('/uploads', express.static(path.join(__dirname, '../public/uploads')));
 
 // Middleware configuration
 // Configure CORS to support multiple origins including localhost
@@ -94,10 +105,10 @@ app.use(cors({
         callback(new Error('Not allowed by CORS'));
     },
     credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'],
+    methods: ['GET', 'POST', 'OPTIONS', 'HEAD'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin', 'x-session-token'],
     exposedHeaders: ['Content-Type', 'Authorization'],
-    preflightContinue: true, // Allow explicit OPTIONS handler to run as fallback
+    preflightContinue: false,
     optionsSuccessStatus: 204
 }));
 
@@ -123,41 +134,6 @@ if (process.env.NODE_ENV === 'development') {
         next();
     });
 }
-
-// Explicit OPTIONS handler for CORS preflight requests
-// This ensures preflight requests are handled even if middleware has issues
-app.options('*', (req, res) => {
-    const origin = req.headers.origin;
-    const allowedOrigins = getAllowedOrigins();
-    
-    // Check if origin is allowed
-    let isAllowed = false;
-    if (!origin) {
-        isAllowed = true; // Allow requests with no origin
-    } else if (allowedOrigins === '*') {
-        isAllowed = true;
-    } else if (allowedOrigins.includes(origin)) {
-        isAllowed = true;
-    } else {
-        // Check localhost pattern
-        const isLocalhost = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
-        if (isLocalhost && allowedOrigins.some(o => o.includes('localhost') || o.includes('127.0.0.1'))) {
-            isAllowed = true;
-        }
-    }
-    
-    if (isAllowed && origin) {
-        res.header('Access-Control-Allow-Origin', origin);
-    } else if (isAllowed) {
-        res.header('Access-Control-Allow-Origin', '*');
-    }
-    
-    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD');
-    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin, x-session-token');
-    res.header('Access-Control-Allow-Credentials', 'true');
-    res.header('Access-Control-Max-Age', '3600');
-    res.sendStatus(204);
-});
 
 // Basic health check route
 app.get('/', (req, res) => {
@@ -204,7 +180,7 @@ app.use((req, res, next) => {
         let errorMessage = 'Access forbidden. This may be due to server-level restrictions.';
         if (statusCode === 403) {
             errorMessage += ' Common causes: mod_security rules blocking the request, .htaccess restrictions, or file permissions.';
-            errorMessage += ' If using PUT/PATCH methods, check mod_security settings in cPanel.';
+            errorMessage += ' Check mod_security settings in cPanel if requests are being blocked.';
         }
         
         return res.status(statusCode).json({
@@ -214,7 +190,7 @@ app.use((req, res, next) => {
                 code: 'SERVER_ERROR',
                 message: errorMessage,
                 hint: statusCode === 403 
-                    ? 'Check mod_security logs in cPanel and ensure PUT/PATCH methods are allowed. The original request was likely blocked by Apache/mod_security before reaching the Node.js application.'
+                    ? 'Check mod_security logs in cPanel. The original request was likely blocked by Apache/mod_security before reaching the Node.js application.'
                     : statusCode === 404
                     ? 'Resource not found'
                     : 'Internal server error'
