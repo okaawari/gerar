@@ -204,3 +204,18 @@ model draftorder {
   @@index([expiresAt]) // For cleanup of expired drafts
   @@map("draftorder")
 }
+
+model otp {
+  id          Int      @id @default(autoincrement())
+  phoneNumber String   @db.VarChar(8)
+  code        String   @db.VarChar(6) // OTP code (4 digits for REGISTRATION, 6 digits for others)
+  purpose     String   @db.VarChar(50) // e.g., 'REGISTRATION', 'LOGIN', 'PASSWORD_RESET'
+  isUsed      Boolean  @default(false)
+  expiresAt   DateTime
+  createdAt   DateTime @default(now())
+
+  @@index([phoneNumber, code])
+  @@index([phoneNumber, purpose])
+  @@index([expiresAt]) // For cleanup of expired OTPs
+  @@map("otp")
+}

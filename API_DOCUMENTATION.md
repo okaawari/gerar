@@ -11,6 +11,7 @@ This document provides comprehensive API documentation for frontend developers t
 - [Error Handling](#error-handling)
 - [API Endpoints](#api-endpoints)
   - [Authentication](#authentication-endpoints)
+  - [OTP](#otp-endpoints)
   - [Categories](#categories-endpoints)
   - [Products](#products-endpoints)
   - [Cart](#cart-endpoints)
@@ -203,20 +204,38 @@ All API responses follow a consistent format:
 
 **Authentication**: Not required (public endpoint)
 
+**Important**: Registration now requires OTP verification. You must first send an OTP code to the phone number, then include the received code in the registration request.
+
+**Registration Flow**:
+1. **Step 1**: Send OTP code to phone number
+   ```
+   POST /api/otp/send
+   Body: { "phoneNumber": "12345678", "purpose": "REGISTRATION" }
+   ```
+   User receives a 4-digit OTP code via SMS.
+
+2. **Step 2**: Register with OTP code
+   ```
+   POST /api/auth/register
+   Body: { "phoneNumber": "12345678", "pin": "1234", "name": "John Doe", "otpCode": "1234", "email": "john@example.com" }
+   ```
+
 **Request Body** (JSON):
 ```json
 {
   "phoneNumber": "12345678",
   "pin": "1234",
   "name": "John Doe",
+  "otpCode": "1234",
   "email": "john@example.com" // Optional
 }
 ```
 
 **Required Fields**:
-- `phoneNumber` (string): User's phone number
+- `phoneNumber` (string): User's phone number (8 digits)
 - `pin` (string): 4-digit PIN for authentication
 - `name` (string): User's full name
+- `otpCode` (string): 4-digit OTP code received via SMS (must be sent first using `/api/otp/send`)
 
 **Optional Fields**:
 - `email` (string): User's email address
@@ -241,8 +260,37 @@ All API responses follow a consistent format:
 ```
 
 **Error Responses**:
-- `400` - Missing required fields or invalid data
+- `400` - Missing required fields, invalid data, invalid/expired OTP code, or invalid OTP format
 - `409` - Phone number already registered
+- `429` - Too many OTP requests (rate limited)
+
+**Example Registration Flow**:
+```javascript
+// Step 1: Request OTP
+const otpResponse = await fetch('http://localhost:3000/api/otp/send', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    phoneNumber: '12345678',
+    purpose: 'REGISTRATION'
+  })
+});
+
+// Step 2: User receives SMS with 4-digit code (e.g., "1234")
+
+// Step 3: Register with OTP code
+const registerResponse = await fetch('http://localhost:3000/api/auth/register', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    phoneNumber: '12345678',
+    pin: '1234',
+    name: 'John Doe',
+    otpCode: '1234', // Code from SMS
+    email: 'john@example.com'
+  })
+});
+```
 
 ---
 
@@ -287,6 +335,175 @@ All API responses follow a consistent format:
 **Error Responses**:
 - `400` - Missing phone number or PIN
 - `401` - Invalid credentials
+
+---
+
+### Request Registration OTP
+
+**Method**: `POST` (sends 4-digit OTP code for registration)
+
+**Endpoint**: `POST /api/otp/send`
+
+**Authentication**: Not required (public endpoint)
+
+**Request Body** (JSON):
+```json
+{
+  "phoneNumber": "12345678",
+  "purpose": "REGISTRATION"
+}
+```
+
+**Required Fields**:
+- `phoneNumber` (string): Phone number to send OTP to (8 digits)
+- `purpose` (string): Must be `"REGISTRATION"` for registration flow
+
+**Response**: `200 OK`
+```json
+{
+  "success": true,
+  "message": "OTP sent successfully",
+  "data": {
+    "expiresAt": "2024-01-15T10:40:00.000Z",
+    "expiresInMinutes": 10
+  }
+}
+```
+
+**Note**: Registration OTP codes are 4 digits and expire after 10 minutes. The code will be sent via SMS to the provided phone number.
+
+---
+
+## OTP Endpoints
+
+The OTP (One-Time Password) endpoints allow you to send and verify OTP codes via SMS for phone number verification.
+
+### Send OTP
+
+**Method**: `POST` (sends OTP code to phone number via SMS)
+
+**Endpoint**: `POST /api/otp/send`
+
+**Authentication**: Not required (public endpoint)
+
+**Request Body** (JSON):
+```json
+{
+  "phoneNumber": "12345678",
+  "purpose": "REGISTRATION" // Optional: REGISTRATION, LOGIN, PASSWORD_RESET, VERIFICATION (default)
+}
+```
+
+**Required Fields**:
+- `phoneNumber` (string): Phone number to send OTP to (8 digits)
+
+**Optional Fields**:
+- `purpose` (string): Purpose of OTP. Options: `REGISTRATION`, `LOGIN`, `PASSWORD_RESET`, `VERIFICATION` (default: `VERIFICATION`)
+
+**Response**: `200 OK`
+```json
+{
+  "success": true,
+  "message": "OTP sent successfully",
+  "data": {
+    "expiresAt": "2024-01-15T10:40:00.000Z",
+    "expiresInMinutes": 10
+  }
+}
+```
+
+**Error Responses**:
+- `400` - Invalid phone number format
+- `429` - Too many OTP requests (rate limited) or cooldown period active
+- `500` - Failed to send SMS
+
+**Rate Limiting**:
+- Maximum 5 OTP requests per phone number per hour
+- 60-second cooldown between resend requests
+- OTP expires after 10 minutes
+
+**OTP Code Length**:
+- `REGISTRATION`: 4-digit code
+- Other purposes (`LOGIN`, `PASSWORD_RESET`, `VERIFICATION`): 6-digit code
+
+**Example Request**:
+```javascript
+fetch('http://localhost:3000/api/otp/send', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({
+    phoneNumber: '12345678',
+    purpose: 'REGISTRATION'
+  })
+})
+```
+
+---
+
+### Verify OTP
+
+**Method**: `POST` (verifies OTP code sent to phone number)
+
+**Endpoint**: `POST /api/otp/verify`
+
+**Authentication**: Not required (public endpoint)
+
+**Request Body** (JSON):
+```json
+{
+  "phoneNumber": "12345678",
+  "code": "123456",
+  "purpose": "REGISTRATION" // Optional: Must match the purpose used when sending OTP
+}
+```
+
+**Required Fields**:
+- `phoneNumber` (string): Phone number that received the OTP
+- `code` (string): OTP code (4 digits for REGISTRATION, 6 digits for others)
+
+**Optional Fields**:
+- `purpose` (string): Purpose of OTP. Must match the purpose used when sending OTP (default: `VERIFICATION`)
+
+**Note**: 
+- For `REGISTRATION` purpose, the code must be 4 digits
+- For other purposes, the code must be 6 digits
+
+**Response**: `200 OK`
+```json
+{
+  "success": true,
+  "message": "OTP verified successfully",
+  "data": {
+    "verified": true
+  }
+}
+```
+
+**Error Responses**:
+- `400` - Invalid phone number format, invalid OTP code format, invalid/expired OTP code
+- `500` - Server error
+
+**Example Request**:
+```javascript
+fetch('http://localhost:3000/api/otp/verify', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({
+    phoneNumber: '12345678',
+    code: '123456',
+    purpose: 'REGISTRATION'
+  })
+})
+```
+
+**Notes**:
+- OTP codes are single-use and expire after 10 minutes
+- Once verified, the OTP code cannot be used again
+- All unused OTPs for the same phone/purpose are invalidated after successful verification
 
 ---
 

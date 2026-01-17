@@ -189,7 +189,7 @@ Create a new user account.
 - `name`: Required, must be a non-empty string
 
 **Errors:**
-- `409` - User with this phone number already exists
+- `409` - Бүртгэлтэй утасны дугаар байна
 - `400` - Validation failed
 
 ---

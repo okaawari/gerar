@@ -6,6 +6,7 @@ const fs = require('fs');
 const errorHandler = require('./middleware/errorMiddleware');
 const { handleJsonErrors } = require('./middleware/validation');
 const authRoutes = require('./routes/authRoutes');
+const otpRoutes = require('./routes/otpRoutes');
 const categoryRoutes = require('./routes/categoryRoutes');
 const productRoutes = require('./routes/productRoutes');
 const cartRoutes = require('./routes/cartRoutes');
@@ -147,6 +148,7 @@ app.get('/', (req, res) => {
 
 // API routes
 app.use('/api/auth', authRoutes);
+app.use('/api/otp', otpRoutes);
 app.use('/api/categories', categoryRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/cart', cartRoutes);

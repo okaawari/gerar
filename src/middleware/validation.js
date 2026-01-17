@@ -9,11 +9,11 @@
 const handleJsonErrors = (err, req, res, next) => {
     // Check if this is a JSON parsing error
     if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
-        const error = new Error('Invalid JSON in request body');
+        const error = new Error('Хүсэлтийн бие дэх JSON буруу байна');
         error.statusCode = 400;
         error.code = 'INVALID_JSON';
         error.details = {
-            message: err.message || 'Malformed JSON in request body',
+            message: err.message || 'Хүсэлтийн бие дэх JSON буруу форматтай байна',
             originalError: process.env.NODE_ENV === 'development' ? err.message : undefined
         };
         return next(error);
@@ -85,36 +85,47 @@ const validateEmail = (email) => {
 };
 
 /**
- * Validate user registration data
+ * Validate user registration data (requires OTP code)
  */
 const validateUserRegistration = (req, res, next) => {
-    const { phoneNumber, pin, name, email } = req.body;
+    const { phoneNumber, pin, name, email, otpCode } = req.body;
     const errors = [];
 
     // Check required fields
-    if (!phoneNumber) errors.push('phoneNumber is required');
-    if (!pin) errors.push('pin is required');
-    if (!name) errors.push('name is required');
+    if (!phoneNumber) errors.push('Утасны дугаар шаардлагатай');
+    if (!pin) errors.push('Пин код шаардлагатай');
+    if (!name) errors.push('Нэр шаардлагатай');
+    if (!otpCode) errors.push('Нэг удаагийн код шаардлагатай');
 
     // Validate formats if fields are present
     if (phoneNumber && !validatePhoneNumber(phoneNumber)) {
-        errors.push('phoneNumber must be exactly 8 digits');
+        errors.push('Утасны дугаар яг 8 оронтой байх ёстой');
     }
 
     if (pin && !validatePin(pin)) {
-        errors.push('pin must be exactly 4 digits');
+        errors.push('Пин код яг 4 оронтой байх ёстой');
     }
 
     if (name && (typeof name !== 'string' || name.trim().length === 0)) {
-        errors.push('name must be a non-empty string');
+        errors.push('Нэр хоосон байж болохгүй');
+    }
+    
+    // Validate name length (max 50 characters)
+    if (name && typeof name === 'string' && name.trim().length > 50) {
+        errors.push('Нэр 50 тэмдэгтээс их байж болохгүй');
+    }
+
+    // Validate OTP code format (4 digits for registration)
+    if (otpCode && !/^\d{4}$/.test(otpCode)) {
+        errors.push('Нэг удаагийн код яг 4 оронтой байх ёстой');
     }
 
     // Email is optional, but if provided, must be valid format
     if (email !== undefined && email !== null && email !== '') {
         if (typeof email !== 'string' || email.trim().length === 0) {
-            errors.push('email must be a non-empty string');
+            errors.push('Имэйл хоосон байж болохгүй');
         } else if (!validateEmail(email)) {
-            errors.push('email must be a valid email address');
+            errors.push('Имэйлийн формат буруу байна');
         }
     }
 
@@ -137,20 +148,20 @@ const validateUserLogin = (req, res, next) => {
     const errors = [];
 
     // Check required fields
-    if (!phoneNumber) errors.push('phoneNumber is required');
-    if (!pin) errors.push('pin is required');
+    if (!phoneNumber) errors.push('Утасны дугаар шаардлагатай');
+    if (!pin) errors.push('Пин код шаардлагатай');
 
     // Validate formats if fields are present
     if (phoneNumber && !validatePhoneNumber(phoneNumber)) {
-        errors.push('phoneNumber must be exactly 8 digits');
+        errors.push('Утасны дугаар яг 8 оронтой байх ёстой');
     }
 
     if (pin && !validatePin(pin)) {
-        errors.push('pin must be exactly 4 digits');
+        errors.push('Пин код яг 4 оронтой байх ёстой');
     }
 
     if (errors.length > 0) {
-        const error = new Error('Validation failed');
+        const error = new Error('Баталгаажуулалт амжилтгүй боллоо');
         error.statusCode = 400;
         error.code = 'VALIDATION_ERROR';
         error.details = { errors };

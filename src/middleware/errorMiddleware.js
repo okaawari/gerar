@@ -31,7 +31,7 @@ const errorHandler = (err, req, res, next) => {
         console.error('STACK:', err.stack);
     }
 
-    // Default error values
+    // Default error values - ALWAYS preserve original message unless it's truly generic
     let statusCode = err.statusCode || 500;
     let errorCode = err.code || 'INTERNAL_ERROR';
     let message = err.message || 'Internal Server Error';
@@ -40,26 +40,48 @@ const errorHandler = (err, req, res, next) => {
     
     // Prisma errors
     if (err.code && err.code.startsWith('P')) {
-        statusCode = 400;
-        errorCode = 'DATABASE_ERROR';
+        // Don't override statusCode if it's already set (e.g., 409, 429, etc.)
+        if (!err.statusCode) {
+            statusCode = 400;
+        }
+        errorCode = err.code || 'DATABASE_ERROR';
         
         // Handle specific Prisma errors
         if (err.code === 'P2002') {
-            statusCode = 409;
+            statusCode = err.statusCode || 409;
             errorCode = 'DUPLICATE_ENTRY';
             // Preserve original message if it's more specific
-            if (!err.message || err.message.includes('Unique constraint')) {
-                message = 'A record with this value already exists';
+            if (!err.message || err.message.includes('Unique constraint') || err.message.includes('already exists')) {
+                // Keep generic message only if original is generic
+                if (!err.message || err.message.includes('Unique constraint')) {
+                    message = err.message || 'A record with this value already exists';
+                } else {
+                    message = err.message;
+                }
+            } else {
+                message = err.message;
             }
         } else if (err.code === 'P2025') {
-            statusCode = 404;
+            statusCode = err.statusCode || 404;
             errorCode = 'NOT_FOUND';
             if (!err.message || err.message.includes('Record to') || err.message.includes('An operation failed')) {
-                message = 'Record not found';
+                message = err.message || 'Record not found';
+            } else {
+                message = err.message;
             }
         } else {
-            if (!err.message || err.message.includes('prisma') || err.message.includes('Prisma')) {
+            // Preserve ALL specific error messages - only replace truly generic ones
+            if (!err.message || 
+                (err.message.toLowerCase().includes('prisma') && 
+                 !err.message.includes('Data too long') && 
+                 !err.message.includes('value too long') &&
+                 !err.message.includes('constraint') &&
+                 err.message.length < 50)) {
+                // Only replace very short generic messages
                 message = 'Database operation failed';
+            } else {
+                // Always preserve specific error messages
+                message = err.message;
             }
         }
     }
@@ -85,9 +107,17 @@ const errorHandler = (err, req, res, next) => {
     }
 
     // Validation errors
-    if (err.name === 'ValidationError') {
-        statusCode = 400;
+    if (err.name === 'ValidationError' || err.code === 'VALIDATION_ERROR') {
+        statusCode = err.statusCode || 400;
         errorCode = 'VALIDATION_ERROR';
+        // Preserve original message, especially if it has details
+        if (err.details && err.details.errors && Array.isArray(err.details.errors)) {
+            // Use the first error message or the main message
+            message = err.details.errors[0] || err.message || 'Validation failed';
+        } else if (err.message && err.message !== 'Validation failed') {
+            // Preserve specific validation messages
+            message = err.message;
+        }
     }
 
     // Build error response
@@ -105,6 +135,15 @@ const errorHandler = (err, req, res, next) => {
     // Add additional details if available
     if (err.details) {
         errorResponse.error.details = err.details;
+        // For validation errors, include the errors array in the main message if it's more helpful
+        if (err.details.errors && Array.isArray(err.details.errors) && err.details.errors.length > 0) {
+            // Keep the detailed errors in details, but ensure message is clear
+            if (message === 'Validation failed' || !message) {
+                message = err.details.errors.join('; ');
+                errorResponse.message = message;
+                errorResponse.error.message = message;
+            }
+        }
     }
 
     // Add stack trace in development mode (or always for debugging)

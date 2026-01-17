@@ -2,29 +2,50 @@ const prisma = require('../lib/prisma');
 const { hashPin, comparePin, validatePin, validatePhoneNumber } = require('../utils/hashUtils');
 const { generateToken } = require('../utils/jwtUtils');
 const { validateEmail } = require('../middleware/validation');
+const otpService = require('./otpService');
 
 class AuthService {
     /**
-     * Register a new user
-     * @param {Object} userData - { phoneNumber, pin, name, email? }
+     * Register a new user (requires OTP verification)
+     * @param {Object} userData - { phoneNumber, pin, name, email?, otpCode }
      * @returns {Object} - { user, token }
      */
-    async register({ phoneNumber, pin, name, email }) {
+    async register({ phoneNumber, pin, name, email, otpCode }) {
         // 1. Validation
         if (!phoneNumber || !pin || !name) {
-            const error = new Error('Phone number, PIN, and name are required');
+            const error = new Error('Утасны дугаар, пин код болон нэр шаардлагатай');
+            error.statusCode = 400;
+            throw error;
+        }
+
+        if (!otpCode) {
+            const error = new Error('Бүртгэлд нэг удаагийн код шаардлагатай');
             error.statusCode = 400;
             throw error;
         }
 
         if (!validatePhoneNumber(phoneNumber)) {
-            const error = new Error('Invalid phone number format. Must be 8 digits.');
+            const error = new Error('Утасны дугаарын формат буруу байна. 8 оронтой байх ёстой.');
             error.statusCode = 400;
             throw error;
         }
 
         if (!validatePin(pin)) {
-            const error = new Error('Invalid PIN format. Must be 4 digits.');
+            const error = new Error('Пин кодын формат буруу байна. 4 оронтой байх ёстой.');
+            error.statusCode = 400;
+            throw error;
+        }
+
+        // Validate name length
+        if (name && typeof name === 'string' && name.trim().length > 50) {
+            const error = new Error('Нэр 50 тэмдэгтээс их байж болохгүй');
+            error.statusCode = 400;
+            throw error;
+        }
+
+        // Validate OTP code format (4 digits for registration)
+        if (!/^\d{4}$/.test(otpCode)) {
+            const error = new Error('Нэг удаагийн кодын формат буруу байна. 4 оронтой байх ёстой.');
             error.statusCode = 400;
             throw error;
         }
@@ -32,51 +53,73 @@ class AuthService {
         // Validate email if provided
         if (email !== undefined && email !== null && email !== '') {
             if (!validateEmail(email)) {
-                const error = new Error('Invalid email format');
+                const error = new Error('Имэйлийн формат буруу байна');
                 error.statusCode = 400;
                 throw error;
             }
         }
 
-        // 2. Check if user already exists by phone number
+        // 2. Verify OTP code first (before checking if user exists)
+        try {
+            await otpService.verifyOTP(phoneNumber, otpCode, 'REGISTRATION');
+        } catch (otpError) {
+            // Re-throw OTP verification errors
+            throw otpError;
+        }
+
+        // 3. Check if user already exists by phone number
         const existingUserByPhone = await prisma.user.findUnique({
             where: { phoneNumber },
         });
 
         if (existingUserByPhone) {
-            const error = new Error('User with this phone number already exists');
+            const error = new Error('Бүртгэлтэй утасны дугаар байна');
             error.statusCode = 409;
             throw error;
         }
 
-        // 3. Check if email is already taken (if provided)
+        // 4. Check if email is already taken (if provided)
         if (email) {
             const existingUserByEmail = await prisma.user.findUnique({
                 where: { email },
             });
 
             if (existingUserByEmail) {
-                const error = new Error('User with this email already exists');
+                const error = new Error('Энэ имэйлтэй хэрэглэгч аль хэдийн бүртгэлтэй байна');
                 error.statusCode = 409;
                 throw error;
             }
         }
 
-        // 4. Hash PIN
+        // 5. Hash PIN
         const hashedPin = await hashPin(pin);
 
-        // 5. Create User
-        const user = await prisma.user.create({
-            data: {
-                phoneNumber,
-                email: email || null,
-                pin: hashedPin,
-                name,
-                role: 'USER', // Default role
-            },
-        });
+        // 6. Create User
+        let user;
+        try {
+            user = await prisma.user.create({
+                data: {
+                    phoneNumber,
+                    email: email || null,
+                    pin: hashedPin,
+                    name,
+                    role: 'USER', // Default role
+                },
+            });
+        } catch (dbError) {
+            // Handle database errors (like data too long, constraints, etc.)
+            if (dbError.code && dbError.code.startsWith('P')) {
+                // Prisma error - preserve the error
+                throw dbError;
+            }
+            // For other database errors, wrap them
+            const error = new Error(dbError.message || 'Хэрэглэгчийн бүртгэл үүсгэхэд алдаа гарлаа');
+            error.statusCode = 500;
+            error.originalError = dbError;
+            throw error;
+        }
 
-        // 5. Generate Token
+        // 7. Generate Token
         const token = generateToken(user);
 
         // Return user without PIN
@@ -92,7 +135,7 @@ class AuthService {
     async login({ phoneNumber, pin }) {
         // 1. Validation
         if (!phoneNumber || !pin) {
-            const error = new Error('Phone number and PIN are required');
+            const error = new Error('Утасны дугаар болон пин код шаардлагатай');
             error.statusCode = 400;
             throw error;
         }
@@ -103,7 +146,7 @@ class AuthService {
         });
 
         if (!user) {
-            const error = new Error('Invalid credentials');
+            const error = new Error('Утасны дугаар эсвэл пин буруу байна');
             error.statusCode = 401;
             throw error;
         }
@@ -112,7 +155,7 @@ class AuthService {
         const isPinValid = await comparePin(pin, user.pin);
 
         if (!isPinValid) {
-            const error = new Error('Invalid credentials');
+            const error = new Error('Утасны дугаар эсвэл пин буруу байна');
             error.statusCode = 401;
             throw error;
         }
@@ -133,13 +176,13 @@ class AuthService {
     async requestPasswordReset(phoneNumber) {
         // 1. Validation
         if (!phoneNumber) {
-            const error = new Error('Phone number is required');
+            const error = new Error('Утасны дугаар шаардлагатай');
             error.statusCode = 400;
             throw error;
         }
 
         if (!validatePhoneNumber(phoneNumber)) {
-            const error = new Error('Invalid phone number format. Must be 8 digits.');
+            const error = new Error('Утасны дугаарын формат буруу байна. 8 оронтой байх ёстой.');
             error.statusCode = 400;
             throw error;
         }
@@ -155,7 +198,7 @@ class AuthService {
             // Return success message anyway to prevent user enumeration
             return {
                 success: true,
-                message: 'If an account exists with this phone number, a reset code has been sent.',
+                message: 'Хэрэв энэ утасны дугаартай бүртгэл байвал, сэргээх код илгээгдсэн.',
                 resetCode: null, // In production, you'd send this via SMS/email
             };
         }
@@ -176,7 +219,7 @@ class AuthService {
 
         return {
             success: true,
-            message: 'Reset code generated successfully',
+            message: 'Сэргээх код амжилттай үүсгэгдлээ',
             resetCode, // In production, don't return this - send via SMS
             resetToken,
             expiresAt,
@@ -193,19 +236,19 @@ class AuthService {
     async resetPassword({ phoneNumber, resetCode, newPin, resetToken }) {
         // 1. Validation
         if (!phoneNumber || !resetCode || !newPin) {
-            const error = new Error('Phone number, reset code, and new PIN are required');
+            const error = new Error('Утасны дугаар, сэргээх код болон шинэ пин код шаардлагатай');
             error.statusCode = 400;
             throw error;
         }
 
         if (!validatePhoneNumber(phoneNumber)) {
-            const error = new Error('Invalid phone number format. Must be 8 digits.');
+            const error = new Error('Утасны дугаарын формат буруу байна. 8 оронтой байх ёстой.');
             error.statusCode = 400;
             throw error;
         }
 
         if (!validatePin(newPin)) {
-            const error = new Error('Invalid PIN format. Must be 4 digits.');
+            const error = new Error('Пин кодын формат буруу байна. 4 оронтой байх ёстой.');
             error.statusCode = 400;
             throw error;
         }
@@ -216,7 +259,7 @@ class AuthService {
         });
 
         if (!user) {
-            const error = new Error('Invalid reset code or user not found');
+            const error = new Error('Сэргээх код буруу эсвэл хэрэглэгч олдсонгүй');
             error.statusCode = 400;
             throw error;
         }
@@ -262,7 +305,7 @@ class AuthService {
 
         return {
             success: true,
-            message: 'Password reset successfully',
+            message: 'Пин код амжилттай сэргээгдлээ',
             user: userWithoutPin,
             token,
         };

@@ -2,18 +2,18 @@ const authService = require('../services/authService');
 
 class AuthController {
     /**
-     * Handle user registration
+     * Handle user registration (requires OTP verification)
      * POST /api/auth/register
      */
     async register(req, res, next) {
         try {
-            const { phoneNumber, pin, name, email } = req.body;
+            const { phoneNumber, pin, name, email, otpCode } = req.body;
 
-            const result = await authService.register({ phoneNumber, pin, name, email });
+            const result = await authService.register({ phoneNumber, pin, name, email, otpCode });
 
             res.status(201).json({
                 success: true,
-                message: 'User registered successfully',
+                message: 'Хэрэглэгч амжилттай бүртгэгдлээ',
                 data: result,
             });
         } catch (error) {
@@ -33,7 +33,7 @@ class AuthController {
 
             res.status(200).json({
                 success: true,
-                message: 'Login successful',
+                message: 'Нэвтрэх амжилттай',
                 data: result,
             });
         } catch (error) {
