@@ -13,6 +13,7 @@ const cartRoutes = require('./routes/cartRoutes');
 const orderRoutes = require('./routes/orderRoutes');
 const addressRoutes = require('./routes/addressRoutes');
 const favoriteRoutes = require('./routes/favoriteRoutes');
+const paymentRoutes = require('./routes/paymentRoutes');
 const adminRoutes = require('./routes/admin');
 const { notFoundHandler } = require('./middleware/errorMiddleware');
 
@@ -52,6 +53,11 @@ const getAllowedOrigins = () => {
         'http://127.0.0.1:5000',
         'http://127.0.0.1:5173',
         'http://127.0.0.1:8080',
+        'http://192.168.1.3:3000',
+        'http://192.168.1.3:3001',
+        'http://192.168.1.3:5000',
+        'http://192.168.1.3:5173',
+        'http://192.168.1.3:8080',
         'https://admin.gerar.mn',
         'http://admin.gerar.mn',
         'https://api.gerar.mn',
@@ -72,46 +78,74 @@ const getAllowedOrigins = () => {
 };
 
 // CORS configuration with dynamic origin checking
-app.use(cors({
-    origin: (origin, callback) => {
-        const allowedOrigins = getAllowedOrigins();
+app.use((req, res, next) => {
+    // Allow Next.js internal routes (webpack HMR, etc.) to bypass CORS
+    // These are internal Next.js routes that don't need CORS protection
+    if (req.path.startsWith('/_next/')) {
+        // Set permissive CORS headers for Next.js internal routes
+        res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+        res.header('Access-Control-Allow-Credentials', 'true');
+        res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, HEAD');
+        res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin, x-session-token');
         
-        // Allow requests with no origin (like mobile apps or Postman)
-        if (!origin) {
-            return callback(null, true);
+        // Handle preflight requests
+        if (req.method === 'OPTIONS') {
+            return res.sendStatus(204);
         }
         
-        // If wildcard is allowed
-        if (allowedOrigins === '*') {
-            return callback(null, true);
-        }
-        
-        // Check if origin is in allowed list
-        if (allowedOrigins.includes(origin)) {
-            return callback(null, true);
-        }
-        
-        // For localhost with any port, allow it if any localhost is in the list
-        const isLocalhost = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
-        if (isLocalhost && allowedOrigins.some(o => o.includes('localhost') || o.includes('127.0.0.1'))) {
-            return callback(null, true);
-        }
-        
-        // Allow subdomains of gerar.mn (admin.gerar.mn, api.gerar.mn, etc.)
-        const isGerarDomain = /^https?:\/\/[a-zA-Z0-9-]+\.gerar\.mn(?::\d+)?$/.test(origin);
-        if (isGerarDomain) {
-            return callback(null, true);
-        }
-        
-        callback(new Error('Not allowed by CORS'));
-    },
-    credentials: true,
-    methods: ['GET', 'POST', 'OPTIONS', 'HEAD'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin', 'x-session-token'],
-    exposedHeaders: ['Content-Type', 'Authorization'],
-    preflightContinue: false,
-    optionsSuccessStatus: 204
-}));
+        return next();
+    }
+    
+    cors({
+        origin: (origin, callback) => {
+            const allowedOrigins = getAllowedOrigins();
+            
+            // Allow requests with no origin (like mobile apps or Postman)
+            if (!origin) {
+                return callback(null, true);
+            }
+            
+            // If wildcard is allowed
+            if (allowedOrigins === '*') {
+                return callback(null, true);
+            }
+            
+            // Check if origin is in allowed list
+            if (allowedOrigins.includes(origin)) {
+                return callback(null, true);
+            }
+            
+            // For localhost with any port, allow it if any localhost is in the list
+            const isLocalhost = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+            if (isLocalhost && allowedOrigins.some(o => o.includes('localhost') || o.includes('127.0.0.1'))) {
+                return callback(null, true);
+            }
+            
+            // Allow local network IPs (192.168.x.x, 10.x.x.x, 172.16-31.x.x) in development
+            // This allows mobile devices on the same network to access the API
+            if (process.env.NODE_ENV === 'development') {
+                const isLocalNetwork = /^https?:\/\/(192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2[0-9]|3[01])\.\d{1,3}\.\d{1,3})(:\d+)?$/.test(origin);
+                if (isLocalNetwork) {
+                    return callback(null, true);
+                }
+            }
+            
+            // Allow subdomains of gerar.mn (admin.gerar.mn, api.gerar.mn, etc.)
+            const isGerarDomain = /^https?:\/\/[a-zA-Z0-9-]+\.gerar\.mn(?::\d+)?$/.test(origin);
+            if (isGerarDomain) {
+                return callback(null, true);
+            }
+            
+            callback(new Error('Not allowed by CORS'));
+        },
+        credentials: true,
+        methods: ['GET', 'POST', 'OPTIONS', 'HEAD'],
+        allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin', 'x-session-token'],
+        exposedHeaders: ['Content-Type', 'Authorization'],
+        preflightContinue: false,
+        optionsSuccessStatus: 204
+    })(req, res, next);
+});
 
 // Parse JSON request bodies with size limit
 app.use(express.json({
@@ -146,12 +180,53 @@ app.get('/', (req, res) => {
     });
 });
 
+// Handle Next.js internal routes (webpack HMR, etc.)
+// These routes are handled by Next.js dev server, not the Express API
+// Return a simple response to avoid 404 errors in logs
+app.use((req, res, next) => {
+    if (req.path.startsWith('/_next/')) {
+        // Return 204 No Content for Next.js internal routes
+        // These should be handled by Next.js dev server, not the API server
+        return res.status(204).send();
+    }
+    next();
+});
+
+// Handle favicon.ico requests (browsers automatically request this)
+app.get('/favicon.ico', (req, res) => {
+    res.status(204).send();
+});
+
+// API root endpoint
+app.get('/api', (req, res) => {
+    res.status(200).json({
+        success: true,
+        message: 'Ecommerce API',
+        version: '1.0.0',
+        endpoints: {
+            auth: '/api/auth',
+            otp: '/api/otp',
+            categories: '/api/categories',
+            products: '/api/products',
+            cart: '/api/cart',
+            orders: '/api/orders',
+            addresses: '/api/addresses',
+            favorites: '/api/favorites',
+            payments: '/api/orders/:id/payment-*',
+            admin: '/api/admin'
+        },
+        timestamp: new Date().toISOString()
+    });
+});
+
 // API routes
 app.use('/api/auth', authRoutes);
 app.use('/api/otp', otpRoutes);
 app.use('/api/categories', categoryRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/cart', cartRoutes);
+// Payment routes must be before order routes to avoid route conflicts
+app.use('/api', paymentRoutes); // Payment routes (includes /api/orders/:id/payment-*)
 app.use('/api/orders', orderRoutes);
 app.use('/api/addresses', addressRoutes);
 app.use('/api/favorites', favoriteRoutes);

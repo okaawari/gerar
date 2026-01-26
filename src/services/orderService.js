@@ -6,6 +6,56 @@ const { isValidDeliveryTimeSlot } = require('../constants/deliveryTimeSlots');
 
 class OrderService {
     /**
+     * Generate custom order ID in format YYMMDDNNN
+     * Format: YY (year last 2 digits) + MM (month) + DD (day) + NNN (sequential number starting from 001)
+     * Example: 260126001 for January 26, 2026, first order of the day
+     * @returns {Promise<string>} - Generated order ID
+     */
+    async generateOrderId() {
+        const now = new Date();
+        const year = now.getFullYear().toString().slice(-2); // Last 2 digits of year
+        const month = String(now.getMonth() + 1).padStart(2, '0'); // Month (01-12)
+        const day = String(now.getDate()).padStart(2, '0'); // Day (01-31)
+        const datePrefix = `${year}${month}${day}`; // YYMMDD format
+
+        // Find the last order created today
+        const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+
+        const lastOrder = await prisma.order.findFirst({
+            where: {
+                createdAt: {
+                    gte: startOfDay,
+                    lte: endOfDay
+                },
+                id: {
+                    startsWith: datePrefix
+                }
+            },
+            orderBy: {
+                createdAt: 'desc'
+            },
+            select: {
+                id: true
+            }
+        });
+
+        let sequenceNumber = 1; // Start from 1
+        if (lastOrder && lastOrder.id.startsWith(datePrefix)) {
+            // Extract the sequence number from the last order ID
+            const lastSequence = parseInt(lastOrder.id.slice(-3), 10);
+            if (!isNaN(lastSequence)) {
+                sequenceNumber = lastSequence + 1;
+            }
+        }
+
+        // Format sequence number with leading zeros (001, 002, etc.)
+        const sequenceStr = String(sequenceNumber).padStart(3, '0');
+        
+        return `${datePrefix}${sequenceStr}`;
+    }
+
+    /**
      * Calculate total amount from cart items
      * @param {Array} cartItems - Array of cart items with product information
      * @returns {number} - Total amount
@@ -126,11 +176,15 @@ class OrderService {
             finalAddressId = parseInt(addressId);
         }
 
+        // Generate custom order ID before transaction
+        const orderId = await this.generateOrderId();
+
         // Use transaction to ensure atomicity
         // Create order, order items, reduce stock, and clear cart in one transaction
         const order = await prisma.$transaction(async (tx) => {
             // Create order
             const orderData = {
+                id: orderId,
                 userId: userId ? parseInt(userId) : null,
                 addressId: finalAddressId,
                 deliveryTimeSlot: deliveryTimeSlot || null,
@@ -334,12 +388,16 @@ class OrderService {
         const price = parseFloat(stockCheck.product.price);
         const totalAmount = price * qty;
 
+        // Generate custom order ID before transaction
+        const orderId = await this.generateOrderId();
+
         // Use transaction to ensure atomicity
         // Create order, order item, and reduce stock in one transaction
         const order = await prisma.$transaction(async (tx) => {
             // Create order
             const newOrder = await tx.order.create({
                 data: {
+                    id: orderId,
                     userId: userIdInt,
                     addressId: parseInt(addressId),
                     deliveryTimeSlot: deliveryTimeSlot || null,
@@ -522,11 +580,15 @@ class OrderService {
             throw error;
         }
 
+        // Generate custom order ID before transaction
+        const orderId = await this.generateOrderId();
+
         // Use transaction to ensure atomicity
         const order = await prisma.$transaction(async (tx) => {
             // Create order
             const newOrder = await tx.order.create({
                 data: {
+                    id: orderId,
                     userId: userIdInt,
                     addressId: finalAddressId ? parseInt(finalAddressId) : null,
                     deliveryTimeSlot: deliveryTimeSlot || null,
@@ -649,14 +711,14 @@ class OrderService {
 
     /**
      * Get order by ID
-     * @param {number} orderId - Order ID
+     * @param {string} orderId - Order ID (custom format: YYMMDDNNN)
      * @param {number} userId - User ID (for access control)
      * @param {boolean} isAdmin - Whether user is admin
      * @returns {Object} - Order with items
      */
     async getOrderById(orderId, userId, isAdmin = false) {
         const order = await prisma.order.findUnique({
-            where: { id: parseInt(orderId) },
+            where: { id: String(orderId) },
             include: {
                 items: {
                     include: {
@@ -682,7 +744,8 @@ class OrderService {
                     select: {
                         id: true,
                         phoneNumber: true,
-                        name: true
+                        name: true,
+                        email: true
                     }
                 }
             }
@@ -850,6 +913,64 @@ class OrderService {
             }
             return formatted;
         });
+    }
+
+    /**
+     * Update order payment status
+     * @param {string} orderId - Order ID (custom format: YYMMDDNNN)
+     * @param {Object} paymentData - Payment data (qpayInvoiceId, qpayPaymentId, paymentStatus, paymentMethod, paidAt, ebarimtId)
+     * @returns {Promise<Object>} Updated order
+     */
+    async updatePaymentStatus(orderId, paymentData) {
+        const updateData = {};
+        
+        if (paymentData.qpayInvoiceId !== undefined) {
+            updateData.qpayInvoiceId = paymentData.qpayInvoiceId;
+        }
+        if (paymentData.qpayPaymentId !== undefined) {
+            updateData.qpayPaymentId = paymentData.qpayPaymentId;
+        }
+        if (paymentData.paymentStatus !== undefined) {
+            updateData.paymentStatus = paymentData.paymentStatus;
+        }
+        if (paymentData.paymentMethod !== undefined) {
+            updateData.paymentMethod = paymentData.paymentMethod;
+        }
+        if (paymentData.paidAt !== undefined) {
+            updateData.paidAt = paymentData.paidAt;
+        }
+        if (paymentData.ebarimtId !== undefined) {
+            updateData.ebarimtId = paymentData.ebarimtId;
+        }
+        // Update order status if payment is completed
+        if (paymentData.paymentStatus === 'PAID') {
+            updateData.status = 'PAID';
+            if (!updateData.paidAt) {
+                updateData.paidAt = new Date();
+            }
+        }
+
+        const updatedOrder = await prisma.order.update({
+            where: { id: String(orderId) },
+            data: updateData,
+            include: {
+                items: {
+                    include: {
+                        product: true
+                    }
+                },
+                address: true,
+                user: {
+                    select: {
+                        id: true,
+                        phoneNumber: true,
+                        name: true
+                    }
+                }
+            }
+        });
+
+        return updatedOrder;
     }
 }
 

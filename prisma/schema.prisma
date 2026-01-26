@@ -94,7 +94,7 @@ model cartitem {
 }
 
 model order {
-  id              Int         @id @default(autoincrement())
+  id              String      @id @db.VarChar(9) // Custom format: YYMMDDNNN (e.g., 260126001)
   userId          Int?        // Nullable for guest orders
   addressId       Int?
   deliveryTimeSlot String?    @db.VarChar(5)
@@ -102,6 +102,17 @@ model order {
   status          String      @default("PENDING")
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
+  
+  // QPAY Payment fields
+  qpayInvoiceId   String?     @db.VarChar(255)
+  qpayPaymentId   String?     @db.VarChar(255)
+  qpayQrText      String?     @db.Text // QR code text/URL from QPAY
+  qpayQrCode      String?     @db.LongText // QR code base64 image from QPAY (preferred over regenerating)
+  qpayExpiryDate  DateTime?   // QR code expiry date (1 hour from creation)
+  paymentStatus   String      @default("PENDING") @db.VarChar(50)
+  paymentMethod   String?     @db.VarChar(50)
+  paidAt          DateTime?
+  ebarimtId       String?     @db.VarChar(255)
 
   user            user?       @relation(fields: [userId], references: [id])
   address         address?    @relation(fields: [addressId], references: [id])
@@ -111,6 +122,9 @@ model order {
   @@index([status])
   @@index([addressId])
   @@index([deliveryTimeSlot])
+  @@index([paymentStatus])
+  @@index([qpayInvoiceId])
+  @@index([qpayPaymentId])
   @@map("order")
 }
 
@@ -143,7 +157,7 @@ model address {
 
 model orderitem {
   id        Int      @id @default(autoincrement())
-  orderId   Int
+  orderId   String   @db.VarChar(9) // References order.id (custom format: YYMMDDNNN)
   productId Int
   quantity  Int
   price     Decimal  @db.Decimal(10, 2)

@@ -91,16 +91,58 @@ ALTER TABLE `productcategory` ADD CONSTRAINT `productcategory_categoryId_fkey` F
 ALTER TABLE `draftorder` ADD CONSTRAINT `draftorder_productId_fkey` FOREIGN KEY (`productId`) REFERENCES `product`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- RedefineIndex
+-- Handle both old and new index names
+-- Try to drop old index (may not exist)
+SET @sql = IF((SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'address' AND index_name = 'Address_userId_idx') > 0,
+    'ALTER TABLE `address` DROP INDEX `Address_userId_idx`',
+    'SELECT 1');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+-- Try to drop new index if it exists (from previous attempt)
+SET @sql = IF((SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'address' AND index_name = 'address_userId_idx') > 0,
+    'ALTER TABLE `address` DROP INDEX `address_userId_idx`',
+    'SELECT 1');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+-- Create new index
 CREATE INDEX `address_userId_idx` ON `address`(`userId`);
-DROP INDEX `Address_userId_idx` ON `address`;
 
 -- RedefineIndex
+-- Handle both old and new index names
+-- Try to drop old index (may not exist)
+SET @sql = IF((SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'address' AND index_name = 'Address_userId_isDefault_idx') > 0,
+    'ALTER TABLE `address` DROP INDEX `Address_userId_isDefault_idx`',
+    'SELECT 1');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+-- Try to drop new index if it exists (from previous attempt)
+SET @sql = IF((SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'address' AND index_name = 'address_userId_isDefault_idx') > 0,
+    'ALTER TABLE `address` DROP INDEX `address_userId_isDefault_idx`',
+    'SELECT 1');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+-- Create new index
 CREATE INDEX `address_userId_isDefault_idx` ON `address`(`userId`, `isDefault`);
-DROP INDEX `Address_userId_isDefault_idx` ON `address`;
 
 -- RedefineIndex
+-- Drop old index first, then create new one
+SET @sql = IF((SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'cartitem' AND index_name = 'CartItem_userId_productId_key') > 0,
+    'ALTER TABLE `cartitem` DROP INDEX `CartItem_userId_productId_key`',
+    'SELECT 1');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+SET @sql = IF((SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'cartitem' AND index_name = 'cartitem_userId_productId_key') > 0,
+    'ALTER TABLE `cartitem` DROP INDEX `cartitem_userId_productId_key`',
+    'SELECT 1');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 CREATE UNIQUE INDEX `cartitem_userId_productId_key` ON `cartitem`(`userId`, `productId`);
-DROP INDEX `CartItem_userId_productId_key` ON `cartitem`;
 
 -- RedefineIndex
 CREATE UNIQUE INDEX `category_name_parentId_key` ON `category`(`name`, `parentId`);

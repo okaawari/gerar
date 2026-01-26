@@ -21,8 +21,9 @@ PassengerStartupFile /home/gerarmn/api.gerar.mn/src/server.js
 # .htaccess for cPanel Node.js Application
 # This file helps with mod_security and routing issues
 
-# Allow PUT, PATCH, DELETE methods
-<Limit PUT PATCH DELETE>
+# Allow HTTP methods (though we only use GET and POST in this project)
+# Keeping this for compatibility but project uses POST-only pattern
+<Limit GET POST OPTIONS HEAD>
     Require all granted
 </Limit>
 
@@ -54,22 +55,4 @@ PassengerStartupFile /home/gerarmn/api.gerar.mn/src/server.js
 # CORS headers are handled by Node.js Express CORS middleware
 # We don't set headers here to avoid conflicts with Express CORS configuration
 # The Express app will handle all CORS logic including preflight OPTIONS requests
-
-<IfModule mod_headers.c>
-    # Handle CORS preflight OPTIONS requests
-    # This ensures OPTIONS requests get proper headers before any redirect
-    <If "%{REQUEST_METHOD} == 'OPTIONS'">
-        Header set Access-Control-Allow-Methods "GET, POST, PUT, PATCH, DELETE, OPTIONS"
-        Header set Access-Control-Allow-Headers "Content-Type, Authorization, X-Requested-With, Accept, Origin, x-session-token"
-        Header set Access-Control-Max-Age "3600"
-        Header set Access-Control-Allow-Credentials "true"
-    </If>
-    
-    # Don't set Access-Control-Allow-Origin here when using credentials
-    # The Node.js app's CORS middleware will handle this properly
-    # Setting wildcard with credentials causes browser to reject the request
-    Header set Access-Control-Allow-Methods "GET, POST, PUT, PATCH, DELETE, OPTIONS"
-    Header set Access-Control-Allow-Headers "Content-Type, Authorization, X-Requested-With, Accept, Origin, x-session-token"
-    Header set Access-Control-Max-Age "3600"
-</IfModule>
-
+# Removing duplicate headers prevents "true, true" duplication errors
