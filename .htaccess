@@ -6,13 +6,6 @@ PassengerAppType node
 PassengerStartupFile /home/gerarmn/api.gerar.mn/src/server.js
 # DO NOT REMOVE. CLOUDLINUX PASSENGER CONFIGURATION END
 
-# php -- BEGIN cPanel-generated handler, do not edit
-# Set the "ea-php81" package as the default "PHP" programming language.
-<IfModule mime_module>
-  AddHandler application/x-httpd-ea-php81 .php .php8 .phtml
-</IfModule>
-# php -- END cPanel-generated handler, do not edit
-
 # DO NOT REMOVE OR MODIFY. CLOUDLINUX ENV VARS CONFIGURATION BEGIN
 <IfModule Litespeed>
 </IfModule>
@@ -56,3 +49,10 @@ PassengerStartupFile /home/gerarmn/api.gerar.mn/src/server.js
 # We don't set headers here to avoid conflicts with Express CORS configuration
 # The Express app will handle all CORS logic including preflight OPTIONS requests
 # Removing duplicate headers prevents "true, true" duplication errors
+
+# php -- BEGIN cPanel-generated handler, do not edit
+# Set the “ea-php81” package as the default “PHP” programming language.
+<IfModule mime_module>
+  AddHandler application/x-httpd-ea-php81 .php .php8 .phtml
+</IfModule>
+# php -- END cPanel-generated handler, do not edit

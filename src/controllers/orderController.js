@@ -9,7 +9,7 @@ class OrderController {
      */
     async createOrder(req, res, next) {
         try {
-            const { addressId, address, deliveryTimeSlot, sessionToken } = req.body;
+            const { addressId, address, deliveryTimeSlot, deliveryDate, sessionToken } = req.body;
             
             let order;
             let isGuest = false;
@@ -22,7 +22,7 @@ class OrderController {
                     error.statusCode = 400;
                     throw error;
                 }
-                order = await orderService.createOrderFromCart(req.user.id, null, addressId, null, deliveryTimeSlot);
+                order = await orderService.createOrderFromCart(req.user.id, null, addressId, null, deliveryTimeSlot, deliveryDate);
             } else {
                 // Guest user - use address object and sessionToken
                 const guestSessionToken = sessionToken || req.headers['x-session-token'];
@@ -39,7 +39,7 @@ class OrderController {
                     throw error;
                 }
 
-                order = await orderService.createOrderFromCart(null, guestSessionToken, null, address, deliveryTimeSlot);
+                order = await orderService.createOrderFromCart(null, guestSessionToken, null, address, deliveryTimeSlot, deliveryDate);
                 isGuest = true;
             }
 
@@ -63,7 +63,7 @@ class OrderController {
      */
     async buyNow(req, res, next) {
         try {
-            const { productId, quantity, sessionToken, addressId, deliveryTimeSlot } = req.body;
+            const { productId, quantity, sessionToken, addressId, deliveryTimeSlot, deliveryDate } = req.body;
             
             // Validate required fields
             if (!productId || !quantity) {
@@ -79,7 +79,8 @@ class OrderController {
                     productId, 
                     quantity, 
                     addressId, 
-                    deliveryTimeSlot
+                    deliveryTimeSlot,
+                    deliveryDate
                 );
                 
                 return res.status(201).json({
@@ -117,7 +118,7 @@ class OrderController {
     async finalizeOrder(req, res, next) {
         try {
             const userId = req.user.id;
-            const { sessionToken, addressId, deliveryTimeSlot, address } = req.body;
+            const { sessionToken, addressId, deliveryTimeSlot, deliveryDate, address } = req.body;
 
             if (!sessionToken) {
                 const error = new Error('Session token is required');
@@ -134,7 +135,8 @@ class OrderController {
                 draftOrder,
                 addressId,
                 address,
-                deliveryTimeSlot
+                deliveryTimeSlot,
+                deliveryDate
             );
 
             // Delete draft order after successful conversion

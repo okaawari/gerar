@@ -179,7 +179,6 @@ class QPayService {
                 invoice_receiver_code: invoiceData.receiverCode || 'terminal',
                 sender_branch_code: invoiceData.branchCode || 'ONLINE',
                 invoice_description: invoiceData.description || `Order #${order.id} - ${parseFloat(order.totalAmount).toFixed(2)} MNT`,
-                enable_expiry: invoiceData.enableExpiry || 'false',
                 allow_partial: invoiceData.allowPartial || false,
                 minimum_amount: invoiceData.minimumAmount || null,
                 allow_exceed: invoiceData.allowExceed || false,
@@ -189,11 +188,6 @@ class QPayService {
                 sender_staff_code: invoiceData.staffCode || 'online',
                 note: invoiceData.note || null
             };
-
-            // Add expiry_date if expiry is enabled
-            if (invoiceData.enableExpiry === 'true' && invoiceData.expiryDate) {
-                invoicePayload.expiry_date = invoiceData.expiryDate;
-            }
 
             // Add receiver data if provided
             if (invoiceData.receiverData) {

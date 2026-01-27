@@ -98,6 +98,7 @@ model order {
   userId          Int?        // Nullable for guest orders
   addressId       Int?
   deliveryTimeSlot String?    @db.VarChar(5)
+  deliveryDate    DateTime?   // Expected delivery date
   totalAmount     Decimal     @db.Decimal(10, 2)
   status          String      @default("PENDING")
   createdAt       DateTime    @default(now())
@@ -108,7 +109,6 @@ model order {
   qpayPaymentId   String?     @db.VarChar(255)
   qpayQrText      String?     @db.Text // QR code text/URL from QPAY
   qpayQrCode      String?     @db.LongText // QR code base64 image from QPAY (preferred over regenerating)
-  qpayExpiryDate  DateTime?   // QR code expiry date (1 hour from creation)
   paymentStatus   String      @default("PENDING") @db.VarChar(50)
   paymentMethod   String?     @db.VarChar(50)
   paidAt          DateTime?

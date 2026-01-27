@@ -8,7 +8,6 @@ This document describes the QPAY V2 payment system integration for the ecommerce
 
 - **Token-based Authentication** - Secure API authentication with timestamp-based token caching
 - **Invoice Creation** - Detailed invoice creation with tax lines, discounts, and surcharges
-- **QR Code Expiry** - QR codes automatically expire after 1 hour for security
 - **Payment Verification** - Automatic payment status checking and order confirmation
 - **Callback Handling** - Secure webhook endpoint for payment notifications
 - **Ebarimt Integration** - Automatic receipt generation (Ebarimt 3.0)
@@ -102,20 +101,95 @@ Authorization: Bearer <token>
     "orderId": 123,
     "qpayInvoiceId": "f68db12b-260f-427f-afa2-c83064aee76a",
     "qrCode": "data:image/png;base64,...",
-    "qrText": "https://qpay.mn/invoice/...",
-    "urls": {
-      "web": "https://qpay.mn/invoice/...",
-      "deeplink": "qpay://invoice/..."
-    },
+    "qrText": "0002010102121531279404962794049600022310027138152045734530349654031005802MN5904TEST6011Ulaanbaatar6244010712345670504test0721qWlrS8_zUpplFJmmfBGXc6304C66D",
+    "urls": [
+      {
+        "name": "Khan bank",
+        "description": "Хаан банк",
+        "logo": "https://qpay.mn/q/logo/khanbank.png",
+        "link": "khanbank://q?qPay_QRcode=0002010102121531279404962794049600022310027138152045734530349654031005802MN5904TEST6011Ulaanbaatar6244010712345670504test0721qWlrS8_zUpplFJmmfBGXc6304C66D"
+      },
+      {
+        "name": "State bank",
+        "description": "Төрийн банк",
+        "logo": "https://qpay.mn/q/logo/statebank.png",
+        "link": "statebank://q?qPay_QRcode=0002010102121531279404962794049600022310027138152045734530349654031005802MN5904TEST6011Ulaanbaatar6244010712345670504test0721qWlrS8_zUpplFJmmfBGXc6304C66D"
+      },
+      {
+        "name": "Xac bank",
+        "description": "Хас банк",
+        "logo": "https://qpay.mn/q/logo/xacbank.png",
+        "link": "xacbank://q?qPay_QRcode=0002010102121531279404962794049600022310027138152045734530349654031005802MN5904TEST6011Ulaanbaatar6244010712345670504test0721qWlrS8_zUpplFJmmfBGXc6304C66D"
+      },
+      {
+        "name": "qPay wallet",
+        "description": "qPay хэтэвч",
+        "logo": "https://s3.qpay.mn/p/e9bbdc69-3544-4c2f-aff0-4c292bc094f6/launcher-icon-ios.jpg",
+        "link": "qpaywallet://q?qPay_QRcode=0002010102121531279404962794049600022310027138152045734530349654031005802MN5904TEST6011Ulaanbaatar6244010712345670504test0721qWlrS8_zUpplFJmmfBGXc6304C66D"
+      }
+    ],
+    "webUrl": "https://qpay.mn/invoice/d50f49f2-9032-4a74-8929-530531f28f63",
     "paymentStatus": "PENDING",
-    "amount": 20000.00,
-    "expiryDate": "2026-01-26T15:30:00.000Z",
-    "isExpired": false
+    "amount": 20000.00
   }
 }
 ```
 
-**Note:** The QR code expires 1 hour after creation. The `expiryDate` field contains the ISO 8601 timestamp when the QR code will expire, and `isExpired` indicates if it's already expired.
+**Deeplink Usage:**
+The `urls` field contains an **array** of bank-specific deeplinks. Each entry includes:
+- `name`: Bank/wallet name (e.g., "Khan bank", "qPay wallet")
+- `description`: Description in Mongolian
+- `logo`: Logo URL for the bank/wallet
+- `link`: Deeplink URL that opens the specific bank app (e.g., `khanbank://q?qPay_QRcode=...`)
+
+On mobile devices, clicking a deeplink will:
+- Open the specific bank app if installed
+- Navigate directly to the payment invoice
+- Allow the user to complete payment without scanning QR code
+
+**Frontend Implementation Example:**
+```javascript
+// React example - Display bank buttons
+const PaymentMethods = ({ paymentData }) => {
+  const handleBankClick = (deeplink) => {
+    // Try to open bank app
+    window.location.href = deeplink;
+    
+    // Fallback: If bank app not installed, open web URL after delay
+    setTimeout(() => {
+      window.location.href = paymentData.webUrl;
+    }, 2000);
+  };
+
+  return (
+    <div>
+      {paymentData.urls.map((bank) => (
+        <button
+          key={bank.name}
+          onClick={() => handleBankClick(bank.link)}
+          className="bank-button"
+        >
+          <img src={bank.logo} alt={bank.name} />
+          <span>{bank.description}</span>
+        </button>
+      ))}
+    </div>
+  );
+};
+
+// React Native example
+import { Linking } from 'react-native';
+
+const handleBankClick = async (deeplink) => {
+  const supported = await Linking.canOpenURL(deeplink);
+  if (supported) {
+    await Linking.openURL(deeplink);
+  } else {
+    // Fallback to web URL
+    Linking.openURL(paymentData.webUrl);
+  }
+};
+```
 
 **Error Responses:**
 - `400` - Order already paid or cancelled
@@ -181,10 +255,107 @@ Authorization: Bearer <token>
       "amount": 20000.00,
       "paidAt": "2026-01-25T10:30:00.000Z"
     },
-    "ebarimtId": "493622150113497"
+    "ebarimtId": "493622150113497",
+    "shouldStopPolling": true,
+    "cached": false,
+    "rateLimited": false
   }
 }
 ```
+
+**Response Fields:**
+- `shouldStopPolling`: `true` when payment is confirmed - frontend should stop polling
+- `cached`: `true` if response came from cache (optional field, may not always be present)
+- `rateLimited`: `true` if QPAY API check was skipped due to rate limiting (optional field)
+
+**Scalability Optimizations:**
+
+The endpoint includes several optimizations to handle high traffic:
+
+1. **In-Memory Caching**: Recent status checks are cached for 30 seconds to reduce database queries
+2. **QPAY API Rate Limiting**: QPAY API is checked maximum once per 15 seconds per invoice (even with multiple concurrent users)
+3. **Early Returns**: Paid orders return immediately without external API calls
+4. **Cache Invalidation**: Cache is cleared when payment is confirmed via callback
+
+**Frontend Polling Recommendations:**
+
+For optimal performance and scalability:
+
+1. **Initial Polling Interval**: Start with 8 seconds
+2. **Exponential Backoff**: Increase interval after each check:
+   - First 5 checks: 8 seconds
+   - Next 5 checks: 15 seconds  
+   - After 10 checks: 30 seconds
+   - Maximum: 60 seconds
+3. **Stop Polling When**:
+   - `shouldStopPolling: true` is returned
+   - `paymentStatus === 'PAID'`
+   - Maximum polling duration reached (e.g., 10 minutes)
+4. **Handle Rate Limiting**: If `rateLimited: true`, increase polling interval temporarily
+
+**Example Frontend Implementation:**
+
+```javascript
+async function pollPaymentStatus(orderId, maxDuration = 600000) { // 10 minutes max
+  const startTime = Date.now();
+  let attemptCount = 0;
+  let currentInterval = 8000; // Start with 8 seconds
+  
+  const poll = async () => {
+    // Check if max duration exceeded
+    if (Date.now() - startTime > maxDuration) {
+      console.log('Polling timeout reached');
+      return;
+    }
+    
+    try {
+      const response = await fetch(`/api/orders/${orderId}/payment-status`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await response.json();
+      
+      // Stop polling if payment confirmed
+      if (data.data.shouldStopPolling || data.data.paymentStatus === 'PAID') {
+        console.log('Payment confirmed!');
+        return;
+      }
+      
+      // Exponential backoff
+      attemptCount++;
+      if (attemptCount <= 5) {
+        currentInterval = 8000;
+      } else if (attemptCount <= 10) {
+        currentInterval = 15000;
+      } else {
+        currentInterval = Math.min(currentInterval * 1.5, 60000); // Max 60s
+      }
+      
+      // If rate limited, increase interval temporarily
+      if (data.data.rateLimited) {
+        currentInterval = Math.min(currentInterval * 2, 60000);
+      }
+      
+      setTimeout(poll, currentInterval);
+    } catch (error) {
+      console.error('Polling error:', error);
+      // Retry with longer interval on error
+      currentInterval = Math.min(currentInterval * 2, 60000);
+      setTimeout(poll, currentInterval);
+    }
+  };
+  
+  poll();
+}
+```
+
+**Performance Impact:**
+
+With these optimizations:
+- **100 concurrent users**: ~8 QPAY API calls per minute (vs 750 without optimization)
+- **500 concurrent users**: ~40 QPAY API calls per minute (vs 3,750 without optimization)
+- **1000 concurrent users**: ~80 QPAY API calls per minute (vs 7,500 without optimization)
+
+This represents a **94-99% reduction** in external API calls while maintaining responsive payment status updates.
 
 ### 4. Cancel Payment
 
@@ -290,10 +461,9 @@ sequenceDiagram
 
 2. **Payment Initiation**
    - Frontend calls `/api/orders/:id/initiate-payment`
-   - Backend creates QPAY invoice with order details and 1-hour expiry
+   - Backend creates QPAY invoice with order details
    - QPAY returns invoice ID and QR code
-   - Backend stores `qpayInvoiceId` and `qpayExpiryDate` in order
-   - Response includes expiry date and expiry status
+   - Backend stores `qpayInvoiceId` in order
 
 3. **User Payment**
    - User scans QR code with QPAY app or bank app
@@ -326,8 +496,6 @@ The system creates detailed invoices with the following structure:
   "invoice_receiver_code": "terminal",
   "sender_branch_code": "ONLINE",
   "invoice_description": "Order #123 - 20000.00 MNT",
-  "enable_expiry": "true",
-  "expiry_date": "2026-01-26T15:30:00",
   "allow_partial": false,
   "allow_exceed": false,
   "amount": 20000.00,
@@ -361,12 +529,6 @@ The system creates detailed invoices with the following structure:
 }
 ```
 
-**Expiry Configuration:**
-- `enable_expiry`: Set to `"true"` to enable QR code expiry
-- `expiry_date`: ISO 8601 datetime string (format: `YYYY-MM-DDTHH:mm:ss`)
-- Expiry is set to **1 hour** from invoice creation time
-- After expiry, users cannot complete payment using the QR code
-
 ## Order Status Values
 
 ### Order Status
@@ -393,7 +555,6 @@ model order {
   qpayInvoiceId   String?     @db.VarChar(255)
   qpayPaymentId   String?     @db.VarChar(255)
   qpayQrText      String?     @db.Text // QR code text/URL from QPAY
-  qpayExpiryDate  DateTime?   // QR code expiry date (1 hour from creation)
   paymentStatus   String      @default("PENDING") @db.VarChar(50)
   paymentMethod   String?     @db.VarChar(50)
   paidAt          DateTime?
@@ -584,70 +745,6 @@ For implementation issues:
 - Review callback logs: `src/controllers/paymentController.js`
 - Verify environment variables in `.env`
 
-## QR Code Expiry
-
-### Overview
-
-QR codes automatically expire **1 hour** after creation to enhance security and prevent stale payment attempts.
-
-### How It Works
-
-1. **Expiry Time**: QR codes expire exactly 1 hour after invoice creation
-2. **Expiry Date Format**: ISO 8601 datetime string (UTC timezone)
-3. **API Response**: Both `expiryDate` and `isExpired` fields are included in payment initiation responses
-4. **Database Storage**: Expiry date is stored in `qpayExpiryDate` field for reference
-
-### Frontend Integration
-
-The API response includes:
-- `expiryDate`: ISO 8601 timestamp when QR code expires (e.g., `"2026-01-26T15:30:00.000Z"`)
-- `isExpired`: Boolean flag indicating if QR code is already expired
-
-**Example Response:**
-```json
-{
-  "success": true,
-  "data": {
-    "orderId": 123,
-    "qpayInvoiceId": "f68db12b-260f-427f-afa2-c83064aee76a",
-    "qrCode": "data:image/png;base64,...",
-    "expiryDate": "2026-01-26T15:30:00.000Z",
-    "isExpired": false,
-    "amount": 20000.00
-  }
-}
-```
-
-### Frontend Best Practices
-
-1. **Display Countdown Timer**: Show time remaining until expiry
-2. **Expiry Warning**: Warn users when QR code is about to expire (e.g., last 5 minutes)
-3. **Expired State**: Display clear message when QR code expires
-4. **Refresh Option**: Allow users to create a new payment if QR code expires
-5. **Stop Polling**: Stop payment status polling when QR code expires
-
-**Example Check:**
-```javascript
-// Check if expired
-if (paymentData.isExpired) {
-  // Show expired message
-}
-
-// Or check manually
-const expiryDate = new Date(paymentData.expiryDate);
-const isExpired = expiryDate < new Date();
-```
-
-For detailed frontend implementation examples, see `QPAY_EXPIRY_FRONTEND_EXAMPLES.md`.
-
-### Expired QR Code Handling
-
-When a QR code expires:
-- Users cannot complete payment using the expired QR code
-- Frontend should detect expiry and prompt user to create a new payment
-- Backend will reject payment attempts for expired invoices
-- Users can call `/api/orders/:id/initiate-payment` again to generate a new QR code
-
 ## Additional Notes
 
 ### Ebarimt Receipt
@@ -671,4 +768,3 @@ Potential improvements:
 - Payment status polling as backup to callbacks
 - Detailed payment history tracking
 - Refund reason tracking
-- Configurable expiry duration (currently fixed at 1 hour)

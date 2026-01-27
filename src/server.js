@@ -1,11 +1,15 @@
 require('dotenv').config();
 const app = require('./app');
 const { connectDatabase, disconnectDatabase } = require('./config/database');
+const orderService = require('./services/orderService');
 
 const PORT = process.env.PORT || 3000;
 const NODE_ENV = process.env.NODE_ENV || 'development';
+// Interval for checking expired pending orders (default: 5 minutes)
+const EXPIRED_ORDER_CHECK_INTERVAL = parseInt(process.env.EXPIRED_ORDER_CHECK_INTERVAL) || 5 * 60 * 1000; // 5 minutes in milliseconds
 
 let server;
+let expiredOrderCheckInterval;
 
 // Start server with database connection
 const startServer = async () => {
@@ -24,9 +28,36 @@ const startServer = async () => {
             console.log('='.repeat(50));
         });
 
+        // Start scheduled job to cancel expired pending orders
+        const runExpiredOrderCheck = async () => {
+            try {
+                const result = await orderService.cancelExpiredPendingOrders();
+                if (result.cancelled > 0) {
+                    console.log(`[Expired Order Check] Cancelled ${result.cancelled} expired pending order(s)`);
+                }
+            } catch (error) {
+                console.error('[Expired Order Check] Error:', error.message);
+            }
+        };
+
+        // Run immediately on startup (after a short delay to ensure DB is ready)
+        setTimeout(() => {
+            runExpiredOrderCheck();
+        }, 10000); // Wait 10 seconds after server starts
+
+        // Then run periodically
+        expiredOrderCheckInterval = setInterval(runExpiredOrderCheck, EXPIRED_ORDER_CHECK_INTERVAL);
+        console.log(`⏰ Expired order check scheduled to run every ${EXPIRED_ORDER_CHECK_INTERVAL / 1000 / 60} minutes`);
+
         // Graceful shutdown handler
         const gracefulShutdown = async (signal) => {
             console.log(`\n${signal} received. Starting graceful shutdown...`);
+            
+            // Clear expired order check interval
+            if (expiredOrderCheckInterval) {
+                clearInterval(expiredOrderCheckInterval);
+                console.log('Expired order check interval cleared');
+            }
             
             // Stop accepting new connections
             if (server) {

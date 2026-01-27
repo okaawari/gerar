@@ -83,15 +83,44 @@ class OrderService {
     }
 
     /**
+     * Calculate delivery date based on current date or user-provided date
+     * If user provided a date, use it (but validate it's reasonable)
+     * Otherwise, calculate next day as fallback
+     * @param {string|Date|null|undefined} deliveryDateFromRequest - Optional delivery date from request
+     * @returns {Date} - Delivery date
+     */
+    calculateDeliveryDate(deliveryDateFromRequest = null) {
+        // If user provided a date, use it (but validate it's reasonable)
+        if (deliveryDateFromRequest) {
+            const requestedDate = new Date(deliveryDateFromRequest);
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+
+            // Validate: date should be today or in the future (within reasonable range)
+            if (requestedDate >= today) {
+                requestedDate.setHours(0, 0, 0, 0);
+                return requestedDate;
+            }
+        }
+
+        // Fallback: calculate next day if no date provided or invalid
+        const nextDay = new Date();
+        nextDay.setDate(nextDay.getDate() + 1);
+        nextDay.setHours(0, 0, 0, 0);
+        return nextDay;
+    }
+
+    /**
      * Create order from user's cart or guest cart
      * @param {number|null} userId - User ID (for authenticated users)
      * @param {string|null} sessionToken - Session token (for guest users)
      * @param {number|null} addressId - Delivery address ID (for authenticated users)
      * @param {Object|null} address - Address object (for guest users)
      * @param {string} deliveryTimeSlot - Delivery time slot (optional)
+     * @param {string|Date|null} deliveryDate - Delivery date (optional, will calculate if not provided)
      * @returns {Object} - Created order with items
      */
-    async createOrderFromCart(userId = null, sessionToken = null, addressId = null, address = null, deliveryTimeSlot = null) {
+    async createOrderFromCart(userId = null, sessionToken = null, addressId = null, address = null, deliveryTimeSlot = null, deliveryDate = null) {
         // Validate that either userId or sessionToken is provided
         if (!userId && !sessionToken) {
             const error = new Error('Either userId or sessionToken must be provided');
@@ -179,6 +208,9 @@ class OrderService {
         // Generate custom order ID before transaction
         const orderId = await this.generateOrderId();
 
+        // Calculate delivery date (use provided date or calculate fallback)
+        const calculatedDeliveryDate = this.calculateDeliveryDate(deliveryDate);
+
         // Use transaction to ensure atomicity
         // Create order, order items, reduce stock, and clear cart in one transaction
         const order = await prisma.$transaction(async (tx) => {
@@ -188,6 +220,7 @@ class OrderService {
                 userId: userId ? parseInt(userId) : null,
                 addressId: finalAddressId,
                 deliveryTimeSlot: deliveryTimeSlot || null,
+                deliveryDate: calculatedDeliveryDate,
                 totalAmount: totalAmount,
                 status: 'PENDING'
             };
@@ -333,9 +366,10 @@ class OrderService {
      * @param {number} quantity - Quantity to purchase
      * @param {number} addressId - Delivery address ID (required)
      * @param {string} deliveryTimeSlot - Delivery time slot (optional)
+     * @param {string|Date|null} deliveryDate - Delivery date (optional, will calculate if not provided)
      * @returns {Object} - Created order with items
      */
-    async buyNow(userId, productId, quantity, addressId, deliveryTimeSlot = null) {
+    async buyNow(userId, productId, quantity, addressId, deliveryTimeSlot = null, deliveryDate = null) {
         const userIdInt = parseInt(userId);
         const prodId = parseInt(productId);
         const qty = parseInt(quantity);
@@ -391,6 +425,9 @@ class OrderService {
         // Generate custom order ID before transaction
         const orderId = await this.generateOrderId();
 
+        // Calculate delivery date (use provided date or calculate fallback)
+        const calculatedDeliveryDate = this.calculateDeliveryDate(deliveryDate);
+
         // Use transaction to ensure atomicity
         // Create order, order item, and reduce stock in one transaction
         const order = await prisma.$transaction(async (tx) => {
@@ -401,6 +438,7 @@ class OrderService {
                     userId: userIdInt,
                     addressId: parseInt(addressId),
                     deliveryTimeSlot: deliveryTimeSlot || null,
+                    deliveryDate: calculatedDeliveryDate,
                     totalAmount: totalAmount,
                     status: 'PENDING'
                 }
@@ -525,9 +563,10 @@ class OrderService {
      * @param {number} addressId - Optional existing address ID
      * @param {Object} address - Optional new address object to create
      * @param {string} deliveryTimeSlot - Delivery time slot (optional)
+     * @param {string|Date|null} deliveryDate - Delivery date (optional, will calculate if not provided)
      * @returns {Object} - Created order with items
      */
-    async finalizeOrderFromDraft(userId, draftOrder, addressId = null, address = null, deliveryTimeSlot = null) {
+    async finalizeOrderFromDraft(userId, draftOrder, addressId = null, address = null, deliveryTimeSlot = null, deliveryDate = null) {
         const userIdInt = parseInt(userId);
         const prodId = draftOrder.productId;
         const qty = draftOrder.quantity;
@@ -583,6 +622,9 @@ class OrderService {
         // Generate custom order ID before transaction
         const orderId = await this.generateOrderId();
 
+        // Calculate delivery date (use provided date or calculate fallback)
+        const calculatedDeliveryDate = this.calculateDeliveryDate(deliveryDate);
+
         // Use transaction to ensure atomicity
         const order = await prisma.$transaction(async (tx) => {
             // Create order
@@ -592,6 +634,7 @@ class OrderService {
                     userId: userIdInt,
                     addressId: finalAddressId ? parseInt(finalAddressId) : null,
                     deliveryTimeSlot: deliveryTimeSlot || null,
+                    deliveryDate: calculatedDeliveryDate,
                     totalAmount: draftOrder.totalAmount,
                     status: 'PENDING'
                 }
@@ -971,6 +1014,100 @@ class OrderService {
         });
 
         return updatedOrder;
+    }
+
+    /**
+     * Cancel expired pending orders (older than 1 hour)
+     * This method finds all pending orders created more than 1 hour ago,
+     * cancels them, restores stock, and cancels QPAY invoices if they exist
+     * @returns {Promise<Object>} Summary of cancelled orders
+     */
+    async cancelExpiredPendingOrders() {
+        const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000); // 1 hour ago
+
+        // Find all pending orders older than 1 hour
+        const expiredOrders = await prisma.order.findMany({
+            where: {
+                status: 'PENDING',
+                paymentStatus: 'PENDING',
+                createdAt: {
+                    lt: oneHourAgo
+                }
+            },
+            include: {
+                items: {
+                    include: {
+                        product: true
+                    }
+                }
+            }
+        });
+
+        if (expiredOrders.length === 0) {
+            return {
+                cancelled: 0,
+                orders: []
+            };
+        }
+
+        const qpayService = require('./qpayService');
+        const cancelledOrders = [];
+
+        // Process each expired order
+        for (const order of expiredOrders) {
+            try {
+                // Use transaction to ensure atomicity
+                await prisma.$transaction(async (tx) => {
+                    // Cancel QPAY invoice if it exists
+                    if (order.qpayInvoiceId) {
+                        try {
+                            await qpayService.cancelInvoice(order.qpayInvoiceId);
+                            console.log(`Cancelled QPAY invoice ${order.qpayInvoiceId} for order ${order.id}`);
+                        } catch (error) {
+                            // Log error but continue with order cancellation
+                            // Invoice might already be cancelled or paid
+                            console.error(`Failed to cancel QPAY invoice ${order.qpayInvoiceId} for order ${order.id}:`, error.message);
+                        }
+                    }
+
+                    // Restore stock for all items in the order
+                    for (const item of order.items) {
+                        await tx.product.update({
+                            where: { id: item.productId },
+                            data: {
+                                stock: {
+                                    increment: item.quantity
+                                }
+                            }
+                        });
+                    }
+
+                    // Update order status to CANCELLED
+                    await tx.order.update({
+                        where: { id: order.id },
+                        data: {
+                            status: 'CANCELLED',
+                            paymentStatus: 'CANCELLED'
+                        }
+                    });
+                });
+
+                cancelledOrders.push({
+                    orderId: order.id,
+                    cancelledAt: new Date()
+                });
+
+                console.log(`Cancelled expired pending order ${order.id} (created at ${order.createdAt})`);
+            } catch (error) {
+                // Log error but continue with other orders
+                console.error(`Failed to cancel expired order ${order.id}:`, error.message);
+            }
+        }
+
+        return {
+            cancelled: cancelledOrders.length,
+            orders: cancelledOrders
+        };
     }
 }
 

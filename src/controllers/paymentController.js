@@ -11,6 +11,61 @@ class PaymentController {
     constructor() {
         // In-memory lock to prevent concurrent payment initiation for the same order
         this.pendingInvoices = new Map();
+        
+        // Cache for payment status checks to reduce QPAY API calls
+        // Key: orderId, Value: { status, timestamp, qpayCheckedAt }
+        // Cache expires after 30 seconds to allow fresh checks
+        this.paymentStatusCache = new Map();
+        this.cacheExpiryMs = 30000; // 30 seconds
+        
+        // Rate limiting: Track last QPAY API check per invoice
+        // Only check QPAY API once per 15 seconds per invoice (even if multiple users poll)
+        this.qpayCheckRateLimit = new Map(); // Key: invoiceId, Value: timestamp
+        this.qpayCheckIntervalMs = 15000; // 15 seconds minimum between QPAY API calls
+    }
+    
+    /**
+     * Clear expired cache entries (call periodically or on each request)
+     */
+    _cleanExpiredCache() {
+        const now = Date.now();
+        for (const [key, value] of this.paymentStatusCache.entries()) {
+            if (now - value.timestamp > this.cacheExpiryMs) {
+                this.paymentStatusCache.delete(key);
+            }
+        }
+        
+        // Clean rate limit map (keep only recent entries)
+        for (const [key, timestamp] of this.qpayCheckRateLimit.entries()) {
+            if (now - timestamp > this.qpayCheckIntervalMs * 2) {
+                this.qpayCheckRateLimit.delete(key);
+            }
+        }
+    }
+    
+    /**
+     * Check if we should skip QPAY API call due to rate limiting
+     * @param {string} invoiceId - QPAY invoice ID
+     * @returns {boolean} - True if we should skip QPAY check (too soon since last check)
+     */
+    _shouldSkipQpayCheck(invoiceId) {
+        if (!invoiceId) return false;
+        
+        const lastCheck = this.qpayCheckRateLimit.get(invoiceId);
+        if (!lastCheck) return false;
+        
+        const timeSinceLastCheck = Date.now() - lastCheck;
+        return timeSinceLastCheck < this.qpayCheckIntervalMs;
+    }
+    
+    /**
+     * Mark that we've checked QPAY API for this invoice
+     * @param {string} invoiceId - QPAY invoice ID
+     */
+    _markQpayCheck(invoiceId) {
+        if (invoiceId) {
+            this.qpayCheckRateLimit.set(invoiceId, Date.now());
+        }
     }
 
     /**
@@ -100,8 +155,136 @@ class PaymentController {
                     }
                 }
                 
-                // Construct URLs from QR text
+                // Construct web URL from QR text
                 const invoiceUrl = qrText.startsWith('http') ? qrText : `https://qpay.mn/invoice/${order.qpayInvoiceId}`;
+                
+                // QPay returns urls as an array of bank-specific deeplinks
+                // If we don't have stored URLs, construct bank-specific deeplinks from QR text
+                let urls = null;
+                if (order.qpayUrls && Array.isArray(order.qpayUrls) && order.qpayUrls.length > 0) {
+                    // Use stored URLs if available
+                    urls = order.qpayUrls;
+                } else if (qrText && qrText.startsWith('0002')) {
+                    // Construct bank-specific deeplinks from QR text
+                    // Format: {bank}://q?qPay_QRcode={qr_text}
+                    // Include all QPay supported banks/wallets (no limit)
+                    urls = [
+                        {
+                            name: "qPay wallet",
+                            description: "qPay хэтэвч",
+                            logo: "https://s3.qpay.mn/p/e9bbdc69-3544-4c2f-aff0-4c292bc094f6/launcher-icon-ios.jpg",
+                            link: `qpaywallet://q?qPay_QRcode=${qrText}`
+                        },
+                        {
+                            name: "Khan bank",
+                            description: "Хаан банк",
+                            logo: "https://qpay.mn/q/logo/khanbank.png",
+                            link: `khanbank://q?qPay_QRcode=${qrText}`
+                        },
+                        {
+                            name: "State bank 3.0",
+                            description: "Төрийн банк 3.0",
+                            logo: "https://qpay.mn/q/logo/state_3.png",
+                            link: `statebankmongolia://q?qPay_QRcode=${qrText}`
+                        },
+                        {
+                            name: "Xac bank",
+                            description: "Хас банк",
+                            logo: "https://qpay.mn/q/logo/xacbank.png",
+                            link: `xacbank://q?qPay_QRcode=${qrText}`
+                        },
+                        {
+                            name: "Trade and Development bank",
+                            description: "TDB online",
+                            logo: "https://qpay.mn/q/logo/tdbbank.png",
+                            link: `tdbbank://q?qPay_QRcode=${qrText}`
+                        },
+                        {
+                            name: "Social Pay",
+                            description: "Голомт банк",
+                            logo: "https://qpay.mn/q/logo/socialpay.png",
+                            link: `socialpay-payment://q?qPay_QRcode=${qrText}`
+                        },
+                        {
+                            name: "Most money",
+                            description: "МОСТ мони",
+                            logo: "https://qpay.mn/q/logo/most.png",
+                            link: `most://q?qPay_QRcode=${qrText}`
+                        },
+                        {
+                            name: "National investment bank",
+                            description: "Үндэсний хөрөнгө оруулалтын банк",
+                            logo: "https://qpay.mn/q/logo/nibank.jpeg",
+                            link: `nibank://q?qPay_QRcode=${qrText}`
+                        },
+                        {
+                            name: "Chinggis khaan bank",
+                            description: "Чингис Хаан банк",
+                            logo: "https://qpay.mn/q/logo/ckbank.png",
+                            link: `ckbank://q?qPay_QRcode=${qrText}`
+                        },
+                        {
+                            name: "Capitron bank",
+                            description: "Капитрон банк",
+                            logo: "https://qpay.mn/q/logo/capitronbank.png",
+                            link: `capitronbank://q?qPay_QRcode=${qrText}`
+                        },
+                        {
+                            name: "Bogd bank",
+                            description: "Богд банк",
+                            logo: "https://qpay.mn/q/logo/bogdbank.png",
+                            link: `bogdbank://q?qPay_QRcode=${qrText}`
+                        },
+                        {
+                            name: "Trans bank",
+                            description: "Тээвэр хөгжлийн банк",
+                            logo: "https://qpay.mn/q/logo/transbank.png",
+                            link: `transbank://q?qPay_QRcode=${qrText}`
+                        },
+                        {
+                            name: "M bank",
+                            description: "М банк",
+                            logo: "https://qpay.mn/q/logo/mbank.png",
+                            link: `mbank://q?qPay_QRcode=${qrText}`
+                        },
+                        {
+                            name: "Ard App",
+                            description: "Ард Апп",
+                            logo: "https://qpay.mn/q/logo/ardapp.png",
+                            link: `ard://q?qPay_QRcode=${qrText}`
+                        },
+                        {
+                            name: "Toki App",
+                            description: "Toki App",
+                            logo: "https://qpay.mn/q/logo/toki.png",
+                            link: `toki://q?qPay_QRcode=${qrText}`
+                        },
+                        {
+                            name: "Arig bank",
+                            description: "Ариг банк",
+                            logo: "https://qpay.mn/q/logo/arig.png",
+                            link: `arig://q?qPay_QRcode=${qrText}`
+                        },
+                        {
+                            name: "Monpay",
+                            description: "Мон Пэй",
+                            logo: "https://qpay.mn/q/logo/monpay.png",
+                            link: `monpay://q?qPay_QRcode=${qrText}`
+                        },
+                        {
+                            name: "Hipay",
+                            description: "Hipay",
+                            logo: "https://qpay.mn/q/logo/hipay.png",
+                            link: `hipay://q?qPay_QRcode=${qrText}`
+                        },
+                        {
+                            name: "Happy Pay",
+                            description: "Happy Pay MN",
+                            logo: "https://qpay.mn/q/logo/tdbwallet.png",
+                            link: `tdbwallet://q?qPay_QRcode=${qrText}`
+                        }
+                    ];
+                }
                 
                 // Return existing invoice info with QR code
                 return res.status(200).json({
@@ -113,13 +296,9 @@ class PaymentController {
                         paymentStatus: order.paymentStatus,
                         qrCode: qrCodeBase64,
                         qrText: qrText,
-                        urls: {
-                            web: invoiceUrl,
-                            deeplink: `qpay://invoice/${order.qpayInvoiceId}`
-                        },
-                        amount: parseFloat(order.totalAmount),
-                        expiryDate: order.qpayExpiryDate ? new Date(order.qpayExpiryDate).toISOString() : null,
-                        isExpired: order.qpayExpiryDate ? new Date(order.qpayExpiryDate) < new Date() : false
+                        urls: urls,
+                        webUrl: invoiceUrl,
+                        amount: parseFloat(order.totalAmount)
                     }
                 });
             }
@@ -140,19 +319,11 @@ class PaymentController {
 
             // Prepare invoice data
             // Include total amount in description
-            // Calculate expiry date: 1 hour from now
-            const expiryDate = new Date();
-            expiryDate.setHours(expiryDate.getHours() + 1);
-            // Format as ISO 8601 datetime string (QPay expects format like "2026-01-26T15:30:00")
-            const expiryDateString = expiryDate.toISOString().slice(0, 19);
-            
             const invoiceData = {
                 description: `GERAR.MN - Захиалга #${order.id}`,
                 receiverCode: 'terminal',
                 branchCode: 'ONLINE',
                 staffCode: 'online',
-                enableExpiry: 'true',
-                expiryDate: expiryDateString,
                 allowPartial: false,
                 allowExceed: false
             };
@@ -220,6 +391,8 @@ class PaymentController {
                 has_qr_code: !!invoiceResponse.qr_code,
                 has_qr_text: !!invoiceResponse.qr_text,
                 has_urls: !!invoiceResponse.urls,
+                urls_is_array: Array.isArray(invoiceResponse.urls),
+                urls_count: Array.isArray(invoiceResponse.urls) ? invoiceResponse.urls.length : 0,
                 qr_image_length: invoiceResponse.qr_image ? invoiceResponse.qr_image.length : 0,
                 qr_text_length: invoiceResponse.qr_text ? invoiceResponse.qr_text.length : 0,
                 qr_text_preview: invoiceResponse.qr_text ? invoiceResponse.qr_text.substring(0, 100) : null,
@@ -241,7 +414,7 @@ class PaymentController {
                 console.error(`Order ID format: ${order.id} (type: ${typeof order.id}, length: ${order.id.toString().length})`);
             }
 
-            // Update order with invoice ID, QR text, QR code image, and expiry date
+            // Update order with invoice ID, QR text, QR code image
             // Store the raw base64 string (without data URI prefix) in database
             const qrCodeToStore = qrImage ? (qrImage.startsWith('data:image') ? qrImage.split(',')[1] : qrImage) : null;
             console.log(`Storing QR code in database: ${qrCodeToStore ? `Present (${qrCodeToStore.length} bytes, starts with: ${qrCodeToStore.substring(0, 20)}...)` : 'NULL'}`);
@@ -252,7 +425,6 @@ class PaymentController {
                     qpayInvoiceId: invoiceResponse.invoice_id,
                     qpayQrText: invoiceResponse.qr_text || null,
                     qpayQrCode: qrCodeToStore, // Store raw base64 without prefix
-                    qpayExpiryDate: expiryDate,
                     paymentStatus: 'PENDING'
                 }
             });
@@ -314,6 +486,130 @@ class PaymentController {
                 console.log(`📱 This QR code should be scannable by payment apps`);
             }
 
+            // QPay returns urls as an array of bank-specific deeplinks
+            // Each entry has: name, description, logo, link (deeplink)
+            let urls = null;
+            const webUrl = invoiceResponse.qr_text && invoiceResponse.qr_text.startsWith('http') 
+                ? invoiceResponse.qr_text 
+                : `https://qpay.mn/invoice/${invoiceResponse.invoice_id}`;
+            
+            if (invoiceResponse.urls && Array.isArray(invoiceResponse.urls) && invoiceResponse.urls.length > 0) {
+                // Use QPay's provided URLs array (bank-specific deeplinks)
+                urls = invoiceResponse.urls;
+                console.log(`✅ Using QPay's provided URLs array (${urls.length} bank/wallet deeplinks):`, urls.map(u => u.name));
+            } else if (invoiceResponse.qr_text && invoiceResponse.qr_text.startsWith('0002')) {
+                // Construct bank-specific deeplinks from QR text if QPay didn't provide URLs
+                // Format: {bank}://q?qPay_QRcode={qr_text}
+                // Include all QPay supported banks/wallets (no limit)
+                urls = [
+                    {
+                        name: "Khan bank",
+                        description: "Хаан банк",
+                        logo: "https://qpay.mn/q/logo/khanbank.png",
+                        link: `khanbank://q?qPay_QRcode=${invoiceResponse.qr_text}`
+                    },
+                    {
+                        name: "State bank 3.0",
+                        description: "Төрийн банк",
+                        logo: "https://qpay.mn/q/logo/state_3.png",
+                        link: `statebankmongolia://q?qPay_QRcode=${invoiceResponse.qr_text}`
+                    },
+                    {
+                        name: "Xac bank",
+                        description: "Хас банк",
+                        logo: "https://qpay.mn/q/logo/xacbank.png",
+                        link: `xacbank://q?qPay_QRcode=${invoiceResponse.qr_text}`
+                    },
+                    {
+                        name: "Trade and Development bank",
+                        description: "TDB online",
+                        logo: "https://qpay.mn/q/logo/tdbbank.png",
+                        link: `tdbbank://q?qPay_QRcode=${invoiceResponse.qr_text}`
+                    },
+                    {
+                        name: "Most money",
+                        description: "МОСТ мони",
+                        logo: "https://qpay.mn/q/logo/most.png",
+                        link: `most://q?qPay_QRcode=${invoiceResponse.qr_text}`
+                    },
+                    {
+                        name: "National investment bank",
+                        description: "Үндэсний хөрөнгө оруулалтын банк",
+                        logo: "https://qpay.mn/q/logo/nibank.jpeg",
+                        link: `nibank://q?qPay_QRcode=${invoiceResponse.qr_text}`
+                    },
+                    {
+                        name: "Chinggis khaan bank",
+                        description: "Чингис Хаан банк",
+                        logo: "https://qpay.mn/q/logo/ckbank.png",
+                        link: `ckbank://q?qPay_QRcode=${invoiceResponse.qr_text}`
+                    },
+                    {
+                        name: "Capitron bank",
+                        description: "Капитрон банк",
+                        logo: "https://qpay.mn/q/logo/capitronbank.png",
+                        link: `capitronbank://q?qPay_QRcode=${invoiceResponse.qr_text}`
+                    },
+                    {
+                        name: "Bogd bank",
+                        description: "Богд банк",
+                        logo: "https://qpay.mn/q/logo/bogdbank.png",
+                        link: `bogdbank://q?qPay_QRcode=${invoiceResponse.qr_text}`
+                    },
+                    {
+                        name: "Transbank",
+                        description: "Транс банк",
+                        logo: "https://qpay.mn/q/logo/transbank.png",
+                        link: `transbank://q?qPay_QRcode=${invoiceResponse.qr_text}`
+                    },
+                    {
+                        name: "M Bank",
+                        description: "М банк",
+                        logo: "https://qpay.mn/q/logo/mbank.png",
+                        link: `mbank://q?qPay_QRcode=${invoiceResponse.qr_text}`
+                    },
+                    {
+                        name: "Arig bank",
+                        description: "Ариг банк",
+                        logo: "https://qpay.mn/q/logo/arigbank.png",
+                        link: `arigbank://q?qPay_QRcode=${invoiceResponse.qr_text}`
+                    },
+                    {
+                        name: "Social Pay",
+                        description: "Сошиал Пэй",
+                        logo: "https://qpay.mn/q/logo/socialpay.png",
+                        link: `socialpay://q?qPay_QRcode=${invoiceResponse.qr_text}`
+                    },
+                    {
+                        name: "Monpay",
+                        description: "Монпэй",
+                        logo: "https://qpay.mn/q/logo/monpay.png",
+                        link: `monpay://q?qPay_QRcode=${invoiceResponse.qr_text}`
+                    },
+                    {
+                        name: "Toki",
+                        description: "Токи",
+                        logo: "https://qpay.mn/q/logo/toki.png",
+                        link: `toki://q?qPay_QRcode=${invoiceResponse.qr_text}`
+                    },
+                    {
+                        name: "Ard App",
+                        description: "Ард Апп",
+                        logo: "https://qpay.mn/q/logo/ardapp.png",
+                        link: `ardapp://q?qPay_QRcode=${invoiceResponse.qr_text}`
+                    },
+                    {
+                        name: "qPay wallet",
+                        description: "qPay хэтэвч",
+                        logo: "https://s3.qpay.mn/p/e9bbdc69-3544-4c2f-aff0-4c292bc094f6/launcher-icon-ios.jpg",
+                        link: `qpaywallet://q?qPay_QRcode=${invoiceResponse.qr_text}`
+                    }
+                ];
+                console.log(`📱 Constructed bank-specific deeplinks from QR text (${urls.length} banks/wallets)`);
+            } else {
+                console.warn(`⚠️ No URLs array from QPay and QR text format not recognized. QR text: ${invoiceResponse.qr_text ? invoiceResponse.qr_text.substring(0, 50) : 'null'}...`);
+            }
+
             res.status(201).json({
                 success: true,
                 message: 'Payment invoice created successfully',
@@ -322,11 +618,10 @@ class PaymentController {
                     qpayInvoiceId: invoiceResponse.invoice_id,
                     qrCode: qrCodeToReturn,
                     qrText: invoiceResponse.qr_text || null,
-                    urls: invoiceResponse.urls || null,
+                    urls: urls, // Array of bank-specific deeplinks
+                    webUrl: webUrl, // Web URL for browser fallback
                     paymentStatus: 'PENDING',
-                    amount: parseFloat(order.totalAmount),
-                    expiryDate: expiryDate.toISOString(),
-                    isExpired: false
+                    amount: parseFloat(order.totalAmount)
                 }
             });
         } catch (error) {
@@ -458,6 +753,9 @@ class PaymentController {
                         console.error('Ebarimt generation failed:', ebarimtError.message);
                     }
 
+                    // Clear payment status cache so next status check reflects paid status
+                    this.paymentStatusCache.delete(String(id));
+
                     console.log('Payment confirmed successfully:', {
                         orderId: id,
                         paymentId: paymentId
@@ -501,14 +799,36 @@ class PaymentController {
     /**
      * Get payment status for an order
      * GET /api/orders/:id/payment-status
+     * 
+     * OPTIMIZED FOR SCALABILITY:
+     * - Uses in-memory cache to avoid repeated database queries
+     * - Rate limits QPAY API calls (max once per 15 seconds per invoice)
+     * - Returns cached status when QPAY check is rate-limited
      */
     async getPaymentStatus(req, res, next) {
         try {
             const { id } = req.params;
             const userId = req.user?.id;
             const isAdmin = req.user?.role === 'ADMIN';
+            
+            // Clean expired cache entries periodically
+            this._cleanExpiredCache();
 
-            // Get order
+            // Check cache first (if order was recently checked)
+            const cached = this.paymentStatusCache.get(id);
+            if (cached && (Date.now() - cached.timestamp) < this.cacheExpiryMs) {
+                // Return cached status if still valid
+                return res.status(200).json({
+                    success: true,
+                    data: {
+                        ...cached.data,
+                        cached: true, // Indicate this is cached data
+                        cacheAge: Math.floor((Date.now() - cached.timestamp) / 1000) // seconds
+                    }
+                });
+            }
+
+            // Get order from database
             const order = await orderService.getOrderById(id, userId, isAdmin);
 
             if (!order) {
@@ -519,39 +839,95 @@ class PaymentController {
 
             // If no invoice ID, return order payment status
             if (!order.qpayInvoiceId) {
+                const responseData = {
+                    orderId: order.id,
+                    paymentStatus: order.paymentStatus || 'PENDING',
+                    qpayInvoiceId: null,
+                    message: 'Payment not yet initiated',
+                    shouldStopPolling: false
+                };
+                
+                // Cache the response
+                this.paymentStatusCache.set(id, {
+                    status: order.paymentStatus || 'PENDING',
+                    timestamp: Date.now(),
+                    data: responseData
+                });
+                
                 return res.status(200).json({
                     success: true,
-                    data: {
-                        orderId: order.id,
-                        paymentStatus: order.paymentStatus || 'PENDING',
-                        qpayInvoiceId: null,
-                        message: 'Payment not yet initiated',
-                        shouldStopPolling: false
-                    }
+                    data: responseData
                 });
             }
 
             // If order is already paid, return immediately without calling QPAY API
             if (order.paymentStatus === 'PAID' || order.status === 'PAID') {
+                const responseData = {
+                    orderId: order.id,
+                    paymentStatus: 'PAID',
+                    qpayInvoiceId: order.qpayInvoiceId,
+                    qpayPaymentId: order.qpayPaymentId,
+                    paidAt: order.paidAt,
+                    paymentMethod: order.paymentMethod,
+                    ebarimtId: order.ebarimtId,
+                    shouldStopPolling: true, // Signal frontend to stop polling
+                    message: 'Payment confirmed'
+                };
+                
+                // Cache paid status (longer cache for paid orders)
+                this.paymentStatusCache.set(id, {
+                    status: 'PAID',
+                    timestamp: Date.now(),
+                    data: responseData
+                });
+                
                 return res.status(200).json({
                     success: true,
-                    data: {
-                        orderId: order.id,
-                        paymentStatus: 'PAID',
-                        qpayInvoiceId: order.qpayInvoiceId,
-                        qpayPaymentId: order.qpayPaymentId,
-                        paidAt: order.paidAt,
-                        paymentMethod: order.paymentMethod,
-                        ebarimtId: order.ebarimtId,
-                        shouldStopPolling: true, // Signal frontend to stop polling
-                        message: 'Payment confirmed'
-                    }
+                    data: responseData
                 });
             }
 
-            // Only check with QPAY if payment is still pending
-            // This reduces unnecessary API calls
+            // Rate limiting: Check if we've checked QPAY API recently for this invoice
+            // This prevents hammering QPAY API when multiple users poll the same invoice
+            const shouldSkipQpayCheck = this._shouldSkipQpayCheck(order.qpayInvoiceId);
+            
+            if (shouldSkipQpayCheck) {
+                // Return database status without calling QPAY API
+                // This is safe because:
+                // 1. QPAY callback will update DB when payment is received
+                // 2. We'll check QPAY again after rate limit expires
+                const responseData = {
+                    orderId: order.id,
+                    paymentStatus: order.paymentStatus,
+                    qpayInvoiceId: order.qpayInvoiceId,
+                    qpayPaymentId: order.qpayPaymentId,
+                    paidAt: order.paidAt,
+                    paymentMethod: order.paymentMethod,
+                    ebarimtId: order.ebarimtId,
+                    shouldStopPolling: order.paymentStatus === 'PAID',
+                    message: 'Payment pending (rate limited - using cached status)',
+                    rateLimited: true // Indicate this response is rate-limited
+                };
+                
+                // Cache the response
+                this.paymentStatusCache.set(id, {
+                    status: order.paymentStatus,
+                    timestamp: Date.now(),
+                    data: responseData
+                });
+                
+                return res.status(200).json({
+                    success: true,
+                    data: responseData
+                });
+            }
+
+            // Only check with QPAY if payment is still pending AND rate limit allows
+            // This reduces unnecessary API calls significantly
             try {
+                // Mark that we're checking QPAY now (before the async call)
+                this._markQpayCheck(order.qpayInvoiceId);
+                
                 const paymentCheck = await qpayService.checkPayment(order.qpayInvoiceId);
                 
                 const payments = paymentCheck.count > 0 ? paymentCheck.rows : [];
@@ -590,45 +966,68 @@ class PaymentController {
                     } catch (ebarimtError) {
                         console.error('Ebarimt generation failed:', ebarimtError.message);
                     }
+                    
+                    // Clear cache so subsequent requests get fresh paid status
+                    this.paymentStatusCache.delete(String(id));
                 }
 
+                const responseData = {
+                    orderId: order.id,
+                    paymentStatus: isPaid ? 'PAID' : order.paymentStatus,
+                    qpayInvoiceId: order.qpayInvoiceId,
+                    qpayPaymentId: isPaid ? (latestPayment.payment_id || latestPayment.id) : order.qpayPaymentId,
+                    paidAt: isPaid ? (latestPayment.paid_date || latestPayment.created_date || new Date()) : order.paidAt,
+                    paymentMethod: order.paymentMethod,
+                    qpayStatus: latestPayment ? {
+                        paymentId: latestPayment.payment_id || latestPayment.id,
+                        status: latestPayment.payment_status,
+                        amount: latestPayment.amount,
+                        paidAt: latestPayment.paid_date || latestPayment.created_date
+                    } : null,
+                    ebarimtId: order.ebarimtId,
+                    shouldStopPolling: isPaid, // Signal frontend to stop polling if paid
+                    message: isPaid ? 'Payment confirmed' : 'Payment pending'
+                };
+                
+                // Cache the response (especially important for paid status)
+                this.paymentStatusCache.set(id, {
+                    status: isPaid ? 'PAID' : order.paymentStatus,
+                    timestamp: Date.now(),
+                    qpayCheckedAt: Date.now(),
+                    data: responseData
+                });
+                
                 return res.status(200).json({
                     success: true,
-                    data: {
-                        orderId: order.id,
-                        paymentStatus: isPaid ? 'PAID' : order.paymentStatus,
-                        qpayInvoiceId: order.qpayInvoiceId,
-                        qpayPaymentId: isPaid ? (latestPayment.payment_id || latestPayment.id) : order.qpayPaymentId,
-                        paidAt: isPaid ? (latestPayment.paid_date || latestPayment.created_date || new Date()) : order.paidAt,
-                        paymentMethod: order.paymentMethod,
-                        qpayStatus: latestPayment ? {
-                            paymentId: latestPayment.payment_id || latestPayment.id,
-                            status: latestPayment.payment_status,
-                            amount: latestPayment.amount,
-                            paidAt: latestPayment.paid_date || latestPayment.created_date
-                        } : null,
-                        ebarimtId: order.ebarimtId,
-                        shouldStopPolling: isPaid, // Signal frontend to stop polling if paid
-                        message: isPaid ? 'Payment confirmed' : 'Payment pending'
-                    }
+                    data: responseData
                 });
             } catch (checkError) {
                 // Return order status even if QPAY check fails
                 // Don't fail the request, just use stored status
                 console.error('QPAY payment check failed:', checkError.message);
+                
+                const responseData = {
+                    orderId: order.id,
+                    paymentStatus: order.paymentStatus,
+                    qpayInvoiceId: order.qpayInvoiceId,
+                    qpayPaymentId: order.qpayPaymentId,
+                    paidAt: order.paidAt,
+                    paymentMethod: order.paymentMethod,
+                    ebarimtId: order.ebarimtId,
+                    shouldStopPolling: order.paymentStatus === 'PAID',
+                    message: 'Unable to verify with QPAY, using stored status'
+                };
+                
+                // Cache the error response too (short cache to allow retry)
+                this.paymentStatusCache.set(id, {
+                    status: order.paymentStatus,
+                    timestamp: Date.now(),
+                    data: responseData
+                });
+                
                 return res.status(200).json({
                     success: true,
-                    data: {
-                        orderId: order.id,
-                        paymentStatus: order.paymentStatus,
-                        qpayInvoiceId: order.qpayInvoiceId,
-                        qpayPaymentId: order.qpayPaymentId,
-                        paidAt: order.paidAt,
-                        paymentMethod: order.paymentMethod,
-                        ebarimtId: order.ebarimtId,
-                        shouldStopPolling: order.paymentStatus === 'PAID',
-                        message: 'Unable to verify with QPAY, using stored status'
-                    }
+                    data: responseData
                 });
             }
         } catch (error) {
