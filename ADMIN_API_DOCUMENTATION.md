@@ -13,6 +13,7 @@ This document provides comprehensive API documentation for admin endpoints to bu
   - [Constants](#constants-endpoints)
   - [Orders](#orders-endpoints)
   - [Users](#users-endpoints)
+  - [Analytics](#analytics-endpoints)
 - [Data Models](#data-models)
 - [Error Handling](#error-handling)
 - [Example Requests](#example-requests)
@@ -1436,6 +1437,501 @@ Reset a user's password directly. This bypasses the reset code verification and 
 
 ---
 
+## Analytics Endpoints
+
+All analytics endpoints are under `/api/admin/analytics`.
+
+### Revenue Overview
+
+Get high-level revenue metrics including totals, breakdowns by status, and optional comparison with previous period.
+
+**Endpoint:** `GET /api/admin/analytics/revenue/overview`
+
+**Authentication:** Required (Admin only)
+
+**Query Parameters:**
+- `startDate` (optional) - Start date for period (ISO 8601 format: `2026-01-01` or `2026-01-01T00:00:00Z`)
+- `endDate` (optional) - End date for period (ISO 8601 format: `2026-01-31` or `2026-01-31T23:59:59Z`)
+- `compareWithPrevious` (optional) - Boolean (`true`/`false`), compare current period with previous period
+
+**Response:** `200 OK`
+```json
+{
+  "success": true,
+  "message": "Revenue overview retrieved successfully",
+  "data": {
+    "allTime": {
+      "totalRevenue": 125000.50,
+      "totalOrders": 1250
+    },
+    "period": {
+      "totalRevenue": 15000.75,
+      "totalOrders": 150,
+      "averageOrderValue": 100.01
+    },
+    "revenueByStatus": [
+      {
+        "status": "PAID",
+        "revenue": 12000.50,
+        "orderCount": 120
+      },
+      {
+        "status": "PENDING",
+        "revenue": 3000.25,
+        "orderCount": 30
+      }
+    ],
+    "revenueByPaymentStatus": [
+      {
+        "paymentStatus": "PAID",
+        "revenue": 12000.50,
+        "orderCount": 120
+      },
+      {
+        "paymentStatus": "PENDING",
+        "revenue": 3000.25,
+        "orderCount": 30
+      }
+    ],
+    "orderCountsByStatus": [
+      {
+        "status": "PAID",
+        "count": 120
+      },
+      {
+        "status": "PENDING",
+        "count": 30
+      }
+    ],
+    "comparison": {
+      "previousPeriod": {
+        "startDate": "2025-12-01",
+        "endDate": "2025-12-31",
+        "totalRevenue": 10000.00,
+        "totalOrders": 100
+      },
+      "growth": {
+        "percentage": 50.00,
+        "absolute": 5000.75,
+        "isPositive": true
+      }
+    }
+  },
+  "meta": {
+    "startDate": "2026-01-01",
+    "endDate": "2026-01-31",
+    "compareWithPrevious": true
+  }
+}
+```
+
+**Notes:**
+- If `compareWithPrevious` is `true`, the comparison period is calculated automatically based on the date range
+- Revenue values are calculated from orders with `paymentStatus = 'PAID'` for confirmed revenue
+- All statuses are included for comprehensive analysis
+
+**Errors:**
+- `401` - Authentication required
+- `403` - Admin privileges required
+- `400` - Invalid date format
+
+---
+
+### Revenue Trends
+
+Get time-series revenue data for charts and trend analysis.
+
+**Endpoint:** `GET /api/admin/analytics/revenue/trends`
+
+**Authentication:** Required (Admin only)
+
+**Query Parameters:**
+- `period` (required) - Time period grouping: `daily`, `weekly`, `monthly`, `yearly`
+- `startDate` (required) - Start date (ISO 8601 format)
+- `endDate` (required) - End date (ISO 8601 format)
+- `groupBy` (optional) - Additional grouping: `status`, `paymentStatus`
+
+**Response:** `200 OK`
+```json
+{
+  "success": true,
+  "message": "Revenue trends retrieved successfully",
+  "data": [
+    {
+      "date": "2026-01-01",
+      "revenue": 1500.50,
+      "orderCount": 15,
+      "averageOrderValue": 100.03
+    },
+    {
+      "date": "2026-01-02",
+      "revenue": 2000.75,
+      "orderCount": 20,
+      "averageOrderValue": 100.04
+    }
+  ],
+  "meta": {
+    "period": "daily",
+    "startDate": "2026-01-01",
+    "endDate": "2026-01-31",
+    "groupBy": null
+  }
+}
+```
+
+**Notes:**
+- Data is sorted chronologically
+- When `groupBy` is used, each date may have multiple entries (one per status/paymentStatus)
+- Weekly periods use week numbers (W2026-01, W2026-02, etc.)
+
+**Errors:**
+- `401` - Authentication required
+- `403` - Admin privileges required
+- `400` - Missing required parameters or invalid period value
+
+---
+
+### Revenue by Product
+
+Get top products by revenue with sorting and pagination options.
+
+**Endpoint:** `GET /api/admin/analytics/revenue/products`
+
+**Authentication:** Required (Admin only)
+
+**Query Parameters:**
+- `startDate` (optional) - Start date for filtering (ISO 8601 format)
+- `endDate` (optional) - End date for filtering (ISO 8601 format)
+- `limit` (optional) - Number of results (default: 10, max: 100)
+- `sortBy` (optional) - Sort field: `revenue`, `quantity`, `orders` (default: `revenue`)
+- `sortOrder` (optional) - Sort direction: `asc`, `desc` (default: `desc`)
+
+**Response:** `200 OK`
+```json
+{
+  "success": true,
+  "message": "Revenue by product retrieved successfully",
+  "data": {
+    "products": [
+      {
+        "productId": 1,
+        "productName": "Laptop",
+        "revenue": 5000.00,
+        "quantity": 5,
+        "orderCount": 5,
+        "averageOrderValue": 1000.00
+      },
+      {
+        "productId": 2,
+        "productName": "Mouse",
+        "revenue": 3000.00,
+        "quantity": 30,
+        "orderCount": 25,
+        "averageOrderValue": 120.00
+      }
+    ],
+    "total": 2
+  },
+  "meta": {
+    "startDate": "2026-01-01",
+    "endDate": "2026-01-31",
+    "limit": 10,
+    "sortBy": "revenue",
+    "sortOrder": "desc"
+  }
+}
+```
+
+**Notes:**
+- Only includes products from orders with `paymentStatus = 'PAID'`
+- Revenue is calculated from order items (price × quantity)
+- Results are limited to top products by default
+
+**Errors:**
+- `401` - Authentication required
+- `403` - Admin privileges required
+- `400` - Invalid sortBy or sortOrder value
+
+---
+
+### Revenue by Category
+
+Get revenue breakdown by product categories with optional subcategory aggregation.
+
+**Endpoint:** `GET /api/admin/analytics/revenue/categories`
+
+**Authentication:** Required (Admin only)
+
+**Query Parameters:**
+- `startDate` (optional) - Start date for filtering (ISO 8601 format)
+- `endDate` (optional) - End date for filtering (ISO 8601 format)
+- `includeSubcategories` (optional) - Boolean (`true`/`false`), include child category revenue in parent totals
+
+**Response:** `200 OK`
+```json
+{
+  "success": true,
+  "message": "Revenue by category retrieved successfully",
+  "data": {
+    "categories": [
+      {
+        "categoryId": 1,
+        "categoryName": "Electronics",
+        "parentId": null,
+        "revenue": 10000.00,
+        "orderCount": 100,
+        "productCount": 25,
+        "averageOrderValue": 100.00
+      },
+      {
+        "categoryId": 2,
+        "categoryName": "Computers",
+        "parentId": 1,
+        "revenue": 5000.00,
+        "orderCount": 50,
+        "productCount": 10,
+        "averageOrderValue": 100.00
+      }
+    ],
+    "total": 2
+  },
+  "meta": {
+    "startDate": "2026-01-01",
+    "endDate": "2026-01-31",
+    "includeSubcategories": false
+  }
+}
+```
+
+**Notes:**
+- Categories are sorted by revenue (descending)
+- Products can belong to multiple categories
+- When `includeSubcategories` is `true`, parent categories include revenue from child categories
+
+**Errors:**
+- `401` - Authentication required
+- `403` - Admin privileges required
+
+---
+
+### Revenue by Customer
+
+Get top customers by revenue with sorting and pagination options.
+
+**Endpoint:** `GET /api/admin/analytics/revenue/customers`
+
+**Authentication:** Required (Admin only)
+
+**Query Parameters:**
+- `startDate` (optional) - Start date for filtering (ISO 8601 format)
+- `endDate` (optional) - End date for filtering (ISO 8601 format)
+- `limit` (optional) - Number of results (default: 10, max: 100)
+- `sortBy` (optional) - Sort field: `revenue`, `orders`, `avgOrderValue` (default: `revenue`)
+- `sortOrder` (optional) - Sort direction: `asc`, `desc` (default: `desc`)
+
+**Response:** `200 OK`
+```json
+{
+  "success": true,
+  "message": "Revenue by customer retrieved successfully",
+  "data": {
+    "customers": [
+      {
+        "userId": 1,
+        "userName": "John Doe",
+        "phoneNumber": "12345678",
+        "email": "john@example.com",
+        "totalRevenue": 5000.00,
+        "orderCount": 10,
+        "averageOrderValue": 500.00
+      },
+      {
+        "userId": 2,
+        "userName": "Jane Smith",
+        "phoneNumber": "87654321",
+        "email": "jane@example.com",
+        "totalRevenue": 3000.00,
+        "orderCount": 5,
+        "averageOrderValue": 600.00
+      }
+    ],
+    "total": 2
+  },
+  "meta": {
+    "startDate": "2026-01-01",
+    "endDate": "2026-01-31",
+    "limit": 10,
+    "sortBy": "revenue",
+    "sortOrder": "desc"
+  }
+}
+```
+
+**Notes:**
+- Only includes authenticated users (excludes guest orders)
+- Email may be `null` for users who didn't provide email
+- Results show top customers by default
+
+**Errors:**
+- `401` - Authentication required
+- `403` - Admin privileges required
+- `400` - Invalid sortBy or sortOrder value
+
+---
+
+### Revenue by Payment Method
+
+Get revenue breakdown by payment method with percentages.
+
+**Endpoint:** `GET /api/admin/analytics/revenue/payment-methods`
+
+**Authentication:** Required (Admin only)
+
+**Query Parameters:**
+- `startDate` (optional) - Start date for filtering (ISO 8601 format)
+- `endDate` (optional) - End date for filtering (ISO 8601 format)
+
+**Response:** `200 OK`
+```json
+{
+  "success": true,
+  "message": "Revenue by payment method retrieved successfully",
+  "data": {
+    "paymentMethods": [
+      {
+        "paymentMethod": "QPAY",
+        "revenue": 10000.00,
+        "orderCount": 100,
+        "percentage": 80.00,
+        "averageOrderValue": 100.00
+      },
+      {
+        "paymentMethod": "CASH",
+        "revenue": 2500.00,
+        "orderCount": 25,
+        "percentage": 20.00,
+        "averageOrderValue": 100.00
+      }
+    ],
+    "total": 2,
+    "totalRevenue": 12500.00
+  },
+  "meta": {
+    "startDate": "2026-01-01",
+    "endDate": "2026-01-31"
+  }
+}
+```
+
+**Notes:**
+- Only includes orders with `paymentStatus = 'PAID'`
+- Payment methods are sorted by revenue (descending)
+- Percentage represents share of total revenue
+- `paymentMethod` may be `null` or `"UNKNOWN"` for orders without payment method
+
+**Errors:**
+- `401` - Authentication required
+- `403` - Admin privileges required
+
+---
+
+### Revenue Dashboard Summary
+
+Get comprehensive dashboard overview with key metrics, top products/categories, and trends.
+
+**Endpoint:** `GET /api/admin/analytics/revenue/dashboard`
+
+**Authentication:** Required (Admin only)
+
+**Response:** `200 OK`
+```json
+{
+  "success": true,
+  "message": "Dashboard summary retrieved successfully",
+  "data": {
+    "periods": {
+      "today": {
+        "revenue": 500.00,
+        "orders": 5,
+        "comparison": {
+          "percentage": 25.00,
+          "absolute": 100.00,
+          "isPositive": true
+        }
+      },
+      "thisWeek": {
+        "revenue": 3500.00,
+        "orders": 35,
+        "comparison": {
+          "percentage": 16.67,
+          "absolute": 500.00,
+          "isPositive": true
+        }
+      },
+      "thisMonth": {
+        "revenue": 15000.00,
+        "orders": 150,
+        "comparison": {
+          "percentage": 50.00,
+          "absolute": 5000.00,
+          "isPositive": true
+        }
+      },
+      "thisYear": {
+        "revenue": 125000.00,
+        "orders": 1250,
+        "comparison": {
+          "percentage": 25.00,
+          "absolute": 25000.00,
+          "isPositive": true
+        }
+      }
+    },
+    "topProducts": [
+      {
+        "productId": 1,
+        "productName": "Laptop",
+        "revenue": 5000.00,
+        "quantity": 5,
+        "orderCount": 5,
+        "averageOrderValue": 1000.00
+      }
+    ],
+    "topCategories": [
+      {
+        "categoryId": 1,
+        "categoryName": "Electronics",
+        "parentId": null,
+        "revenue": 10000.00,
+        "orderCount": 100,
+        "productCount": 25,
+        "averageOrderValue": 100.00
+      }
+    ],
+    "trend": [
+      {
+        "date": "2026-01-20",
+        "revenue": 500.00,
+        "orderCount": 5,
+        "averageOrderValue": 100.00
+      }
+    ]
+  }
+}
+```
+
+**Notes:**
+- All comparisons are with previous period (yesterday, last week, last month, last year)
+- Top products and categories are limited to top 5
+- Trend shows last 7 days of daily revenue
+- All revenue values are from paid orders only
+
+**Errors:**
+- `401` - Authentication required
+- `403` - Admin privileges required
+
+---
+
 ## Data Models
 
 ### Category
@@ -1940,6 +2436,15 @@ While not admin-specific, admins can also use these public endpoints for viewing
 - `POST /api/admin/constants/delivery-time-slots` - Update delivery time slots
 - `GET /api/admin/constants/districts` - Get districts
 - `POST /api/admin/constants/districts` - Update districts
+
+### Analytics Endpoints
+- `GET /api/admin/analytics/revenue/overview` - Get revenue overview with key metrics
+- `GET /api/admin/analytics/revenue/trends` - Get revenue trends over time
+- `GET /api/admin/analytics/revenue/products` - Get revenue breakdown by product
+- `GET /api/admin/analytics/revenue/categories` - Get revenue breakdown by category
+- `GET /api/admin/analytics/revenue/customers` - Get revenue breakdown by customer
+- `GET /api/admin/analytics/revenue/payment-methods` - Get revenue breakdown by payment method
+- `GET /api/admin/analytics/revenue/dashboard` - Get dashboard summary with all key metrics
 
 ---
 

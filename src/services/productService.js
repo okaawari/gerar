@@ -2,6 +2,34 @@ const prisma = require('../lib/prisma');
 
 class ProductService {
     /**
+     * Normalize image URLs - replace localhost with network IP if API_BASE_URL is set
+     * This ensures Next.js can access images when running on network IP
+     * @param {string|null|undefined} url - Image URL to normalize
+     * @returns {string|null} - Normalized URL or null
+     */
+    normalizeImageUrl(url) {
+        if (!url || typeof url !== 'string') {
+            return url || null;
+        }
+
+        // If API_BASE_URL is set and URL contains localhost, replace with network IP
+        const apiBaseUrl = process.env.API_BASE_URL || process.env.BASE_URL;
+        if (apiBaseUrl && url.includes('localhost:3000')) {
+            // Extract the base URL without /api if present
+            const baseUrl = apiBaseUrl.replace(/\/api$/, '');
+            return url.replace(/http:\/\/localhost:3000/g, baseUrl);
+        }
+
+        // Also handle 127.0.0.1
+        if (apiBaseUrl && url.includes('127.0.0.1:3000')) {
+            const baseUrl = apiBaseUrl.replace(/\/api$/, '');
+            return url.replace(/http:\/\/127\.0\.0\.1:3000/g, baseUrl);
+        }
+
+        return url;
+    }
+
+    /**
      * Validate product data
      * @param {Object} data - { name, description, price, originalPrice, images, stock, categoryId }
      * @returns {Object} - { isValid, errors }
@@ -114,8 +142,11 @@ class ProductService {
             formatted.images = [];
         }
 
+        // Normalize image URLs to use network IP instead of localhost
+        formatted.images = formatted.images.map(img => this.normalizeImageUrl(img)).filter(Boolean);
+
         // Add firstImage for easy access (useful for product listings)
-        formatted.firstImage = formatted.images.length > 0 ? formatted.images[0] : null;
+        formatted.firstImage = formatted.images.length > 0 ? this.normalizeImageUrl(formatted.images[0]) : null;
 
         // Calculate discount information
         if (originalPrice && originalPrice > price) {
@@ -325,6 +356,22 @@ class ProductService {
                             }
                         }
                     }
+                },
+                creator: {
+                    select: {
+                        id: true,
+                        name: true,
+                        phoneNumber: true,
+                        email: true
+                    }
+                },
+                updater: {
+                    select: {
+                        id: true,
+                        name: true,
+                        phoneNumber: true,
+                        email: true
+                    }
                 }
             },
             orderBy,
@@ -413,6 +460,22 @@ class ProductService {
                                 description: true
                             }
                         }
+                    }
+                },
+                creator: {
+                    select: {
+                        id: true,
+                        name: true,
+                        phoneNumber: true,
+                        email: true
+                    }
+                },
+                updater: {
+                    select: {
+                        id: true,
+                        name: true,
+                        phoneNumber: true,
+                        email: true
                     }
                 }
             }
@@ -526,6 +589,12 @@ class ProductService {
             }
         }
 
+        // Add admin tracking if provided
+        if (data.adminId !== undefined && data.adminId !== null) {
+            productData.createdBy = parseInt(data.adminId);
+            productData.updatedBy = parseInt(data.adminId);
+        }
+
         // Create product first (without categories)
         const product = await prisma.product.create({
             data: productData
@@ -553,6 +622,22 @@ class ProductService {
                                 description: true
                             }
                         }
+                    }
+                },
+                creator: {
+                    select: {
+                        id: true,
+                        name: true,
+                        phoneNumber: true,
+                        email: true
+                    }
+                },
+                updater: {
+                    select: {
+                        id: true,
+                        name: true,
+                        phoneNumber: true,
+                        email: true
                     }
                 }
             }
@@ -669,6 +754,11 @@ class ProductService {
         }
         if (data.stock !== undefined) {
             updateData.stock = parseInt(data.stock);
+        }
+
+        // Add admin tracking if provided
+        if (data.adminId !== undefined && data.adminId !== null) {
+            updateData.updatedBy = parseInt(data.adminId);
         }
 
         // Handle category updates - delete existing and create new
@@ -795,6 +885,22 @@ class ProductService {
                                 description: true
                             }
                         }
+                    }
+                },
+                creator: {
+                    select: {
+                        id: true,
+                        name: true,
+                        phoneNumber: true,
+                        email: true
+                    }
+                },
+                updater: {
+                    select: {
+                        id: true,
+                        name: true,
+                        phoneNumber: true,
+                        email: true
                     }
                 }
             }

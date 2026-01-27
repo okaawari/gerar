@@ -7,8 +7,8 @@ const { isValidDeliveryTimeSlot } = require('../constants/deliveryTimeSlots');
 class OrderService {
     /**
      * Generate custom order ID in format YYMMDDNNN
-     * Format: YY (year last 2 digits) + MM (month) + DD (day) + NNN (sequential number starting from 001)
-     * Example: 260126001 for January 26, 2026, first order of the day
+     * Format: YY (year last 2 digits) + MM (month) + DD (day) + NNN (random number from 001-999)
+     * Example: 260126247 for January 26, 2026, with random suffix 247
      * @returns {Promise<string>} - Generated order ID
      */
     async generateOrderId() {
@@ -18,41 +18,36 @@ class OrderService {
         const day = String(now.getDate()).padStart(2, '0'); // Day (01-31)
         const datePrefix = `${year}${month}${day}`; // YYMMDD format
 
-        // Find the last order created today
-        const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-        const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+        const maxAttempts = 100; // Maximum attempts to find a unique random ID
+        let attempts = 0;
 
-        const lastOrder = await prisma.order.findFirst({
-            where: {
-                createdAt: {
-                    gte: startOfDay,
-                    lte: endOfDay
+        while (attempts < maxAttempts) {
+            // Generate random number from 1 to 999
+            const randomSequence = Math.floor(Math.random() * 999) + 1;
+            const sequenceStr = String(randomSequence).padStart(3, '0');
+            const candidateId = `${datePrefix}${sequenceStr}`;
+
+            // Check if this order ID already exists
+            const existingOrder = await prisma.order.findUnique({
+                where: {
+                    id: candidateId
                 },
-                id: {
-                    startsWith: datePrefix
+                select: {
+                    id: true
                 }
-            },
-            orderBy: {
-                createdAt: 'desc'
-            },
-            select: {
-                id: true
-            }
-        });
+            });
 
-        let sequenceNumber = 1; // Start from 1
-        if (lastOrder && lastOrder.id.startsWith(datePrefix)) {
-            // Extract the sequence number from the last order ID
-            const lastSequence = parseInt(lastOrder.id.slice(-3), 10);
-            if (!isNaN(lastSequence)) {
-                sequenceNumber = lastSequence + 1;
+            // If ID doesn't exist, return it
+            if (!existingOrder) {
+                return candidateId;
             }
+
+            attempts++;
         }
 
-        // Format sequence number with leading zeros (001, 002, etc.)
-        const sequenceStr = String(sequenceNumber).padStart(3, '0');
-        
-        return `${datePrefix}${sequenceStr}`;
+        // Fallback: if we couldn't find a unique random ID after maxAttempts,
+        // throw an error (this should be extremely rare - only if there are 999+ orders in a single day)
+        throw new Error(`Unable to generate unique order ID after ${maxAttempts} attempts. Too many orders today.`);
     }
 
     /**

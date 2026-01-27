@@ -91,6 +91,24 @@ class CategoryService {
         if (!includeSubcategories) {
             // Return all categories in a flat list, sorted by order then createdAt
             return await prisma.category.findMany({
+                include: {
+                    creator: {
+                        select: {
+                            id: true,
+                            name: true,
+                            phoneNumber: true,
+                            email: true
+                        }
+                    },
+                    updater: {
+                        select: {
+                            id: true,
+                            name: true,
+                            phoneNumber: true,
+                            email: true
+                        }
+                    }
+                },
                 orderBy: [
                     { order: 'asc' },
                     { createdAt: 'desc' }
@@ -105,10 +123,44 @@ class CategoryService {
             },
             include: {
                 children: {
+                    include: {
+                        creator: {
+                            select: {
+                                id: true,
+                                name: true,
+                                phoneNumber: true,
+                                email: true
+                            }
+                        },
+                        updater: {
+                            select: {
+                                id: true,
+                                name: true,
+                                phoneNumber: true,
+                                email: true
+                            }
+                        }
+                    },
                     orderBy: [
                         { order: 'asc' },
                         { createdAt: 'desc' }
                     ]
+                },
+                creator: {
+                    select: {
+                        id: true,
+                        name: true,
+                        phoneNumber: true,
+                        email: true
+                    }
+                },
+                updater: {
+                    select: {
+                        id: true,
+                        name: true,
+                        phoneNumber: true,
+                        email: true
+                    }
                 }
             },
             orderBy: [
@@ -154,6 +206,22 @@ class CategoryService {
                     },
                     orderBy: {
                         order: 'asc'
+                    }
+                },
+                creator: {
+                    select: {
+                        id: true,
+                        name: true,
+                        phoneNumber: true,
+                        email: true
+                    }
+                },
+                updater: {
+                    select: {
+                        id: true,
+                        name: true,
+                        phoneNumber: true,
+                        email: true
                     }
                 }
             }
@@ -286,7 +354,7 @@ class CategoryService {
 
     /**
      * Create a new category
-     * @param {Object} data - { name, description?, parentId? }
+     * @param {Object} data - { name, description?, parentId?, adminId? }
      * @returns {Object} - Created category
      */
     async createCategory(data) {
@@ -327,13 +395,22 @@ class CategoryService {
             throw error;
         }
 
+        // Prepare category data
+        const categoryData = {
+            name: data.name.trim(),
+            description: data.description ? data.description.trim() : null,
+            parentId: parentId
+        };
+
+        // Add admin tracking if provided
+        if (data.adminId !== undefined && data.adminId !== null) {
+            categoryData.createdBy = parseInt(data.adminId);
+            categoryData.updatedBy = parseInt(data.adminId);
+        }
+
         // Create category
         const category = await prisma.category.create({
-            data: {
-                name: data.name.trim(),
-                description: data.description ? data.description.trim() : null,
-                parentId: parentId
-            },
+            data: categoryData,
             include: {
                 parent: {
                     select: {
@@ -341,7 +418,23 @@ class CategoryService {
                         name: true
                     }
                 },
-                children: true
+                children: true,
+                creator: {
+                    select: {
+                        id: true,
+                        name: true,
+                        phoneNumber: true,
+                        email: true
+                    }
+                },
+                updater: {
+                    select: {
+                        id: true,
+                        name: true,
+                        phoneNumber: true,
+                        email: true
+                    }
+                }
             }
         });
 
@@ -351,7 +444,7 @@ class CategoryService {
     /**
      * Update a category
      * @param {number} id - Category ID
-     * @param {Object} data - { name?, description?, parentId?, order? }
+     * @param {Object} data - { name?, description?, parentId?, order?, adminId? }
      * @returns {Object} - Updated category
      */
     async updateCategory(id, data) {
@@ -438,6 +531,11 @@ class CategoryService {
             updateData.order = parseInt(data.order);
         }
 
+        // Add admin tracking if provided
+        if (data.adminId !== undefined && data.adminId !== null) {
+            updateData.updatedBy = parseInt(data.adminId);
+        }
+
         const category = await prisma.category.update({
             where: { id: parseInt(id) },
             data: updateData,
@@ -453,6 +551,22 @@ class CategoryService {
                         { order: 'asc' },
                         { createdAt: 'desc' }
                     ]
+                },
+                creator: {
+                    select: {
+                        id: true,
+                        name: true,
+                        phoneNumber: true,
+                        email: true
+                    }
+                },
+                updater: {
+                    select: {
+                        id: true,
+                        name: true,
+                        phoneNumber: true,
+                        email: true
+                    }
                 }
             }
         });

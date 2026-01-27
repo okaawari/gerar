@@ -31,6 +31,10 @@ model user {
   orders      order[]
   addresses   address[]
   favorites   favorite[]
+  createdCategories category[] @relation("CategoryCreatedBy")
+  updatedCategories category[] @relation("CategoryUpdatedBy")
+  createdProducts product[] @relation("ProductCreatedBy")
+  updatedProducts product[] @relation("ProductUpdatedBy")
 
   @@map("user")
 }
@@ -41,16 +45,22 @@ model category {
   description String?   @db.Text
   parentId    Int?
   order       Int       @default(0) // Order/position of category (lower = shows first)
+  createdBy   Int?      // Admin user ID who created this category
+  updatedBy   Int?      // Admin user ID who last updated this category
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
   parent      category? @relation("CategoryToCategory", fields: [parentId], references: [id], onDelete: Cascade)
   children    category[] @relation("CategoryToCategory")
   products    productcategory[]
+  creator     user?     @relation("CategoryCreatedBy", fields: [createdBy], references: [id], onDelete: SetNull)
+  updater     user?     @relation("CategoryUpdatedBy", fields: [updatedBy], references: [id], onDelete: SetNull)
 
   @@unique([name, parentId])
   @@index([parentId])
   @@index([parentId, order]) // Index for efficient sorting by parent and order
+  @@index([createdBy])
+  @@index([updatedBy])
   @@map("category")
 }
 
@@ -62,6 +72,8 @@ model product {
   originalPrice Decimal?  @db.Decimal(10, 2) // Original price before discount (if null, no discount)
   images        Json?     // JSON array of image URLs
   stock         Int       @default(0)
+  createdBy     Int?      // Admin user ID who created this product
+  updatedBy     Int?      // Admin user ID who last updated this product
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
@@ -70,7 +82,11 @@ model product {
   orderItems    orderitem[]
   favorites     favorite[]
   draftOrders   draftorder[]
+  creator       user?     @relation("ProductCreatedBy", fields: [createdBy], references: [id], onDelete: SetNull)
+  updater       user?     @relation("ProductUpdatedBy", fields: [updatedBy], references: [id], onDelete: SetNull)
 
+  @@index([createdBy])
+  @@index([updatedBy])
   @@map("product")
 }
 

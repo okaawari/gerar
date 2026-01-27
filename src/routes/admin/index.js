@@ -5,6 +5,7 @@ const orderRoutes = require('./orderRoutes');
 const userRoutes = require('./userRoutes');
 const uploadRoutes = require('./uploadRoutes');
 const constantsRoutes = require('./constantsRoutes');
+const analyticsRoutes = require('./analyticsRoutes');
 
 const router = express.Router();
 
@@ -15,5 +16,6 @@ router.use('/orders', orderRoutes);
 router.use('/users', userRoutes);
 router.use('/upload', uploadRoutes);
 router.use('/constants', constantsRoutes);
+router.use('/analytics', analyticsRoutes);
 
 module.exports = router;

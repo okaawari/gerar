@@ -70,7 +70,8 @@ class CategoryController {
     async createCategory(req, res, next) {
         try {
             const { name, description, parentId } = req.body;
-            const category = await categoryService.createCategory({ name, description, parentId });
+            const adminId = req.user && req.user.id ? req.user.id : null;
+            const category = await categoryService.createCategory({ name, description, parentId, adminId });
 
             res.status(201).json({
                 success: true,
@@ -90,7 +91,8 @@ class CategoryController {
         try {
             const { id } = req.params;
             const { name, description, parentId, order } = req.body;
-            const category = await categoryService.updateCategory(id, { name, description, parentId, order });
+            const adminId = req.user && req.user.id ? req.user.id : null;
+            const category = await categoryService.updateCategory(id, { name, description, parentId, order, adminId });
 
             res.status(200).json({
                 success: true,
