@@ -71,6 +71,42 @@ const normalizeSingleUpload = (req, res, next) => {
 const uploadMultiple = upload.array('files', 10); // Max 10 files
 
 /**
+ * Get the correct base URL for file uploads
+ * Handles proxy scenarios and forces HTTPS for production domains
+ */
+const getBaseUrl = (req) => {
+    let baseUrl;
+    
+    // First, check if API_BASE_URL is explicitly set in environment
+    if (process.env.API_BASE_URL) {
+        baseUrl = process.env.API_BASE_URL;
+    } else if (process.env.BASE_URL) {
+        baseUrl = process.env.BASE_URL;
+    } else {
+        // Determine protocol - check x-forwarded-proto header first (for reverse proxies)
+        let protocol = req.get('x-forwarded-proto') || req.protocol;
+        const host = req.get('host') || '';
+        
+        // Force HTTPS for production domains
+        if (host.includes('api.gerar.mn') || host.includes('gerar.mn')) {
+            protocol = 'https';
+        }
+        
+        // Ensure protocol is https or http
+        protocol = protocol === 'https' ? 'https' : 'http';
+        baseUrl = `${protocol}://${host}`;
+    }
+    
+    // Force HTTPS for production domains even if env var is set to HTTP
+    // This ensures production always uses HTTPS regardless of configuration
+    if (baseUrl && (baseUrl.includes('api.gerar.mn') || baseUrl.includes('gerar.mn'))) {
+        baseUrl = baseUrl.replace(/^http:\/\//, 'https://');
+    }
+    
+    return baseUrl;
+};
+
+/**
  * Upload a single file
  * POST /api/admin/upload
  */
@@ -84,9 +120,7 @@ const uploadFile = async (req, res, next) => {
         }
 
         // Get base URL from environment or request
-        const baseUrl = process.env.API_BASE_URL || 
-                       process.env.BASE_URL || 
-                       `${req.protocol}://${req.get('host')}`;
+        const baseUrl = getBaseUrl(req);
         
         // Construct file URL
         // Remove /api from base URL if present, as uploads are served from root
@@ -122,9 +156,7 @@ const uploadFiles = async (req, res, next) => {
         }
 
         // Get base URL from environment or request
-        const baseUrl = process.env.API_BASE_URL || 
-                       process.env.BASE_URL || 
-                       `${req.protocol}://${req.get('host')}`;
+        const baseUrl = getBaseUrl(req);
         
         // Remove /api from base URL if present
         const cleanBaseUrl = baseUrl.replace(/\/api$/, '');

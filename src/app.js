@@ -22,6 +22,12 @@ dotenv.config();
 
 const app = express();
 
+// Trust proxy - needed to correctly read x-forwarded-proto header when behind reverse proxy
+// This is important for production deployments behind nginx/Apache
+if (process.env.NODE_ENV === 'production' || process.env.TRUST_PROXY === 'true') {
+    app.set('trust proxy', true);
+}
+
 // Ensure public/uploads directory exists
 const uploadsDir = path.join(__dirname, '../public/uploads');
 if (!fs.existsSync(uploadsDir)) {
