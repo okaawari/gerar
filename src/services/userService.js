@@ -13,12 +13,12 @@ class UserService {
 
         const where = {};
 
-        // Search by name, phone number, or email
+        // Search by name, phone number, or email (MySQL: no mode; collation handles case)
         if (search) {
             where.OR = [
-                { name: { contains: search, mode: 'insensitive' } },
+                { name: { contains: search } },
                 { phoneNumber: { contains: search } },
-                { email: { contains: search, mode: 'insensitive' } },
+                { email: { contains: search } },
             ];
         }
 
@@ -277,6 +277,62 @@ class UserService {
             message: 'Password reset successfully',
             userId: user.id,
         };
+    }
+
+    /**
+     * Update user role (super admin only)
+     * @param {number} userId - User ID to update
+     * @param {string} newRole - New role (USER, ADMIN, or SUPER_ADMIN)
+     * @returns {Object} - Updated user
+     */
+    async updateUserRole(userId, newRole) {
+        const id = parseInt(userId);
+
+        if (isNaN(id)) {
+            const error = new Error('Invalid user ID');
+            error.statusCode = 400;
+            throw error;
+        }
+
+        // Validate role
+        const validRoles = ['USER', 'ADMIN', 'SUPER_ADMIN'];
+        if (!validRoles.includes(newRole)) {
+            const error = new Error(`Invalid role. Must be one of: ${validRoles.join(', ')}`);
+            error.statusCode = 400;
+            throw error;
+        }
+
+        // Check if user exists
+        const user = await prisma.user.findUnique({
+            where: { id },
+            select: { id: true, phoneNumber: true, email: true, name: true, role: true },
+        });
+
+        if (!user) {
+            const error = new Error('User not found');
+            error.statusCode = 404;
+            throw error;
+        }
+
+        // Prevent super admin from removing their own super admin role
+        // (This check should be done at controller level with the requesting user's ID)
+
+        // Update user role
+        const updatedUser = await prisma.user.update({
+            where: { id },
+            data: { role: newRole },
+            select: {
+                id: true,
+                phoneNumber: true,
+                email: true,
+                name: true,
+                role: true,
+                createdAt: true,
+                updatedAt: true,
+            },
+        });
+
+        return updatedUser;
     }
 }
 

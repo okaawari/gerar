@@ -98,6 +98,41 @@ class UserController {
             next(error);
         }
     }
+
+    /**
+     * Update user role (Super admin only)
+     * POST /api/admin/users/:id/role
+     */
+    async updateUserRole(req, res, next) {
+        try {
+            const { id } = req.params;
+            const { role } = req.body;
+
+            if (!role) {
+                const error = new Error('Role is required');
+                error.statusCode = 400;
+                throw error;
+            }
+
+            // Prevent super admin from removing their own super admin role
+            const userId = parseInt(id);
+            if (req.user.id === userId && role !== 'SUPER_ADMIN') {
+                const error = new Error('You cannot remove your own super admin role');
+                error.statusCode = 400;
+                throw error;
+            }
+
+            const updatedUser = await userService.updateUserRole(id, role);
+
+            res.status(200).json({
+                success: true,
+                message: 'User role updated successfully',
+                data: updatedUser,
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
 }
 
 module.exports = new UserController();

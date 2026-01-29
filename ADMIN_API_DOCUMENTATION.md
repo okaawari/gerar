@@ -1041,15 +1041,36 @@ Replace all districts and their khoroo counts.
 
 All order management endpoints are under `/api/admin/orders`.
 
-### Get All Orders
+### Get All Orders (with Advanced Search)
 
-Retrieve all orders from all users with full details.
+Retrieve all orders from all users with full details. When no query parameters are provided, returns all orders. When any query parameter is provided, performs filtered search with pagination.
 
 **Endpoint:** `GET /api/admin/orders/all`
 
 **Authentication:** Required (Admin only)
 
-**Response:** `200 OK`
+**Query Parameters (all optional):**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `orderId` | string | Order ID or partial match (e.g. `260126` for orders from that date) |
+| `status` | string | Order status (exact): e.g. `PENDING`, `PAID`, `COMPLETED`, `CANCELLED`, `CANCELLED_BY_ADMIN` |
+| `paymentStatus` | string | Payment status (exact): e.g. `PENDING`, `PAID`, `CANCELLED` |
+| `dateFrom` | string (ISO date) | Orders created on or after this date |
+| `dateTo` | string (ISO date) | Orders created on or before this date |
+| `deliveryDateFrom` | string (ISO date) | Delivery date on or after |
+| `deliveryDateTo` | string (ISO date) | Delivery date on or before |
+| `phone` | string | Search by customer phone (user or address phone; matches guest orders via address) |
+| `name` | string | Search by customer name (registered users only; partial match) |
+| `totalMin` | number | Minimum order total amount |
+| `totalMax` | number | Maximum order total amount |
+| `deliveryTimeSlot` | string | Exact slot: `10-14`, `14-18`, `18-21`, `21-00` |
+| `page` | number | Page number (default: 1). Used when any filter is present. |
+| `limit` | number | Items per page (default: 50, max: 100). Used when any filter is present. |
+| `sortBy` | string | Sort field: `createdAt`, `updatedAt`, `totalAmount`, `status`, `paymentStatus`, `deliveryDate` (default: `createdAt`) |
+| `sortOrder` | string | `asc` or `desc` (default: `desc`) |
+
+**Response (no query params):** `200 OK`
 ```json
 {
   "success": true,
@@ -1119,13 +1140,30 @@ Retrieve all orders from all users with full details.
 }
 ```
 
+**Response (with query params – advanced search):** `200 OK`
+```json
+{
+  "success": true,
+  "message": "Orders retrieved successfully",
+  "data": [ /* array of orders (same shape as above) */ ],
+  "pagination": {
+    "total": 42,
+    "page": 1,
+    "limit": 50,
+    "totalPages": 1
+  }
+}
+```
+
 **Notes:**
-- Orders are sorted by `createdAt` in descending order (newest first)
+- When no query parameters are provided, returns all orders (no pagination). When any parameter is provided, returns filtered results with pagination.
+- Orders are sorted by `createdAt` in descending order (newest first) unless `sortBy`/`sortOrder` are set.
 - Each order includes full user information (with email if provided)
 - Each order includes delivery address information
 - Each order includes delivery time slot if selected (`"10-14"`, `"14-18"`, `"18-21"`, `"21-00"` or `null`)
-- Default order status is `"PENDING"` (can be `"PENDING"`, `"COMPLETED"`, `"CANCELLED"`, etc.)
+- Default order status is `"PENDING"` (can be `"PENDING"`, `"COMPLETED"`, `"CANCELLED"`, `"CANCELLED_BY_ADMIN"`, etc.). Use `"CANCELLED_BY_ADMIN"` to show a distinct label (e.g. "Cancelled (admin confirmed)") for orders cancelled via the admin SMS confirmation flow.
 - Each order item includes full product and category information
+- **Phone search**: Matches both registered users (by `user.phoneNumber`) and guest orders (by `address.phoneNumber`). **Name search**: Matches registered users only (by `user.name`).
 
 **Delivery Time Slot Format:**
 - `"10-14"` - 10:00 to 14:00
@@ -1981,7 +2019,7 @@ interface Order {
   addressId: number | null;
   deliveryTimeSlot: string | null; // "10-14" | "14-18" | "18-21" | "21-00" | null
   totalAmount: string;       // Decimal as string
-  status: "PENDING" | "COMPLETED" | "CANCELLED" | string;
+  status: "PENDING" | "COMPLETED" | "CANCELLED" | "CANCELLED_BY_ADMIN" | string;
   createdAt: string;         // ISO 8601 date string
   updatedAt: string;         // ISO 8601 date string
   address?: Address;         // Included in order responses
@@ -2126,6 +2164,17 @@ curl -X GET http://localhost:3000/api/admin/categories \
 #### Get All Orders
 ```bash
 curl -X GET http://localhost:3000/api/admin/orders/all \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
+
+#### Get All Orders (Advanced Search)
+```bash
+# Filter by status and date range with pagination
+curl -X GET "http://localhost:3000/api/admin/orders/all?status=PAID&dateFrom=2026-01-01&dateTo=2026-01-31&page=1&limit=20" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+
+# Search by order ID or customer phone
+curl -X GET "http://localhost:3000/api/admin/orders/all?orderId=260126&phone=1234" \
   -H "Authorization: Bearer YOUR_JWT_TOKEN"
 ```
 
@@ -2429,7 +2478,7 @@ While not admin-specific, admins can also use these public endpoints for viewing
 - `POST /api/admin/products/:id/delete` - Delete product
 
 ### Order Endpoints
-- `GET /api/admin/orders/all` - Get all orders
+- `GET /api/admin/orders/all` - Get all orders (supports advanced search via query params)
 
 ### Constants Endpoints
 - `GET /api/admin/constants/delivery-time-slots` - Get delivery time slots

@@ -4,6 +4,207 @@ const bcrypt = require('bcrypt');
 const fs = require('fs');
 const path = require('path');
 
+/**
+ * Helper function to create sample orders
+ * @param {Map} userIdMap - Map of old user IDs to new user IDs (for seedFromFile) or null (for seedDefault)
+ * @param {Map} addressIdMap - Map of old address IDs to new address IDs (for seedFromFile) or null (for seedDefault)
+ * @param {Map} productIdMap - Map of old product IDs to new product IDs (for seedFromFile) or null (for seedDefault)
+ */
+async function createSampleOrders(userIdMap = null, addressIdMap = null, productIdMap = null) {
+    // Get test user (from seedDefault) or first user from userIdMap (from seedFromFile)
+    let testUser;
+    if (userIdMap) {
+        // From seedFromFile - get first user
+        const userIds = Array.from(userIdMap.values());
+        if (userIds.length === 0) {
+            console.log('  ⚠️  No users found, skipping order creation');
+            return;
+        }
+        testUser = await prisma.user.findUnique({ where: { id: userIds[0] } });
+    } else {
+        // From seedDefault - get test user by phone number
+        testUser = await prisma.user.findUnique({ where: { phoneNumber: '87654321' } });
+    }
+
+    if (!testUser) {
+        console.log('  ⚠️  Test user not found, skipping order creation');
+        return;
+    }
+
+    // Get test address
+    let testAddress;
+    if (addressIdMap) {
+        // From seedFromFile - get first address
+        const addressIds = Array.from(addressIdMap.values());
+        if (addressIds.length > 0) {
+            testAddress = await prisma.address.findUnique({ where: { id: addressIds[0] } });
+        }
+    } else {
+        // From seedDefault - get address for test user
+        testAddress = await prisma.address.findFirst({ where: { userId: testUser.id } });
+    }
+
+    if (!testAddress) {
+        console.log('  ⚠️  No address found for test user, skipping order creation');
+        return;
+    }
+
+    // Get products
+    const products = await prisma.product.findMany({
+        take: 10,
+        orderBy: { id: 'asc' }
+    });
+
+    if (products.length < 2) {
+        console.log(`  ⚠️  Need at least 2 products (found ${products.length}), skipping order creation`);
+        return;
+    }
+
+    // Helper function to generate order ID in format YYMMDDNNN
+    const generateOrderId = (date, sequence) => {
+        const year = date.getFullYear().toString().slice(-2);
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        const seq = String(sequence).padStart(3, '0');
+        return `${year}${month}${day}${seq}`;
+    };
+
+    const now = new Date();
+    const ordersToCreate = [
+        {
+            // Order 1: Pending order (today)
+            date: new Date(now),
+            sequence: 1,
+            status: 'PENDING',
+            paymentStatus: 'PENDING',
+            deliveryTimeSlot: '10-14',
+            deliveryDate: new Date(now.getTime() + 24 * 60 * 60 * 1000), // Tomorrow
+            items: [
+                { product: products[0], quantity: 2 },
+                { product: products[1], quantity: 1 }
+            ]
+        },
+        {
+            // Order 2: Completed order (yesterday)
+            date: new Date(now.getTime() - 24 * 60 * 60 * 1000),
+            sequence: 1,
+            status: 'COMPLETED',
+            paymentStatus: 'PAID',
+            deliveryTimeSlot: '14-18',
+            deliveryDate: new Date(now),
+            paidAt: new Date(now.getTime() - 12 * 60 * 60 * 1000), // 12 hours ago
+            items: [
+                { product: products[2] || products[0], quantity: 3 },
+                { product: products[3] || products[1], quantity: 1 },
+                { product: products[4] || products[0], quantity: 2 }
+            ]
+        },
+        {
+            // Order 3: Processing order (2 days ago)
+            date: new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000),
+            sequence: 1,
+            status: 'PROCESSING',
+            paymentStatus: 'PAID',
+            deliveryTimeSlot: '18-21',
+            deliveryDate: new Date(now.getTime() - 24 * 60 * 60 * 1000), // Yesterday
+            paidAt: new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000),
+            items: [
+                { product: products[5] || products[0], quantity: 1 },
+                { product: products[6] || products[1], quantity: 4 }
+            ]
+        },
+        {
+            // Order 4: Cancelled order (3 days ago)
+            date: new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000),
+            sequence: 1,
+            status: 'CANCELLED',
+            paymentStatus: 'CANCELLED',
+            deliveryTimeSlot: '21-00',
+            items: [
+                { product: products[7] || products[0], quantity: 2 }
+            ]
+        },
+        {
+            // Order 5: Another pending order (today, different sequence)
+            date: new Date(now),
+            sequence: 2,
+            status: 'PENDING',
+            paymentStatus: 'PENDING',
+            deliveryTimeSlot: '14-18',
+            deliveryDate: new Date(now.getTime() + 2 * 24 * 60 * 60 * 1000), // Day after tomorrow
+            items: [
+                { product: products[Math.min(8, products.length - 1)], quantity: 1 },
+                { product: products[Math.min(9, products.length - 1)] || products[0], quantity: 2 }
+            ]
+        }
+    ];
+
+    let ordersCreated = 0;
+    for (const orderData of ordersToCreate) {
+        try {
+            const orderId = generateOrderId(orderData.date, orderData.sequence);
+            
+            // Check if order already exists
+            const existingOrder = await prisma.order.findUnique({
+                where: { id: orderId }
+            });
+
+            if (existingOrder) {
+                console.log(`  ℹ️  Order ${orderId} already exists, skipping...`);
+                continue;
+            }
+
+            // Calculate total amount
+            let totalAmount = 0;
+            const orderItems = [];
+            for (const item of orderData.items) {
+                if (!item.product) {
+                    continue;
+                }
+                const itemTotal = parseFloat(item.product.price) * item.quantity;
+                totalAmount += itemTotal;
+                orderItems.push({
+                    productId: item.product.id,
+                    quantity: item.quantity,
+                    price: item.product.price
+                });
+            }
+
+            if (orderItems.length === 0) {
+                console.log(`  ⚠️  Skipping order ${orderId}: No valid items`);
+                continue;
+            }
+
+            // Create order with items
+            const order = await prisma.order.create({
+                data: {
+                    id: orderId,
+                    userId: testUser.id,
+                    addressId: testAddress.id,
+                    totalAmount: totalAmount,
+                    status: orderData.status,
+                    paymentStatus: orderData.paymentStatus,
+                    deliveryTimeSlot: orderData.deliveryTimeSlot,
+                    deliveryDate: orderData.deliveryDate,
+                    paidAt: orderData.paidAt || null,
+                    createdAt: orderData.date,
+                    updatedAt: orderData.date,
+                    items: {
+                        create: orderItems
+                    }
+                }
+            });
+
+            console.log(`  ✅ Created order ${orderId} (${orderData.status}, ${orderItems.length} items, ${totalAmount.toFixed(2)} MNT)`);
+            ordersCreated++;
+        } catch (error) {
+            console.error(`  ❌ Error creating order: ${error.message}`);
+        }
+    }
+
+    console.log(`  ✅ Created ${ordersCreated} sample orders`);
+}
+
 async function seedFromFile(seedData) {
     console.log('📂 Seeding from exported data file...\n');
     console.log(`📅 Data exported at: ${seedData.exportedAt}\n`);
@@ -126,7 +327,7 @@ async function seedFromFile(seedData) {
             pcData.productId = newProductId;
             pcData.categoryId = newCategoryId;
 
-            await prisma.productCategory.upsert({
+            await prisma.productcategory.upsert({
                 where: {
                     productId_categoryId: {
                         productId: newProductId,
@@ -197,37 +398,48 @@ async function seedFromFile(seedData) {
 
         // 8. Seed Orders
         console.log('\n📋 Seeding orders...');
-        for (const order of seedData.orders) {
-            const oldId = order.id;
-            const oldUserId = order.userId;
-            const newUserId = userIdMap.get(oldUserId);
+        
+        // If seedData has orders, seed them
+        if (seedData.orders && seedData.orders.length > 0) {
+            for (const order of seedData.orders) {
+                const oldId = order.id;
+                const oldUserId = order.userId;
+                const newUserId = userIdMap.get(oldUserId);
 
-            if (!newUserId) {
-                console.warn(`  ⚠️  Skipping order: user ID ${oldUserId} not found`);
-                continue;
-            }
-
-            const { id, createdAt, updatedAt, ...orderData } = order;
-            orderData.userId = newUserId;
-            orderData.totalAmount = parseFloat(orderData.totalAmount);
-            
-            // Map address ID if exists
-            if (orderData.addressId) {
-                const oldAddressId = orderData.addressId;
-                const newAddressId = addressIdMap.get(oldAddressId);
-                if (newAddressId) {
-                    orderData.addressId = newAddressId;
-                } else {
-                    console.warn(`  ⚠️  Order ${oldId}: address ${oldAddressId} not found, setting to null`);
-                    orderData.addressId = null;
+                if (!newUserId) {
+                    console.warn(`  ⚠️  Skipping order: user ID ${oldUserId} not found`);
+                    continue;
                 }
-            }
 
-            const newOrder = await prisma.order.create({
-                data: orderData
-            });
-            orderIdMap.set(oldId, newOrder.id);
-            console.log(`  ✅ Order: ID ${oldId} → ${newOrder.id}`);
+                const { id, createdAt, updatedAt, ...orderData } = order;
+                orderData.userId = newUserId;
+                orderData.totalAmount = parseFloat(orderData.totalAmount);
+                
+                // Map address ID if exists
+                if (orderData.addressId) {
+                    const oldAddressId = orderData.addressId;
+                    const newAddressId = addressIdMap.get(oldAddressId);
+                    if (newAddressId) {
+                        orderData.addressId = newAddressId;
+                    } else {
+                        console.warn(`  ⚠️  Order ${oldId}: address ${oldAddressId} not found, setting to null`);
+                        orderData.addressId = null;
+                    }
+                }
+
+                const newOrder = await prisma.order.create({
+                    data: orderData
+                });
+                orderIdMap.set(oldId, newOrder.id);
+                console.log(`  ✅ Order: ID ${oldId} → ${newOrder.id}`);
+            }
+        }
+        
+        // Always create sample orders if none exist (whether from seed data or not)
+        const existingOrdersCount = await prisma.order.count();
+        if (existingOrdersCount === 0) {
+            console.log('  ℹ️  No orders found, creating sample orders...');
+            await createSampleOrders(userIdMap, addressIdMap, productIdMap);
         }
 
         // 9. Seed OrderItems
@@ -292,15 +504,25 @@ async function seedFromFile(seedData) {
         console.log('\n' + '='.repeat(50));
         console.log('📊 Seeding Summary:');
         console.log('='.repeat(50));
-        console.log(`✅ Users: ${seedData.users.length}`);
-        console.log(`✅ Categories: ${seedData.categories.length}`);
-        console.log(`✅ Products: ${seedData.products.length}`);
-        console.log(`✅ ProductCategories: ${seedData.productCategories.length}`);
-        console.log(`✅ Addresses: ${seedData.addresses.length}`);
-        console.log(`✅ CartItems: ${cartItemsCreated}`);
-        console.log(`✅ Orders: ${seedData.orders.length}`);
-        console.log(`✅ OrderItems: ${orderItemsCreated}`);
-        console.log(`✅ Favorites: ${favoritesCreated}`);
+        const finalUserCount = await prisma.user.count();
+        const finalCategoryCount = await prisma.category.count();
+        const finalProductCount = await prisma.product.count();
+        const finalProductCategoryCount = await prisma.productcategory.count();
+        const finalAddressCount = await prisma.address.count();
+        const finalCartItemCount = await prisma.cartitem.count();
+        const finalOrderCount = await prisma.order.count();
+        const finalOrderItemCount = await prisma.orderitem.count();
+        const finalFavoriteCount = await prisma.favorite.count();
+        
+        console.log(`✅ Users: ${finalUserCount}`);
+        console.log(`✅ Categories: ${finalCategoryCount}`);
+        console.log(`✅ Products: ${finalProductCount}`);
+        console.log(`✅ ProductCategories: ${finalProductCategoryCount}`);
+        console.log(`✅ Addresses: ${finalAddressCount}`);
+        console.log(`✅ CartItems: ${finalCartItemCount}`);
+        console.log(`✅ Orders: ${finalOrderCount}`);
+        console.log(`✅ OrderItems: ${finalOrderItemCount}`);
+        console.log(`✅ Favorites: ${finalFavoriteCount}`);
         console.log('\n' + '='.repeat(50));
         console.log('🎉 Database seeding from file completed successfully!');
         console.log('='.repeat(50) + '\n');
@@ -314,9 +536,24 @@ async function seedFromFile(seedData) {
 async function seedDefault() {
     console.log('🌱 Starting default database seeding...\n');
 
-    // 1. Create Admin User
-    console.log('👤 Creating admin user...');
+    // 1. Create Super Admin User
+    console.log('👤 Creating super admin user...');
     const hashedPin = await bcrypt.hash('1234', 10);
+    const superAdmin = await prisma.user.upsert({
+        where: { phoneNumber: '11111111' },
+        update: {},
+        create: {
+            phoneNumber: '11111111',
+            email: 'superadmin@example.com',
+            pin: hashedPin,
+            name: 'Super Admin User',
+            role: 'SUPER_ADMIN'
+        }
+    });
+    console.log('✅ Super admin user created:', superAdmin.phoneNumber);
+
+    // 2. Create Admin User
+    console.log('\n👤 Creating admin user...');
     const admin = await prisma.user.upsert({
         where: { phoneNumber: '12345678' },
         update: {},
@@ -330,7 +567,7 @@ async function seedDefault() {
     });
     console.log('✅ Admin user created:', admin.phoneNumber);
 
-    // 2. Create Test User
+    // 3. Create Test User
     console.log('\n👤 Creating test user...');
     const testUser = await prisma.user.upsert({
         where: { phoneNumber: '87654321' },
@@ -478,7 +715,7 @@ async function seedDefault() {
                 });
                 
                 // Link product to category via ProductCategory
-                await prisma.productCategory.create({
+                await prisma.productcategory.create({
                     data: {
                         productId: newProduct.id,
                         categoryId: category.id,
@@ -498,12 +735,12 @@ async function seedDefault() {
 
     // 6. Create Sample Address for Test User
     console.log('\n📍 Creating sample address for test user...');
-    const existingAddress = await prisma.address.findFirst({
+    let testAddress = await prisma.address.findFirst({
         where: { userId: testUser.id }
     });
 
-    if (!existingAddress) {
-        const address = await prisma.address.create({
+    if (!testAddress) {
+        testAddress = await prisma.address.create({
             data: {
                 userId: testUser.id,
                 label: 'Home',
@@ -524,7 +761,18 @@ async function seedDefault() {
         console.log('ℹ️  Address already exists for test user');
     }
 
-    // 7. Summary
+    // 7. Create Sample Orders
+    console.log('\n📋 Creating sample orders...');
+    
+    // Check if orders already exist
+    const existingOrdersCount = await prisma.order.count();
+    if (existingOrdersCount === 0) {
+        await createSampleOrders();
+    } else {
+        console.log(`  ℹ️  ${existingOrdersCount} orders already exist, skipping order creation`);
+    }
+
+    // 8. Summary
     console.log('\n' + '='.repeat(50));
     console.log('📊 Seeding Summary:');
     console.log('='.repeat(50));
@@ -533,18 +781,23 @@ async function seedDefault() {
     const productCount = await prisma.product.count();
     const userCount = await prisma.user.count();
     const addressCount = await prisma.address.count();
+    const orderCount = await prisma.order.count();
+    const orderItemCount = await prisma.orderitem.count();
 
     console.log(`✅ Categories: ${categoryCount}`);
     console.log(`✅ Products: ${productCount}`);
     console.log(`✅ Users: ${userCount}`);
     console.log(`✅ Addresses: ${addressCount}`);
+    console.log(`✅ Orders: ${orderCount}`);
+    console.log(`✅ Order Items: ${orderItemCount}`);
     
     console.log('\n' + '='.repeat(50));
     console.log('🎉 Database seeding completed successfully!');
     console.log('='.repeat(50));
     console.log('\n📝 Test Credentials:');
-    console.log('Admin - Phone: 12345678, PIN: 1234');
-    console.log('User  - Phone: 87654321, PIN: 1234');
+    console.log('Super Admin - Phone: 11111111, PIN: 1234');
+    console.log('Admin        - Phone: 12345678, PIN: 1234');
+    console.log('User         - Phone: 87654321, PIN: 1234');
     console.log('\n');
 }
 

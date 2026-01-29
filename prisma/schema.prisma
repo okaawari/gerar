@@ -15,46 +15,47 @@ datasource db {
 enum Role {
   USER
   ADMIN
+  SUPER_ADMIN
 }
 
 model user {
   id          Int      @id @default(autoincrement())
   phoneNumber String   @unique @db.VarChar(8)
   email       String?  @unique
-  pin         String   // Hashed 4-digit PIN
+  pin         String // Hashed 4-digit PIN
   name        String
   role        Role     @default(USER)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  cartItems   cartitem[]
-  orders      order[]
-  addresses   address[]
-  favorites   favorite[]
+  cartItems         cartitem[]
+  orders            order[]
+  addresses         address[]
+  favorites         favorite[]
   createdCategories category[] @relation("CategoryCreatedBy")
   updatedCategories category[] @relation("CategoryUpdatedBy")
-  createdProducts product[] @relation("ProductCreatedBy")
-  updatedProducts product[] @relation("ProductUpdatedBy")
+  createdProducts   product[]  @relation("ProductCreatedBy")
+  updatedProducts   product[]  @relation("ProductUpdatedBy")
 
   @@map("user")
 }
 
 model category {
-  id          Int       @id @default(autoincrement())
+  id          Int      @id @default(autoincrement())
   name        String
-  description String?   @db.Text
+  description String?  @db.Text
   parentId    Int?
-  order       Int       @default(0) // Order/position of category (lower = shows first)
-  createdBy   Int?      // Admin user ID who created this category
-  updatedBy   Int?      // Admin user ID who last updated this category
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  order       Int      @default(0) // Order/position of category (lower = shows first)
+  createdBy   Int? // Admin user ID who created this category
+  updatedBy   Int? // Admin user ID who last updated this category
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  parent      category? @relation("CategoryToCategory", fields: [parentId], references: [id], onDelete: Cascade)
-  children    category[] @relation("CategoryToCategory")
-  products    productcategory[]
-  creator     user?     @relation("CategoryCreatedBy", fields: [createdBy], references: [id], onDelete: SetNull)
-  updater     user?     @relation("CategoryUpdatedBy", fields: [updatedBy], references: [id], onDelete: SetNull)
+  parent   category?         @relation("CategoryToCategory", fields: [parentId], references: [id], onDelete: Cascade)
+  children category[]        @relation("CategoryToCategory")
+  products productcategory[]
+  creator  user?             @relation("CategoryCreatedBy", fields: [createdBy], references: [id], onDelete: SetNull)
+  updater  user?             @relation("CategoryUpdatedBy", fields: [updatedBy], references: [id], onDelete: SetNull)
 
   @@unique([name, parentId])
   @@index([parentId])
@@ -65,42 +66,45 @@ model category {
 }
 
 model product {
-  id            Int       @id @default(autoincrement())
+  id            Int      @id @default(autoincrement())
   name          String
-  description   String    @db.Text
-  price         Decimal   @db.Decimal(10, 2)
-  originalPrice Decimal?  @db.Decimal(10, 2) // Original price before discount (if null, no discount)
-  images        Json?     // JSON array of image URLs
-  stock         Int       @default(0)
-  createdBy     Int?      // Admin user ID who created this product
-  updatedBy     Int?      // Admin user ID who last updated this product
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  description   String   @db.Text
+  price         Decimal  @db.Decimal(10, 2)
+  originalPrice Decimal? @db.Decimal(10, 2) // Original price before discount (if null, no discount)
+  images        Json? // JSON array of image URLs
+  stock         Int      @default(0)
+  isHidden      Boolean  @default(false) // If true, product is hidden from public view
+  deletedAt     DateTime? // Soft delete timestamp - if set, product is considered deleted
+  createdBy     Int? // Admin user ID who created this product
+  updatedBy     Int? // Admin user ID who last updated this product
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
-  categories    productcategory[]
-  cartItems     cartitem[]
-  orderItems    orderitem[]
-  favorites     favorite[]
-  draftOrders   draftorder[]
-  creator       user?     @relation("ProductCreatedBy", fields: [createdBy], references: [id], onDelete: SetNull)
-  updater       user?     @relation("ProductUpdatedBy", fields: [updatedBy], references: [id], onDelete: SetNull)
+  categories  productcategory[]
+  cartItems   cartitem[]
+  orderItems  orderitem[]
+  favorites   favorite[]
+  draftOrders draftorder[]
+  creator     user?             @relation("ProductCreatedBy", fields: [createdBy], references: [id], onDelete: SetNull)
+  updater     user?             @relation("ProductUpdatedBy", fields: [updatedBy], references: [id], onDelete: SetNull)
 
   @@index([createdBy])
   @@index([updatedBy])
+  @@index([deletedAt]) // Index for efficient filtering of non-deleted products
   @@map("product")
 }
 
 model cartitem {
-  id           Int       @id @default(autoincrement())
-  userId       Int?      // Nullable for guest carts
-  sessionToken String?   @unique // Session token for guest carts
+  id           Int      @id @default(autoincrement())
+  userId       Int? // Nullable for guest carts
+  sessionToken String?  @unique // Session token for guest carts
   productId    Int
   quantity     Int
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-  user         user?     @relation(fields: [userId], references: [id])
-  product      product   @relation(fields: [productId], references: [id])
+  user    user?   @relation(fields: [userId], references: [id])
+  product product @relation(fields: [productId], references: [id])
 
   @@unique([userId, productId])
   @@unique([sessionToken, productId])
@@ -110,29 +114,29 @@ model cartitem {
 }
 
 model order {
-  id              String      @id @db.VarChar(9) // Custom format: YYMMDDNNN (e.g., 260126001)
-  userId          Int?        // Nullable for guest orders
-  addressId       Int?
-  deliveryTimeSlot String?    @db.VarChar(5)
-  deliveryDate    DateTime?   // Expected delivery date
-  totalAmount     Decimal     @db.Decimal(10, 2)
-  status          String      @default("PENDING")
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
-  
-  // QPAY Payment fields
-  qpayInvoiceId   String?     @db.VarChar(255)
-  qpayPaymentId   String?     @db.VarChar(255)
-  qpayQrText      String?     @db.Text // QR code text/URL from QPAY
-  qpayQrCode      String?     @db.LongText // QR code base64 image from QPAY (preferred over regenerating)
-  paymentStatus   String      @default("PENDING") @db.VarChar(50)
-  paymentMethod   String?     @db.VarChar(50)
-  paidAt          DateTime?
-  ebarimtId       String?     @db.VarChar(255)
+  id               String    @id @db.VarChar(9) // Custom format: YYMMDDNNN (e.g., 260126001)
+  userId           Int? // Nullable for guest orders
+  addressId        Int?
+  deliveryTimeSlot String?   @db.VarChar(5)
+  deliveryDate     DateTime? // Expected delivery date
+  totalAmount      Decimal   @db.Decimal(10, 2)
+  status           String    @default("PENDING")
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
-  user            user?       @relation(fields: [userId], references: [id])
-  address         address?    @relation(fields: [addressId], references: [id])
-  items           orderitem[]
+  // QPAY Payment fields
+  qpayInvoiceId String?   @db.VarChar(255)
+  qpayPaymentId String?   @db.VarChar(255)
+  qpayQrText    String?   @db.Text // QR code text/URL from QPAY
+  qpayQrCode    String?   @db.LongText // QR code base64 image from QPAY (preferred over regenerating)
+  paymentStatus String    @default("PENDING") @db.VarChar(50)
+  paymentMethod String?   @db.VarChar(50)
+  paidAt        DateTime?
+  ebarimtId     String?   @db.VarChar(255)
+
+  user    user?       @relation(fields: [userId], references: [id])
+  address address?    @relation(fields: [addressId], references: [id])
+  items   orderitem[]
 
   @@index([userId])
   @@index([status])
@@ -145,26 +149,26 @@ model order {
 }
 
 model address {
-  id                  Int       @id @default(autoincrement())
-  userId              Int?      // Nullable for guest addresses
-  label               String?
-  fullName            String
-  phoneNumber         String
-  provinceOrDistrict  String
-  khorooOrSoum        String
-  street              String?
-  neighborhood        String?
-  residentialComplex  String?
-  building            String?
-  entrance            String?
-  apartmentNumber     String?
-  addressNote         String?   @db.Text
-  isDefault           Boolean   @default(false)
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
+  id                 Int      @id @default(autoincrement())
+  userId             Int? // Nullable for guest addresses
+  label              String?
+  fullName           String
+  phoneNumber        String
+  provinceOrDistrict String
+  khorooOrSoum       String
+  street             String?
+  neighborhood       String?
+  residentialComplex String?
+  building           String?
+  entrance           String?
+  apartmentNumber    String?
+  addressNote        String?  @db.Text
+  isDefault          Boolean  @default(false)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
-  user                user?     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  orders              order[]
+  user   user?   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orders order[]
 
   @@index([userId])
   @@index([userId, isDefault])
@@ -180,8 +184,8 @@ model orderitem {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  order     order   @relation(fields: [orderId], references: [id])
-  product   product @relation(fields: [productId], references: [id])
+  order   order   @relation(fields: [orderId], references: [id])
+  product product @relation(fields: [productId], references: [id])
 
   @@map("orderitem")
 }
@@ -192,8 +196,8 @@ model favorite {
   productId Int
   createdAt DateTime @default(now())
 
-  user      user     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  product   product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  user    user    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product product @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   @@unique([userId, productId])
   @@index([userId])
@@ -208,8 +212,8 @@ model productcategory {
   order      Int      @default(0) // Order/position of product within this category (lower = shows first)
   createdAt  DateTime @default(now())
 
-  product    product  @relation(fields: [productId], references: [id], onDelete: Cascade)
-  category   category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  product  product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  category category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
 
   @@unique([productId, categoryId])
   @@index([productId])
@@ -219,16 +223,16 @@ model productcategory {
 }
 
 model draftorder {
-  id              Int       @id @default(autoincrement())
-  sessionToken    String    @unique // Unique token to identify guest session
-  productId       Int
-  quantity        Int
-  totalAmount     Decimal   @db.Decimal(10, 2)
-  expiresAt       DateTime  // Auto-expire draft orders after 24 hours
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  id           Int      @id @default(autoincrement())
+  sessionToken String   @unique // Unique token to identify guest session
+  productId    Int
+  quantity     Int
+  totalAmount  Decimal  @db.Decimal(10, 2)
+  expiresAt    DateTime // Auto-expire draft orders after 24 hours
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-  product         product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  product product @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   @@index([sessionToken])
   @@index([expiresAt]) // For cleanup of expired drafts

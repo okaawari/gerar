@@ -183,7 +183,19 @@ class ProductService {
      */
     async getAllProducts(filters = {}) {
         const userId = filters.userId;
+        const includeHidden = filters.includeHidden === true || filters.includeHidden === 'true';
+        const includeDeleted = filters.includeDeleted === true || filters.includeDeleted === 'true';
         const where = {};
+
+        // Filter out deleted products (soft delete) - unless includeDeleted is true for admin
+        if (!includeDeleted) {
+            where.deletedAt = null;
+        }
+
+        // Filter out hidden products for public endpoints (unless includeHidden is true for admin)
+        if (!includeHidden) {
+            where.isHidden = false;
+        }
 
         // Filter by single category or multiple categories
         if (filters.categoryIds && Array.isArray(filters.categoryIds)) {
@@ -445,11 +457,20 @@ class ProductService {
      * Get product by ID
      * @param {number} id - Product ID
      * @param {number} userId - Optional user ID to include favorite status
+     * @param {boolean} includeHidden - If true, allows fetching hidden products (admin only)
+     * @param {boolean} includeDeleted - If true, allows fetching deleted products (admin only)
      * @returns {Object} - Product with category
      */
-    async getProductById(id, userId = null) {
+    async getProductById(id, userId = null, includeHidden = false, includeDeleted = false) {
+        const where = { id: parseInt(id) };
+        
+        // Filter out deleted products unless includeDeleted is true
+        if (!includeDeleted) {
+            where.deletedAt = null;
+        }
+        
         const product = await prisma.product.findUnique({
-            where: { id: parseInt(id) },
+            where,
             include: {
                 categories: {
                     include: {
@@ -482,6 +503,20 @@ class ProductService {
         });
 
         if (!product) {
+            const error = new Error('Product not found');
+            error.statusCode = 404;
+            throw error;
+        }
+
+        // Check if product is deleted (for public access)
+        if (!includeDeleted && product.deletedAt) {
+            const error = new Error('Product not found');
+            error.statusCode = 404;
+            throw error;
+        }
+
+        // Check if product is hidden (for public access)
+        if (!includeHidden && product.isHidden) {
             const error = new Error('Product not found');
             error.statusCode = 404;
             throw error;
@@ -676,7 +711,7 @@ class ProductService {
             throw error;
         }
 
-        // Check if product exists
+        // Check if product exists and is not deleted
         const existingProduct = await prisma.product.findUnique({
             where: { id: parseInt(id) }
         });
@@ -684,6 +719,13 @@ class ProductService {
         if (!existingProduct) {
             const error = new Error('Product not found');
             error.statusCode = 404;
+            throw error;
+        }
+
+        // Prevent updating deleted products
+        if (existingProduct.deletedAt) {
+            const error = new Error('Cannot update deleted product. Please restore it first.');
+            error.statusCode = 409;
             throw error;
         }
 
@@ -754,6 +796,10 @@ class ProductService {
         }
         if (data.stock !== undefined) {
             updateData.stock = parseInt(data.stock);
+        }
+        if (data.isHidden !== undefined) {
+            // Allow boolean or string 'true'/'false'
+            updateData.isHidden = data.isHidden === true || data.isHidden === 'true';
         }
 
         // Add admin tracking if provided
@@ -918,12 +964,14 @@ class ProductService {
     }
 
     /**
-     * Delete a product
+     * Delete a product (soft delete - sets deletedAt timestamp)
+     * Products are soft deleted to preserve order history. The product remains in the database
+     * but is filtered out from normal queries. Order history is fully preserved.
      * @param {number} id - Product ID
-     * @returns {Object} - Deleted product
+     * @returns {Object} - Soft deleted product
      */
     async deleteProduct(id) {
-        // Check if product exists
+        // Check if product exists and is not already deleted
         const product = await prisma.product.findUnique({
             where: { id: parseInt(id) },
             include: {
@@ -934,7 +982,8 @@ class ProductService {
                 },
                 orderItems: {
                     select: {
-                        id: true
+                        id: true,
+                        orderId: true
                     }
                 }
             }
@@ -946,28 +995,216 @@ class ProductService {
             throw error;
         }
 
-        // Check if product is in any active carts or orders
-        // Note: According to schema, we can't delete products referenced in orders
-        // because of the foreign key constraint. We'll let Prisma handle this.
-        // For cart items, we should allow deletion but the schema might prevent it.
-        // Let's try to delete and handle the error if needed.
-
-        // Delete product
-        try {
-            await prisma.product.delete({
-                where: { id: parseInt(id) }
-            });
-        } catch (error) {
-            // If there are foreign key constraints, provide a better error message
-            if (error.code === 'P2003') {
-                const errorMsg = new Error('Cannot delete product. It is referenced in existing orders or cart items.');
-                errorMsg.statusCode = 409;
-                throw errorMsg;
-            }
+        // Check if already deleted
+        if (product.deletedAt) {
+            const error = new Error('Product is already deleted');
+            error.statusCode = 409;
             throw error;
         }
 
-        return product;
+        // Delete cart items first (they're temporary and can be safely removed)
+        // This prevents users from ordering deleted products
+        if (product.cartItems && product.cartItems.length > 0) {
+            await prisma.cartitem.deleteMany({
+                where: { productId: parseInt(id) }
+            });
+        }
+
+        // Soft delete: Set deletedAt timestamp instead of actually deleting
+        // This preserves order history while hiding the product from normal queries
+        const deletedProduct = await prisma.product.update({
+            where: { id: parseInt(id) },
+            data: {
+                deletedAt: new Date()
+            }
+        });
+
+        return deletedProduct;
+    }
+
+    /**
+     * Restore a soft-deleted product
+     * @param {number} id - Product ID
+     * @param {number} adminId - Admin user ID for tracking
+     * @returns {Object} - Restored product
+     */
+    async restoreProduct(id, adminId = null) {
+        // Check if product exists
+        const product = await prisma.product.findUnique({
+            where: { id: parseInt(id) }
+        });
+
+        if (!product) {
+            const error = new Error('Product not found');
+            error.statusCode = 404;
+            throw error;
+        }
+
+        // Check if product is actually deleted
+        if (!product.deletedAt) {
+            const error = new Error('Product is not deleted');
+            error.statusCode = 409;
+            throw error;
+        }
+
+        // Restore product by setting deletedAt to null
+        const updateData = {
+            deletedAt: null
+        };
+
+        if (adminId) {
+            updateData.updatedBy = parseInt(adminId);
+        }
+
+        const restoredProduct = await prisma.product.update({
+            where: { id: parseInt(id) },
+            data: updateData,
+            include: {
+                categories: {
+                    include: {
+                        category: {
+                            select: {
+                                id: true,
+                                name: true,
+                                description: true
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        // Format product with discount information
+        const formatted = this.formatProductWithDiscount(restoredProduct, false);
+        formatted.categories = restoredProduct.categories
+            ? restoredProduct.categories.map(pc => pc.category)
+            : [];
+        formatted.categoryId = formatted.categories.length > 0 ? formatted.categories[0].id : null;
+        formatted.category = formatted.categories.length > 0 ? formatted.categories[0] : null;
+
+        return formatted;
+    }
+
+    /**
+     * Hide a product (set isHidden to true)
+     * @param {number} id - Product ID
+     * @param {number} adminId - Admin user ID for tracking
+     * @returns {Object} - Updated product
+     */
+    async hideProduct(id, adminId = null) {
+        const product = await prisma.product.findUnique({
+            where: { id: parseInt(id) }
+        });
+
+        if (!product) {
+            const error = new Error('Product not found');
+            error.statusCode = 404;
+            throw error;
+        }
+
+        // Cannot hide deleted products
+        if (product.deletedAt) {
+            const error = new Error('Cannot hide deleted product. Please restore it first.');
+            error.statusCode = 409;
+            throw error;
+        }
+
+        const updateData = {
+            isHidden: true
+        };
+
+        if (adminId) {
+            updateData.updatedBy = parseInt(adminId);
+        }
+
+        const updatedProduct = await prisma.product.update({
+            where: { id: parseInt(id) },
+            data: updateData,
+            include: {
+                categories: {
+                    include: {
+                        category: {
+                            select: {
+                                id: true,
+                                name: true,
+                                description: true
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        // Format product with discount information
+        const formatted = this.formatProductWithDiscount(updatedProduct, false);
+        formatted.categories = updatedProduct.categories
+            ? updatedProduct.categories.map(pc => pc.category)
+            : [];
+        formatted.categoryId = formatted.categories.length > 0 ? formatted.categories[0].id : null;
+        formatted.category = formatted.categories.length > 0 ? formatted.categories[0] : null;
+
+        return formatted;
+    }
+
+    /**
+     * Unhide a product (set isHidden to false)
+     * @param {number} id - Product ID
+     * @param {number} adminId - Admin user ID for tracking
+     * @returns {Object} - Updated product
+     */
+    async unhideProduct(id, adminId = null) {
+        const product = await prisma.product.findUnique({
+            where: { id: parseInt(id) }
+        });
+
+        if (!product) {
+            const error = new Error('Product not found');
+            error.statusCode = 404;
+            throw error;
+        }
+
+        // Cannot unhide deleted products
+        if (product.deletedAt) {
+            const error = new Error('Cannot unhide deleted product. Please restore it first.');
+            error.statusCode = 409;
+            throw error;
+        }
+
+        const updateData = {
+            isHidden: false
+        };
+
+        if (adminId) {
+            updateData.updatedBy = parseInt(adminId);
+        }
+
+        const updatedProduct = await prisma.product.update({
+            where: { id: parseInt(id) },
+            data: updateData,
+            include: {
+                categories: {
+                    include: {
+                        category: {
+                            select: {
+                                id: true,
+                                name: true,
+                                description: true
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        // Format product with discount information
+        const formatted = this.formatProductWithDiscount(updatedProduct, false);
+        formatted.categories = updatedProduct.categories
+            ? updatedProduct.categories.map(pc => pc.category)
+            : [];
+        formatted.categoryId = formatted.categories.length > 0 ? formatted.categories[0].id : null;
+        formatted.category = formatted.categories.length > 0 ? formatted.categories[0] : null;
+
+        return formatted;
     }
 
     /**
@@ -978,7 +1215,10 @@ class ProductService {
      */
     async checkStockAvailability(productId, quantity) {
         const product = await prisma.product.findUnique({
-            where: { id: parseInt(productId) }
+            where: { 
+                id: parseInt(productId),
+                deletedAt: null // Only check stock for non-deleted products
+            }
         });
 
         if (!product) {
@@ -1001,7 +1241,10 @@ class ProductService {
      */
     async reduceStock(productId, quantity) {
         const product = await prisma.product.findUnique({
-            where: { id: parseInt(productId) }
+            where: { 
+                id: parseInt(productId),
+                deletedAt: null // Only reduce stock for non-deleted products
+            }
         });
 
         if (!product) {

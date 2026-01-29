@@ -45,7 +45,7 @@ class OrderController {
 
             res.status(201).json({
                 success: true,
-                message: 'Order created successfully',
+                message: 'Захиалга амжилттай үүслээ',
                 data: order,
                 isGuest: isGuest
             });
@@ -172,18 +172,77 @@ class OrderController {
     }
 
     /**
-     * Get all orders (admin only)
-     * GET /api/orders/all
+     * Get all orders (admin only). Supports advanced search via query params.
+     * GET /api/admin/orders/all
+     * Query params: orderId, status, paymentStatus, dateFrom, dateTo, deliveryDateFrom, deliveryDateTo,
+     *   phone, name, totalMin, totalMax, deliveryTimeSlot, page, limit, sortBy, sortOrder
      */
     async getAllOrders(req, res, next) {
         try {
-            const orders = await orderService.getAllOrders();
+            const {
+                orderId,
+                status,
+                paymentStatus,
+                dateFrom,
+                dateTo,
+                deliveryDateFrom,
+                deliveryDateTo,
+                phone,
+                name,
+                totalMin,
+                totalMax,
+                deliveryTimeSlot,
+                page,
+                limit,
+                sortBy,
+                sortOrder
+            } = req.query;
 
-            res.status(200).json({
-                success: true,
-                message: 'All orders retrieved successfully',
-                data: orders
-            });
+            const hasFilters = orderId || status || paymentStatus || dateFrom || dateTo ||
+                deliveryDateFrom || deliveryDateTo || phone || name || totalMin !== undefined ||
+                totalMax !== undefined || deliveryTimeSlot || page || limit || sortBy || sortOrder;
+
+            if (hasFilters) {
+                const filters = {
+                    orderId,
+                    status,
+                    paymentStatus,
+                    dateFrom,
+                    dateTo,
+                    deliveryDateFrom,
+                    deliveryDateTo,
+                    phone,
+                    name,
+                    totalMin,
+                    totalMax,
+                    deliveryTimeSlot,
+                    page,
+                    limit,
+                    sortBy,
+                    sortOrder
+                };
+                const result = await orderService.searchOrders(filters);
+
+                res.status(200).json({
+                    success: true,
+                    message: 'Orders retrieved successfully',
+                    data: result.orders,
+                    pagination: {
+                        total: result.total,
+                        page: result.page,
+                        limit: result.limit,
+                        totalPages: result.totalPages
+                    }
+                });
+            } else {
+                const orders = await orderService.getAllOrders();
+
+                res.status(200).json({
+                    success: true,
+                    message: 'All orders retrieved successfully',
+                    data: orders
+                });
+            }
         } catch (error) {
             next(error);
         }
@@ -196,7 +255,7 @@ class OrderController {
     async getOrderById(req, res, next) {
         try {
             const userId = req.user.id;
-            const isAdmin = req.user.role === 'ADMIN';
+            const isAdmin = req.user.role === 'ADMIN' || req.user.role === 'SUPER_ADMIN';
             const { id } = req.params;
 
             const order = await orderService.getOrderById(id, userId, isAdmin);
@@ -204,6 +263,88 @@ class OrderController {
             res.status(200).json({
                 success: true,
                 message: 'Order retrieved successfully',
+                data: order
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    /**
+     * Request order cancellation - Generate 4-digit code and send to user's phone (admin only)
+     * POST /api/admin/orders/:id/request-cancellation
+     */
+    async requestCancellation(req, res, next) {
+        try {
+            const { id } = req.params;
+
+            const result = await orderService.requestCancellation(id);
+
+            res.status(200).json({
+                success: true,
+                message: result.message,
+                data: {
+                    orderId: result.orderId,
+                    userPhone: result.userPhone,
+                    expiresAt: result.expiresAt,
+                    expiresInMinutes: result.expiresInMinutes,
+                    smsSent: result.smsSent
+                }
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    /**
+     * Confirm order cancellation with 4-digit code (admin only)
+     * POST /api/admin/orders/:id/confirm-cancellation
+     */
+    async confirmCancellation(req, res, next) {
+        try {
+            const { id } = req.params;
+            const { code } = req.body;
+
+            if (!code) {
+                const error = new Error('Cancellation code is required');
+                error.statusCode = 400;
+                throw error;
+            }
+
+            const result = await orderService.confirmCancellation(id, code);
+
+            res.status(200).json({
+                success: true,
+                message: result.message,
+                data: {
+                    order: result.order
+                }
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    /**
+     * Update order status (admin only)
+     * POST /api/admin/orders/:id/status
+     */
+    async updateOrderStatus(req, res, next) {
+        try {
+            const { id } = req.params;
+            const { status } = req.body;
+
+            if (!status) {
+                const error = new Error('Order status is required');
+                error.statusCode = 400;
+                throw error;
+            }
+
+            const order = await orderService.updateOrderStatus(id, status);
+
+            res.status(200).json({
+                success: true,
+                message: 'Order status updated successfully',
                 data: order
             });
         } catch (error) {

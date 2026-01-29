@@ -114,6 +114,11 @@ class ProductController {
                 filters.userId = req.user.id;
             }
 
+            // Admin users can see hidden products
+            if (req.user && (req.user.role === 'ADMIN' || req.user.role === 'SUPER_ADMIN')) {
+                filters.includeHidden = true;
+            }
+
             const result = await productService.getAllProducts(filters);
 
             res.status(200).json({
@@ -136,7 +141,9 @@ class ProductController {
             const { id } = req.params;
             // Include userId if user is authenticated (for favorite status)
             const userId = req.user && req.user.id ? req.user.id : null;
-            const product = await productService.getProductById(id, userId);
+            // Admin users can see hidden products
+            const includeHidden = req.user && (req.user.role === 'ADMIN' || req.user.role === 'SUPER_ADMIN');
+            const product = await productService.getProductById(id, userId, includeHidden);
 
             res.status(200).json({
                 success: true,
@@ -225,6 +232,66 @@ class ProductController {
             res.status(200).json({
                 success: true,
                 message: 'Product deleted successfully',
+                data: product,
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    /**
+     * Hide a product (admin only)
+     * POST /api/admin/products/:id/hide
+     */
+    async hideProduct(req, res, next) {
+        try {
+            const { id } = req.params;
+            const adminId = req.user && req.user.id ? req.user.id : null;
+            const product = await productService.hideProduct(id, adminId);
+
+            res.status(200).json({
+                success: true,
+                message: 'Product hidden successfully',
+                data: product,
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    /**
+     * Unhide a product (admin only)
+     * POST /api/admin/products/:id/unhide
+     */
+    async unhideProduct(req, res, next) {
+        try {
+            const { id } = req.params;
+            const adminId = req.user && req.user.id ? req.user.id : null;
+            const product = await productService.unhideProduct(id, adminId);
+
+            res.status(200).json({
+                success: true,
+                message: 'Product unhidden successfully',
+                data: product,
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    /**
+     * Restore a soft-deleted product (admin only)
+     * POST /api/admin/products/:id/restore
+     */
+    async restoreProduct(req, res, next) {
+        try {
+            const { id } = req.params;
+            const adminId = req.user && req.user.id ? req.user.id : null;
+            const product = await productService.restoreProduct(id, adminId);
+
+            res.status(200).json({
+                success: true,
+                message: 'Product restored successfully',
                 data: product,
             });
         } catch (error) {

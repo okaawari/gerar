@@ -13,5 +13,8 @@ router.get('/', productController.getAllProducts);
 router.post('/', productController.createProduct);
 router.post('/:id/update', productController.updateProduct);
 router.post('/:id/delete', productController.deleteProduct);
+router.post('/:id/restore', productController.restoreProduct);
+router.post('/:id/hide', productController.hideProduct);
+router.post('/:id/unhide', productController.unhideProduct);
 
 module.exports = router;

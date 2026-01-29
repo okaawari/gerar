@@ -110,6 +110,11 @@ app.use((req, res, next) => {
                 return callback(null, true);
             }
             
+            // Explicitly check for admin.gerar.mn (both http and https)
+            if (origin === 'https://admin.gerar.mn' || origin === 'http://admin.gerar.mn') {
+                return callback(null, true);
+            }
+            
             // Check if origin is in allowed list
             if (allowedOrigins.includes(origin)) {
                 return callback(null, true);
@@ -131,15 +136,19 @@ app.use((req, res, next) => {
             }
             
             // Allow subdomains of gerar.mn (admin.gerar.mn, api.gerar.mn, etc.)
-            const isGerarDomain = /^https?:\/\/[a-zA-Z0-9-]+\.gerar\.mn(?::\d+)?$/.test(origin);
+            // Also allow root domain gerar.mn
+            const isGerarDomain = /^https?:\/\/([a-zA-Z0-9-]+\.)?gerar\.mn(?::\d+)?$/.test(origin);
             if (isGerarDomain) {
                 return callback(null, true);
             }
             
-            callback(new Error('Not allowed by CORS'));
+            // Log rejected origin for debugging
+            console.warn(`[CORS] Rejected origin: ${origin}`);
+            console.warn(`[CORS] Allowed origins:`, allowedOrigins);
+            callback(new Error(`Not allowed by CORS: ${origin}`));
         },
         credentials: true,
-        methods: ['GET', 'POST', 'OPTIONS', 'HEAD'],
+        methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'],
         allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin', 'x-session-token'],
         exposedHeaders: ['Content-Type', 'Authorization'],
         preflightContinue: false,

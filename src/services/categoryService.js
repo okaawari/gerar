@@ -278,6 +278,7 @@ class CategoryService {
 
         let products = await prisma.product.findMany({
             where: {
+                deletedAt: null, // Exclude deleted products
                 categories: {
                     some: {
                         categoryId: {

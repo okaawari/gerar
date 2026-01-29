@@ -88,7 +88,7 @@ class PaymentController {
 
         try {
             const userId = req.user?.id;
-            const isAdmin = req.user?.role === 'ADMIN';
+            const isAdmin = req.user?.role === 'ADMIN' || req.user?.role === 'SUPER_ADMIN';
             
             // Mark this order as having a pending invoice request
             this.pendingInvoices.set(orderId, Date.now());
@@ -310,8 +310,8 @@ class PaymentController {
                 throw error;
             }
 
-            // Check if order is cancelled
-            if (order.status === 'CANCELLED') {
+            // Check if order is cancelled (any cancellation type)
+            if (order.status === 'CANCELLED' || order.status === 'CANCELLED_BY_ADMIN') {
                 const error = new Error('Cannot create payment for cancelled order');
                 error.statusCode = 400;
                 throw error;
@@ -809,7 +809,7 @@ class PaymentController {
         try {
             const { id } = req.params;
             const userId = req.user?.id;
-            const isAdmin = req.user?.role === 'ADMIN';
+            const isAdmin = req.user?.role === 'ADMIN' || req.user?.role === 'SUPER_ADMIN';
             
             // Clean expired cache entries periodically
             this._cleanExpiredCache();
@@ -1043,7 +1043,7 @@ class PaymentController {
         try {
             const { id } = req.params;
             const userId = req.user?.id;
-            const isAdmin = req.user?.role === 'ADMIN';
+            const isAdmin = req.user?.role === 'ADMIN' || req.user?.role === 'SUPER_ADMIN';
 
             // Get order
             const order = await orderService.getOrderById(id, userId, isAdmin);

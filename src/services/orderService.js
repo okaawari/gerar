@@ -2,7 +2,22 @@ const prisma = require('../lib/prisma');
 const cartService = require('./cartService');
 const productService = require('./productService');
 const addressService = require('./addressService');
+const otpService = require('./otpService');
+const smsService = require('./smsService');
 const { isValidDeliveryTimeSlot } = require('../constants/deliveryTimeSlots');
+
+/** Status value that triggers "delivery started" SMS to user */
+const STATUS_DELIVERY_STARTED = 'DELIVERY_STARTED';
+
+/** Status for orders cancelled via admin SMS confirmation (user confirmed with 4-digit code) */
+const STATUS_CANCELLED_BY_ADMIN = 'CANCELLED_BY_ADMIN';
+
+/** Status values that mean the order is cancelled (for checks) */
+const CANCELLED_STATUSES = ['CANCELLED', STATUS_CANCELLED_BY_ADMIN];
+
+function isOrderCancelled(order) {
+    return CANCELLED_STATUSES.includes(order.status) || order.paymentStatus === 'CANCELLED';
+}
 
 class OrderService {
     /**
@@ -891,6 +906,34 @@ class OrderService {
     }
 
     /**
+     * Format order items (extract categories from product)
+     * @param {Array} orders - Orders with items
+     * @returns {Array} - Orders with formatted items
+     */
+    formatOrdersWithCategories(orders) {
+        return orders.map(order => {
+            const formatted = { ...order };
+            if (formatted.items) {
+                formatted.items = formatted.items.map(item => {
+                    const formattedItem = { ...item };
+                    if (item.product && item.product.categories) {
+                        formattedItem.product = { ...item.product };
+                        formattedItem.product.categories = item.product.categories.map(pc => pc.category);
+                        formattedItem.product.categoryId = formattedItem.product.categories.length > 0 
+                            ? formattedItem.product.categories[0].id 
+                            : null;
+                        formattedItem.product.category = formattedItem.product.categories.length > 0 
+                            ? formattedItem.product.categories[0] 
+                            : null;
+                    }
+                    return formattedItem;
+                });
+            }
+            return formatted;
+        });
+    }
+
+    /**
      * Get all orders (admin only)
      * @returns {Array} - List of all orders
      */
@@ -930,27 +973,162 @@ class OrderService {
             }
         });
 
-        // Format products to extract categories
-        return orders.map(order => {
-            const formatted = { ...order };
-            if (formatted.items) {
-                formatted.items = formatted.items.map(item => {
-                    const formattedItem = { ...item };
-                    if (item.product && item.product.categories) {
-                        formattedItem.product = { ...item.product };
-                        formattedItem.product.categories = item.product.categories.map(pc => pc.category);
-                        formattedItem.product.categoryId = formattedItem.product.categories.length > 0 
-                            ? formattedItem.product.categories[0].id 
-                            : null;
-                        formattedItem.product.category = formattedItem.product.categories.length > 0 
-                            ? formattedItem.product.categories[0] 
-                            : null;
-                    }
-                    return formattedItem;
-                });
+        return this.formatOrdersWithCategories(orders);
+    }
+
+    /**
+     * Search orders with advanced filters (admin only)
+     * @param {Object} filters - {
+     *   orderId?, status?, paymentStatus?, dateFrom?, dateTo?, deliveryDateFrom?, deliveryDateTo?,
+     *   phone?, name?, totalMin?, totalMax?, deliveryTimeSlot?, page?, limit?, sortBy?, sortOrder?
+     * }
+     * @returns {Object} - { orders, total, page, limit, totalPages }
+     */
+    async searchOrders(filters = {}) {
+        const where = {};
+
+        // Order ID (contains - custom format YYMMDDNNN)
+        if (filters.orderId && String(filters.orderId).trim()) {
+            where.id = { contains: String(filters.orderId).trim() };
+        }
+
+        // Status (exact)
+        if (filters.status && String(filters.status).trim()) {
+            where.status = String(filters.status).trim();
+        }
+
+        // Payment status (exact)
+        if (filters.paymentStatus && String(filters.paymentStatus).trim()) {
+            where.paymentStatus = String(filters.paymentStatus).trim();
+        }
+
+        // Created date range
+        if (filters.dateFrom || filters.dateTo) {
+            where.createdAt = {};
+            if (filters.dateFrom) {
+                const d = new Date(filters.dateFrom);
+                if (!isNaN(d.getTime())) where.createdAt.gte = d;
             }
-            return formatted;
-        });
+            if (filters.dateTo) {
+                const d = new Date(filters.dateTo);
+                if (!isNaN(d.getTime())) {
+                    d.setHours(23, 59, 59, 999);
+                    where.createdAt.lte = d;
+                }
+            }
+        }
+
+        // Delivery date range
+        if (filters.deliveryDateFrom || filters.deliveryDateTo) {
+            where.deliveryDate = {};
+            if (filters.deliveryDateFrom) {
+                const d = new Date(filters.deliveryDateFrom);
+                if (!isNaN(d.getTime())) where.deliveryDate.gte = d;
+            }
+            if (filters.deliveryDateTo) {
+                const d = new Date(filters.deliveryDateTo);
+                if (!isNaN(d.getTime())) {
+                    d.setHours(23, 59, 59, 999);
+                    where.deliveryDate.lte = d;
+                }
+            }
+        }
+
+        // Phone: user.phoneNumber OR address.phoneNumber (for guest orders)
+        if (filters.phone && String(filters.phone).trim()) {
+            const phoneTerm = String(filters.phone).trim();
+            where.OR = where.OR || [];
+            where.OR.push(
+                { user: { phoneNumber: { contains: phoneTerm } } },
+                { address: { phoneNumber: { contains: phoneTerm } } }
+            );
+        }
+
+        // Name: user.name (registered users only)
+        if (filters.name && String(filters.name).trim()) {
+            const nameTerm = String(filters.name).trim();
+            where.user = where.user || {};
+            where.user.name = { contains: nameTerm };
+        }
+
+        // Total amount range
+        if (filters.totalMin !== undefined && filters.totalMin !== '') {
+            const min = parseFloat(filters.totalMin);
+            if (!isNaN(min)) {
+                where.totalAmount = where.totalAmount || {};
+                where.totalAmount.gte = min;
+            }
+        }
+        if (filters.totalMax !== undefined && filters.totalMax !== '') {
+            const max = parseFloat(filters.totalMax);
+            if (!isNaN(max)) {
+                where.totalAmount = where.totalAmount || {};
+                where.totalAmount.lte = max;
+            }
+        }
+
+        // Delivery time slot (exact)
+        if (filters.deliveryTimeSlot && String(filters.deliveryTimeSlot).trim()) {
+            where.deliveryTimeSlot = String(filters.deliveryTimeSlot).trim();
+        }
+
+        const page = Math.max(1, parseInt(filters.page) || 1);
+        const limit = Math.min(100, Math.max(1, parseInt(filters.limit) || 50));
+        const skip = (page - 1) * limit;
+
+        const sortBy = filters.sortBy || 'createdAt';
+        const sortOrder = (filters.sortOrder === 'asc' || filters.sortOrder === 'ASC') ? 'asc' : 'desc';
+        const validSortFields = ['createdAt', 'updatedAt', 'totalAmount', 'status', 'paymentStatus', 'deliveryDate'];
+        const orderByField = validSortFields.includes(sortBy) ? sortBy : 'createdAt';
+
+        const [orders, total] = await Promise.all([
+            prisma.order.findMany({
+                where,
+                include: {
+                    items: {
+                        include: {
+                            product: {
+                                include: {
+                                    categories: {
+                                        include: {
+                                            category: {
+                                                select: {
+                                                    id: true,
+                                                    name: true,
+                                                    description: true
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                address: true,
+                user: {
+                    select: {
+                        id: true,
+                        phoneNumber: true,
+                        name: true
+                    }
+                }
+            },
+                orderBy: { [orderByField]: sortOrder },
+                skip,
+                take: limit
+            }),
+            prisma.order.count({ where })
+        ]);
+
+        const totalPages = Math.ceil(total / limit);
+
+        return {
+            orders: this.formatOrdersWithCategories(orders),
+            total,
+            page,
+            limit,
+            totalPages
+        };
     }
 
     /**
@@ -1103,6 +1281,363 @@ class OrderService {
             cancelled: cancelledOrders.length,
             orders: cancelledOrders
         };
+    }
+
+    /**
+     * Request order cancellation - Generate 4-digit code and send to user's phone (admin only)
+     * @param {string} orderId - Order ID
+     * @returns {Promise<Object>} - Cancellation request info
+     */
+    async requestCancellation(orderId) {
+        const order = await prisma.order.findUnique({
+            where: { id: String(orderId) },
+            include: {
+                user: {
+                    select: {
+                        id: true,
+                        phoneNumber: true,
+                        name: true
+                    }
+                }
+            }
+        });
+
+        if (!order) {
+            const error = new Error('Order not found');
+            error.statusCode = 404;
+            throw error;
+        }
+
+        // Check if order is paid/completed
+        if (order.paymentStatus !== 'PAID' && order.status !== 'COMPLETED' && order.status !== 'PROCESSING') {
+            const error = new Error('Order cancellation can only be requested for paid/completed orders');
+            error.statusCode = 400;
+            throw error;
+        }
+
+        // Check if order is already cancelled
+        if (isOrderCancelled(order)) {
+            const error = new Error('Order is already cancelled');
+            error.statusCode = 400;
+            throw error;
+        }
+
+        // Check if user exists (not a guest order)
+        if (!order.user || !order.user.phoneNumber) {
+            const error = new Error('Cannot cancel guest orders. User phone number is required.');
+            error.statusCode = 400;
+            throw error;
+        }
+
+        // Generate 4-digit cancellation code
+        const cancellationCode = Math.floor(1000 + Math.random() * 9000).toString(); // 4-digit code
+
+        // Store cancellation code in OTP table with purpose 'ORDER_CANCELLATION'
+        const expiresAt = new Date();
+        expiresAt.setMinutes(expiresAt.getMinutes() + 10); // Valid for 10 minutes
+
+        // Invalidate any existing cancellation codes for this order
+        await prisma.otp.updateMany({
+            where: {
+                phoneNumber: order.user.phoneNumber,
+                purpose: 'ORDER_CANCELLATION',
+                isUsed: false
+            },
+            data: {
+                isUsed: true // Mark as used to invalidate
+            }
+        });
+
+        // Create new cancellation code
+        await prisma.otp.create({
+            data: {
+                phoneNumber: order.user.phoneNumber,
+                code: cancellationCode,
+                purpose: 'ORDER_CANCELLATION',
+                expiresAt: expiresAt,
+                isUsed: false
+            }
+        });
+
+        // Send SMS to user with cancellation code using OTP service
+        try {
+            const smsService = require('./smsService');
+            const smsResult = await smsService.sendOTP(order.user.phoneNumber, cancellationCode, 'ORDER_CANCELLATION');
+            
+            if (!smsResult.success) {
+                // If SMS fails, we still created the OTP record
+                // Log error but don't fail the request
+                console.error(`Failed to send cancellation SMS to ${order.user.phoneNumber}:`, smsResult.error);
+            }
+        } catch (smsError) {
+            // Log SMS error but don't fail the request
+            console.error(`Error sending cancellation SMS:`, smsError.message);
+        }
+
+        return {
+            success: true,
+            message: 'Cancellation code sent to user\'s phone',
+            orderId: order.id,
+            userPhone: order.user.phoneNumber,
+            expiresAt: expiresAt.toISOString(),
+            expiresInMinutes: 10,
+            smsSent: smsResult.success
+        };
+    }
+
+    /**
+     * Confirm order cancellation with 4-digit code (admin only)
+     * @param {string} orderId - Order ID
+     * @param {string} code - 4-digit cancellation code
+     * @returns {Promise<Object>} - Cancelled order info
+     */
+    async confirmCancellation(orderId, code) {
+        const order = await prisma.order.findUnique({
+            where: { id: String(orderId) },
+            include: {
+                user: {
+                    select: {
+                        id: true,
+                        phoneNumber: true,
+                        name: true
+                    }
+                },
+                items: {
+                    include: {
+                        product: {
+                            select: {
+                                id: true,
+                                stock: true
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        if (!order) {
+            const error = new Error('Order not found');
+            error.statusCode = 404;
+            throw error;
+        }
+
+        // Check if order is already cancelled
+        if (isOrderCancelled(order)) {
+            const error = new Error('Order is already cancelled');
+            error.statusCode = 400;
+            throw error;
+        }
+
+        // Check if user exists
+        if (!order.user || !order.user.phoneNumber) {
+            const error = new Error('Cannot cancel guest orders. User phone number is required.');
+            error.statusCode = 400;
+            throw error;
+        }
+
+        // Validate cancellation code
+        const otpRecord = await prisma.otp.findFirst({
+            where: {
+                phoneNumber: order.user.phoneNumber,
+                code: code,
+                purpose: 'ORDER_CANCELLATION',
+                isUsed: false,
+                expiresAt: {
+                    gt: new Date()
+                }
+            }
+        });
+
+        if (!otpRecord) {
+            const error = new Error('Invalid or expired cancellation code');
+            error.statusCode = 400;
+            throw error;
+        }
+
+        // Use transaction to ensure atomicity
+        const cancelledOrder = await prisma.$transaction(async (tx) => {
+            // Mark OTP as used
+            await tx.otp.update({
+                where: { id: otpRecord.id },
+                data: { isUsed: true }
+            });
+
+            // Restore stock for all items in the order
+            for (const item of order.items) {
+                await tx.product.update({
+                    where: { id: item.productId },
+                    data: {
+                        stock: {
+                            increment: item.quantity
+                        }
+                    }
+                });
+            }
+
+            // Update order status to CANCELLED_BY_ADMIN (user confirmed via admin SMS code)
+            const updatedOrder = await tx.order.update({
+                where: { id: order.id },
+                data: {
+                    status: STATUS_CANCELLED_BY_ADMIN,
+                    paymentStatus: 'CANCELLED'
+                },
+                include: {
+                    user: {
+                        select: {
+                            id: true,
+                            phoneNumber: true,
+                            name: true
+                        }
+                    },
+                    items: {
+                        include: {
+                            product: {
+                                select: {
+                                    id: true,
+                                    name: true,
+                                    price: true
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+
+            return updatedOrder;
+        });
+
+        return {
+            success: true,
+            message: 'Order cancelled successfully',
+            order: cancelledOrder
+        };
+    }
+
+    /**
+     * Update order status (admin only)
+     * @param {string} orderId - Order ID
+     * @param {string} status - New order status
+     * @returns {Promise<Object>} Updated order
+     */
+    async updateOrderStatus(orderId, status) {
+        const order = await prisma.order.findUnique({
+            where: { id: String(orderId) },
+            include: {
+                items: {
+                    include: {
+                        product: {
+                            include: {
+                                categories: {
+                                    include: {
+                                        category: {
+                                            select: {
+                                                id: true,
+                                                name: true,
+                                                description: true
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                address: true,
+                user: {
+                    select: {
+                        id: true,
+                        phoneNumber: true,
+                        name: true,
+                        email: true
+                    }
+                }
+            }
+        });
+
+        if (!order) {
+            const error = new Error('Order not found');
+            error.statusCode = 404;
+            throw error;
+        }
+
+        // Validate status is not empty
+        const newStatus = status && typeof status === 'string' ? status.trim() : '';
+        if (!newStatus) {
+            const error = new Error('Order status is required');
+            error.statusCode = 400;
+            throw error;
+        }
+
+        // Update order status
+        const updatedOrder = await prisma.order.update({
+            where: { id: String(orderId) },
+            data: {
+                status: newStatus
+            },
+            include: {
+                items: {
+                    include: {
+                        product: {
+                            include: {
+                                categories: {
+                                    include: {
+                                        category: {
+                                            select: {
+                                                id: true,
+                                                name: true,
+                                                description: true
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                address: true,
+                user: {
+                    select: {
+                        id: true,
+                        phoneNumber: true,
+                        name: true,
+                        email: true
+                    }
+                }
+            }
+        });
+
+        // When status changes to DELIVERY_STARTED (e.g. from PAID/COMPLETED), send SMS to user
+        if (newStatus.toUpperCase() === STATUS_DELIVERY_STARTED && order.user && order.user.phoneNumber) {
+            const message = `Таны #${order.id} дугаартай захиалга хүргэлтэд гарлаа.`;
+            try {
+                const smsResult = await smsService.sendSMS(order.user.phoneNumber, message);
+                if (!smsResult.success) {
+                    console.error(`Failed to send delivery-started SMS to ${order.user.phoneNumber}:`, smsResult.error);
+                }
+            } catch (smsError) {
+                console.error('Error sending delivery-started SMS:', smsError.message);
+            }
+        }
+
+        // Format products to extract categories
+        if (updatedOrder && updatedOrder.items) {
+            updatedOrder.items = updatedOrder.items.map(item => {
+                const formatted = { ...item };
+                if (item.product && item.product.categories) {
+                    formatted.product = { ...item.product };
+                    formatted.product.categories = item.product.categories.map(pc => pc.category);
+                    formatted.product.categoryId = formatted.product.categories.length > 0 
+                        ? formatted.product.categories[0].id 
+                        : null;
+                    formatted.product.category = formatted.product.categories.length > 0 
+                        ? formatted.product.categories[0] 
+                        : null;
+                }
+                return formatted;
+            });
+        }
+
+        return updatedOrder;
     }
 }
 

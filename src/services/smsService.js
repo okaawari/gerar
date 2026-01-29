@@ -156,7 +156,8 @@ class SMSService {
             'REGISTRATION': 'Таны бүртгэлийн баталгаажуулах код',
             'LOGIN': 'Таны нэвтрэх баталгаажуулах код',
             'PASSWORD_RESET': 'Таны нууц үг сэргээх код',
-            'VERIFICATION': 'Таны баталгаажуулах код'
+            'VERIFICATION': 'Таны баталгаажуулах код',
+            'ORDER_CANCELLATION': 'Таны захиалга цуцлах баталгаажуулах код'
         };
 
         const message = `${purposeMessages[purpose] || purposeMessages.VERIFICATION}: ${otpCode}`;

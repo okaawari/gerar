@@ -85,10 +85,10 @@ const optionallyAuthenticateUser = async (req, res, next) => {
 };
 
 /**
- * Middleware to authorize admin only routes
+ * Middleware to authorize admin only routes (allows ADMIN and SUPER_ADMIN)
  */
 const authorizeAdmin = (req, res, next) => {
-    if (req.user && req.user.role === 'ADMIN') {
+    if (req.user && (req.user.role === 'ADMIN' || req.user.role === 'SUPER_ADMIN')) {
         next();
     } else {
         const error = new Error('Access denied. Admin privileges required.');
@@ -97,8 +97,22 @@ const authorizeAdmin = (req, res, next) => {
     }
 };
 
+/**
+ * Middleware to authorize super admin only routes
+ */
+const authorizeSuperAdmin = (req, res, next) => {
+    if (req.user && req.user.role === 'SUPER_ADMIN') {
+        next();
+    } else {
+        const error = new Error('Access denied. Super admin privileges required.');
+        error.statusCode = 403;
+        next(error);
+    }
+};
+
 module.exports = {
     authenticateUser,
     optionallyAuthenticateUser,
-    authorizeAdmin
+    authorizeAdmin,
+    authorizeSuperAdmin
 };
