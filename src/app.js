@@ -5,6 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const errorHandler = require('./middleware/errorMiddleware');
 const { handleJsonErrors } = require('./middleware/validation');
+const { getMongoliaTimestampISO } = require('./utils/dateUtils');
 const authRoutes = require('./routes/authRoutes');
 const otpRoutes = require('./routes/otpRoutes');
 const categoryRoutes = require('./routes/categoryRoutes');
@@ -14,6 +15,7 @@ const orderRoutes = require('./routes/orderRoutes');
 const addressRoutes = require('./routes/addressRoutes');
 const favoriteRoutes = require('./routes/favoriteRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
+const paymentController = require('./controllers/paymentController');
 const adminRoutes = require('./routes/admin');
 const { notFoundHandler } = require('./middleware/errorMiddleware');
 
@@ -180,7 +182,7 @@ app.use(express.urlencoded({
 // Request logging in development
 if (process.env.NODE_ENV === 'development') {
     app.use((req, res, next) => {
-        console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
+        console.log(`${getMongoliaTimestampISO()} - ${req.method} ${req.path}`);
         next();
     });
 }
@@ -190,7 +192,7 @@ app.get('/', (req, res) => {
     res.status(200).json({
         success: true,
         message: 'Ecommerce API is running',
-        timestamp: new Date().toISOString(),
+        timestamp: getMongoliaTimestampISO(),
         version: '1.0.0'
     });
 });
@@ -230,7 +232,7 @@ app.get('/api', (req, res) => {
             payments: '/api/orders/:id/payment-*',
             admin: '/api/admin'
         },
-        timestamp: new Date().toISOString()
+        timestamp: getMongoliaTimestampISO()
     });
 });
 
@@ -242,6 +244,8 @@ app.use('/api/products', productRoutes);
 app.use('/api/cart', cartRoutes);
 // Payment routes must be before order routes to avoid route conflicts
 app.use('/api', paymentRoutes); // Payment routes (includes /api/orders/:id/payment-*)
+// Bank/QPay may redirect to /orders/:id/payment-callback (no /api) – handle that path too
+app.get('/orders/:id/payment-callback', paymentController.paymentCallback.bind(paymentController));
 app.use('/api/orders', orderRoutes);
 app.use('/api/addresses', addressRoutes);
 app.use('/api/favorites', favoriteRoutes);
@@ -287,7 +291,7 @@ app.use((req, res, next) => {
                     ? 'Resource not found'
                     : 'Internal server error'
             },
-            timestamp: new Date().toISOString()
+            timestamp: getMongoliaTimestampISO()
         });
     }
     next();

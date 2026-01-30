@@ -1,6 +1,9 @@
 const prisma = require('../lib/prisma');
 const qpayService = require('../services/qpayService');
 const orderService = require('../services/orderService');
+const emailService = require('../services/emailService');
+const ebarimtTestService = require('../services/ebarimtTestService');
+const discordService = require('../services/discordService');
 const QRCode = require('qrcode');
 
 /**
@@ -66,6 +69,35 @@ class PaymentController {
         if (invoiceId) {
             this.qpayCheckRateLimit.set(invoiceId, Date.now());
         }
+    }
+
+    /**
+     * Build order data for receipt/ebarimt email
+     * @param {Object} order - Order with items (product), address
+     * @returns {Object} - { orderNumber, totalAmount, items, deliveryDate?, deliveryAddress? }
+     */
+    _buildOrderDataForReceipt(order) {
+        const items = (order.items || []).map(item => ({
+            name: item.product?.name || 'Product',
+            quantity: item.quantity,
+            price: item.price != null ? String(item.price) : '0'
+        }));
+        let deliveryAddress = null;
+        if (order.address) {
+            const a = order.address;
+            const parts = [a.provinceOrDistrict, a.khorooOrSoum, a.street, a.building, a.apartmentNumber].filter(Boolean);
+            deliveryAddress = parts.length ? parts.join(', ') : (a.fullName && a.phoneNumber ? `${a.fullName}, ${a.phoneNumber}` : null);
+        }
+        const deliveryDate = order.deliveryDate
+            ? new Date(order.deliveryDate).toLocaleDateString('en-CA', { year: 'numeric', month: 'short', day: 'numeric' })
+            : null;
+        return {
+            orderNumber: order.id,
+            totalAmount: order.totalAmount != null ? String(order.totalAmount) : '0',
+            items,
+            deliveryDate,
+            deliveryAddress
+        };
     }
 
     /**
@@ -364,7 +396,7 @@ class PaymentController {
                             {
                                 tax_code: 'VAT',
                                 description: 'НӨАТ',
-                                amount: Math.round(lineTotal * 0.1), // 10% VAT (adjust as needed)
+                                amount: 0, // Prices are VAT-inclusive; do not add 10% on top (QPAY would show 550₮ for 500₮)
                                 note: 'НӨАТ'
                             }
                         ]
@@ -670,16 +702,13 @@ class PaymentController {
      * NOTE: This endpoint is PUBLIC (no auth required) as per QPAY requirements
      */
     async paymentCallback(req, res, next) {
+        const { id } = req.params;
+        const callbackData = req.body;
+        console.log('[QPAY] Payment callback hit – orderId:', id, 'body keys:', Object.keys(callbackData || {}));
+
         try {
-            const { id } = req.params;
-            const callbackData = req.body;
 
-            console.log('QPAY Callback received:', {
-                orderId: id,
-                callbackData: callbackData
-            });
-
-            // Get order
+            // Get order (include user and address for ebarimt receipt email)
             const order = await prisma.order.findUnique({
                 where: { id: String(id) },
                 include: {
@@ -687,12 +716,16 @@ class PaymentController {
                         include: {
                             product: true
                         }
-                    }
+                    },
+                    user: {
+                        select: { email: true, name: true }
+                    },
+                    address: true
                 }
             });
 
             if (!order) {
-                console.error('QPAY Callback Error: Order not found', { orderId: id });
+                console.error('[QPAY] Callback – order not found:', id);
                 return res.status(404).json({
                     success: false,
                     message: 'Order not found'
@@ -701,7 +734,7 @@ class PaymentController {
 
             // Verify payment status with QPAY (as per requirements)
             if (!order.qpayInvoiceId) {
-                console.error('QPAY Callback Error: No invoice ID', { orderId: id });
+                console.error('[QPAY] Callback – no invoice ID for order:', id);
                 return res.status(400).json({
                     success: false,
                     message: 'Order has no associated invoice'
@@ -712,17 +745,17 @@ class PaymentController {
                 // Check payment status with QPAY API
                 const paymentCheck = await qpayService.checkPayment(order.qpayInvoiceId);
 
-                // Check if payment was successful
-                const payments = paymentCheck.count > 0 ? paymentCheck.rows : [];
-                const successfulPayment = payments.find(p => 
-                    p.payment_status === 'PAID' || 
-                    p.payment_status === 'SUCCESS' ||
-                    p.payment_status === 'COMPLETED'
+                // Payments array: QPAY may return rows or data
+                const paymentsList = Array.isArray(paymentCheck.rows) ? paymentCheck.rows : (Array.isArray(paymentCheck.data) ? paymentCheck.data : []);
+                const payments = (paymentCheck.count > 0 || paymentsList.length > 0) ? paymentsList : [];
+                const statusOf = (p) => p.payment_status ?? p.paymentStatus ?? p.status;
+                const successfulPayment = payments.find(p =>
+                    statusOf(p) === 'PAID' || statusOf(p) === 'SUCCESS' || statusOf(p) === 'COMPLETED'
                 );
 
                 if (successfulPayment) {
-                    // Payment confirmed - update order
-                    const paymentId = successfulPayment.payment_id || successfulPayment.id;
+                    // Payment confirmed - update order (support snake_case and camelCase from QPAY)
+                    const paymentId = successfulPayment.payment_id ?? successfulPayment.paymentId ?? successfulPayment.id;
                     
                     // Update order status to PAID
                     const updatedOrder = await prisma.order.update({
@@ -732,13 +765,18 @@ class PaymentController {
                             paymentStatus: 'PAID',
                             status: 'PAID',
                             paidAt: new Date(),
-                            paymentMethod: successfulPayment.payment_type || 'QPAY'
+                            paymentMethod: successfulPayment.payment_type ?? successfulPayment.paymentType ?? 'QPAY'
                         }
                     });
 
-                    // Generate Ebarimt receipt
+                    // Generate Ebarimt receipt (test: ebarimt_v3/create with payment_id, ebarimt_receiver_type, ebarimt_receiver)
+                    let ebarimtResponse = null;
+                    let ebarimtErrorInfo = null;
                     try {
-                        const ebarimtResponse = await qpayService.createEbarimt(paymentId, 'CITIZEN');
+                        ebarimtResponse = await ebarimtTestService.createEbarimtFromPayment(paymentId, {
+                            ebarimtReceiverType: 'CITIZEN',
+                            ebarimtReceiver: order.user?.phone ?? '80650025'
+                        });
                         
                         if (ebarimtResponse.ebarimt_id) {
                             await prisma.order.update({
@@ -749,37 +787,54 @@ class PaymentController {
                             });
                         }
                     } catch (ebarimtError) {
-                        // Log but don't fail the callback if Ebarimt fails
-                        console.error('Ebarimt generation failed:', ebarimtError.message);
+                        console.error('[QPAY] Ebarimt generation failed:', ebarimtError.message);
+                        ebarimtErrorInfo = {
+                            message: ebarimtError.message,
+                            response: ebarimtError.response?.data
+                        };
                     }
+
+                    // Always send payment confirmation email when we have user email (with or without ebarimt)
+                    if (order.user?.email) {
+                        try {
+                            const orderData = this._buildOrderDataForReceipt(order);
+                            const ebarimtForEmail = ebarimtResponse
+                                ? { ...ebarimtResponse }
+                                : { ebarimt_id: null, receipt_url: null, ebarimt_error: ebarimtErrorInfo };
+                            await emailService.sendEbarimtReceipt(order.user.email, orderData, ebarimtForEmail);
+                            console.log('[QPAY] Payment confirmation email sent to', order.user.email);
+                        } catch (emailError) {
+                            console.error('[QPAY] Payment confirmation email failed:', emailError.message);
+                        }
+                    } else {
+                        console.log('[QPAY] No user email – skipping payment confirmation email');
+                    }
+
+                    // Notify admins via Discord (fire-and-forget; must not block or break callback)
+                    discordService.sendPaymentNotification(order, {
+                        paymentId,
+                        paymentMethod: successfulPayment.payment_type ?? successfulPayment.paymentType ?? 'QPAY',
+                        paidAt: new Date()
+                    }).catch(err => console.error('Discord payment notification failed:', err.message));
 
                     // Clear payment status cache so next status check reflects paid status
                     this.paymentStatusCache.delete(String(id));
 
-                    console.log('Payment confirmed successfully:', {
-                        orderId: id,
-                        paymentId: paymentId
-                    });
+                    console.log('[QPAY] Payment confirmed successfully – orderId:', id, 'paymentId:', paymentId);
 
                     return res.status(200).json({
                         success: true,
                         message: 'Payment confirmed'
                     });
                 } else {
-                    // Payment not found or not successful
-                    console.log('Payment not yet confirmed:', {
-                        orderId: id,
-                        paymentCheck: paymentCheck
-                    });
-
+                    console.log('[QPAY] Callback – payment not yet confirmed for order:', id);
                     return res.status(200).json({
                         success: true,
                         message: 'Payment callback received, but payment not yet confirmed'
                     });
                 }
             } catch (checkError) {
-                // Log error but don't fail callback (QPAY will retry)
-                console.error('Payment check failed:', checkError.message);
+                console.error('[QPAY] Callback – payment check failed:', checkError.message);
                 
                 return res.status(200).json({
                     success: true,
@@ -787,8 +842,7 @@ class PaymentController {
                 });
             }
         } catch (error) {
-            // Log error but return success to QPAY (they will retry)
-            console.error('Payment callback error:', error);
+            console.error('[QPAY] Callback – error:', error.message, error.stack);
             res.status(200).json({
                 success: true,
                 message: 'Callback received'
@@ -929,20 +983,18 @@ class PaymentController {
                 this._markQpayCheck(order.qpayInvoiceId);
                 
                 const paymentCheck = await qpayService.checkPayment(order.qpayInvoiceId);
-                
-                const payments = paymentCheck.count > 0 ? paymentCheck.rows : [];
-                const latestPayment = payments.length > 0 ? payments[0] : null;
-                
-                // Check if payment was confirmed but order wasn't updated
+
+                const paymentsListGps = Array.isArray(paymentCheck.rows) ? paymentCheck.rows : (Array.isArray(paymentCheck.data) ? paymentCheck.data : []);
+                const paymentsGps = (paymentCheck.count > 0 || paymentsListGps.length > 0) ? paymentsListGps : [];
+                const latestPayment = paymentsGps.length > 0 ? paymentsGps[0] : null;
+                const statusOfGps = (p) => p && (p.payment_status ?? p.paymentStatus ?? p.status);
                 const isPaid = latestPayment && (
-                    latestPayment.payment_status === 'PAID' || 
-                    latestPayment.payment_status === 'SUCCESS' ||
-                    latestPayment.payment_status === 'COMPLETED'
+                    statusOfGps(latestPayment) === 'PAID' || statusOfGps(latestPayment) === 'SUCCESS' || statusOfGps(latestPayment) === 'COMPLETED'
                 );
 
                 // If payment is confirmed, update order status
                 if (isPaid && order.paymentStatus !== 'PAID') {
-                    const paymentId = latestPayment.payment_id || latestPayment.id;
+                    const paymentId = latestPayment.payment_id ?? latestPayment.paymentId ?? latestPayment.id;
                     await prisma.order.update({
                         where: { id: String(id) },
                         data: {
@@ -950,13 +1002,18 @@ class PaymentController {
                             paymentStatus: 'PAID',
                             status: 'PAID',
                             paidAt: new Date(latestPayment.paid_date || latestPayment.created_date || new Date()),
-                            paymentMethod: latestPayment.payment_type || 'QPAY'
+                            paymentMethod: latestPayment.payment_type ?? latestPayment.paymentType ?? 'QPAY'
                         }
                     });
                     
-                    // Try to generate Ebarimt
+                    // Try to generate Ebarimt (test: ebarimt_v3/create with payment_id, ebarimt_receiver_type, ebarimt_receiver)
+                    let ebarimtResponse = null;
+                    let ebarimtErrorInfo = null;
                     try {
-                        const ebarimtResponse = await qpayService.createEbarimt(paymentId, 'CITIZEN');
+                        ebarimtResponse = await ebarimtTestService.createEbarimtFromPayment(paymentId, {
+                            ebarimtReceiverType: 'CITIZEN',
+                            ebarimtReceiver: order.user?.phone ?? '80650025'
+                        });
                         if (ebarimtResponse.ebarimt_id) {
                             await prisma.order.update({
                                 where: { id: String(id) },
@@ -964,8 +1021,33 @@ class PaymentController {
                             });
                         }
                     } catch (ebarimtError) {
-                        console.error('Ebarimt generation failed:', ebarimtError.message);
+                        console.error('[QPAY] Ebarimt generation failed (poll path):', ebarimtError.message);
+                        ebarimtErrorInfo = {
+                            message: ebarimtError.message,
+                            response: ebarimtError.response?.data
+                        };
                     }
+
+                    // Always send payment confirmation email when we have user email (with or without ebarimt)
+                    if (order.user?.email) {
+                        try {
+                            const orderData = this._buildOrderDataForReceipt(order);
+                            const ebarimtForEmail = ebarimtResponse
+                                ? { ...ebarimtResponse }
+                                : { ebarimt_id: null, receipt_url: null, ebarimt_error: ebarimtErrorInfo };
+                            await emailService.sendEbarimtReceipt(order.user.email, orderData, ebarimtForEmail);
+                            console.log('[QPAY] Payment confirmation email sent (poll) to', order.user.email);
+                        } catch (emailError) {
+                            console.error('[QPAY] Payment confirmation email failed:', emailError.message);
+                        }
+                    }
+
+                    // Notify admins via Discord (fire-and-forget; must not block or break flow)
+                    discordService.sendPaymentNotification(order, {
+                        paymentId,
+                        paymentMethod: latestPayment.payment_type ?? latestPayment.paymentType ?? 'QPAY',
+                        paidAt: latestPayment.paid_date || latestPayment.created_date || new Date()
+                    }).catch(err => console.error('Discord payment notification failed:', err.message));
                     
                     // Clear cache so subsequent requests get fresh paid status
                     this.paymentStatusCache.delete(String(id));
@@ -975,12 +1057,12 @@ class PaymentController {
                     orderId: order.id,
                     paymentStatus: isPaid ? 'PAID' : order.paymentStatus,
                     qpayInvoiceId: order.qpayInvoiceId,
-                    qpayPaymentId: isPaid ? (latestPayment.payment_id || latestPayment.id) : order.qpayPaymentId,
+                    qpayPaymentId: isPaid ? (latestPayment.payment_id ?? latestPayment.paymentId ?? latestPayment.id) : order.qpayPaymentId,
                     paidAt: isPaid ? (latestPayment.paid_date || latestPayment.created_date || new Date()) : order.paidAt,
                     paymentMethod: order.paymentMethod,
                     qpayStatus: latestPayment ? {
-                        paymentId: latestPayment.payment_id || latestPayment.id,
-                        status: latestPayment.payment_status,
+                        paymentId: latestPayment.payment_id ?? latestPayment.paymentId ?? latestPayment.id,
+                        status: statusOfGps(latestPayment) ?? latestPayment.payment_status ?? latestPayment.paymentStatus,
                         amount: latestPayment.amount,
                         paidAt: latestPayment.paid_date || latestPayment.created_date
                     } : null,

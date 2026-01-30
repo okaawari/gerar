@@ -4,8 +4,9 @@ const { authenticateUser, optionallyAuthenticateUser } = require('../middleware/
 
 const router = express.Router();
 
-// Public callback endpoint - QPAY will call this without authentication
+// Public callback endpoint - QPAY may call with POST (server) or GET (redirect with ?qpay_payment_id=...)
 router.post('/orders/:id/payment-callback', paymentController.paymentCallback);
+router.get('/orders/:id/payment-callback', paymentController.paymentCallback);
 
 // Payment initiation - requires authentication (user or admin can initiate their own orders)
 router.post('/orders/:id/initiate-payment', optionallyAuthenticateUser, paymentController.initiatePayment);

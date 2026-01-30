@@ -40,7 +40,7 @@ class DraftOrderService {
         const stockCheck = await productService.checkStockAvailability(prodId, qty);
         if (!stockCheck.hasStock) {
             const error = new Error(
-                `Insufficient stock for product "${stockCheck.product.name}". Available: ${stockCheck.product.stock}, Requested: ${qty}`
+                `Барааны үлдэгдэл хүрэлцэхгүй байна. Барааны нэр: "${stockCheck.product.name}". Байгаа: ${stockCheck.product.stock}, Авах гэсэн: ${qty}`
             );
             error.statusCode = 400;
             throw error;

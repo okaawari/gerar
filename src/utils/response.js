@@ -1,17 +1,15 @@
 /**
  * Response utility functions for consistent API responses
  */
+const { formatInMongoliaTime } = require('./dateUtils');
 
 /**
- * Format a date to ISO 8601 format
+ * Format a date to ISO 8601 format in Mongolian timezone (UTC+8)
  * @param {Date|string|number} date - Date to format
- * @returns {string} ISO 8601 formatted date string
+ * @returns {string} ISO 8601 formatted date string e.g. "2026-01-30T17:01:50+08:00"
  */
 const formatTimestamp = (date = new Date()) => {
-    if (typeof date === 'string' || typeof date === 'number') {
-        date = new Date(date);
-    }
-    return date.toISOString();
+    return formatInMongoliaTime(date);
 };
 
 /**

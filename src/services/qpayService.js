@@ -8,10 +8,10 @@ const axios = require('axios');
 class QPayService {
     constructor() {
         this.apiUrl = process.env.QPAY_API_URL || 'https://merchant.qpay.mn/v2';
-        this.username = process.env.QPAY_USERNAME || 'GERAR';
-        this.password = process.env.QPAY_PASSWORD || 'KqSq9vHS';
-        this.invoiceCode = process.env.QPAY_INVOICE_CODE || 'GERAR_INVOICE';
-        this.callbackBaseUrl = process.env.QPAY_CALLBACK_BASE_URL || 'https://api.gerar.mn/api';
+        this.username = process.env.QPAY_USERNAME;
+        this.password = process.env.QPAY_PASSWORD;
+        this.invoiceCode = process.env.QPAY_INVOICE_CODE;
+        this.callbackBaseUrl = process.env.QPAY_CALLBACK_BASE_URL;
         
         // Token cache - critical: one token per timestamp
         this.tokenCache = {
@@ -161,8 +161,9 @@ class QPayService {
         try {
             const token = await this.getAccessToken();
             
-            // Build callback URL
-            const callbackUrl = `${this.callbackBaseUrl}/orders/${order.id}/payment-callback`;
+            // Build callback URL (strip trailing slash from base to avoid // in path)
+            const base = (this.callbackBaseUrl || '').replace(/\/$/, '');
+            const callbackUrl = `${base}/orders/${order.id}/payment-callback`;
             console.log(`📞 Callback URL for QPAY: ${callbackUrl}`);
             console.log(`🌐 QPAY API URL: ${this.apiUrl}/invoice`);
             
@@ -431,22 +432,26 @@ class QPayService {
     }
 
     /**
-     * Create Ebarimt receipt
+     * Create Ebarimt receipt (simple API: payment_id + ebarimt_receiver_type + optional ebarimt_receiver)
      * @param {string} paymentId - QPAY payment ID
-     * @param {string} receiverType - Receiver type (default: 'CITIZEN')
-     * @returns {Promise<Object>} Ebarimt receipt response
+     * @param {string} receiverType - Receiver type (default: 'CITIZEN'); COMPANY for AAN
+     * @param {string} [ebarimtReceiver] - Optional: phone for CITIZEN, register no for COMPANY
+     * @returns {Promise<Object>} Raw Ebarimt API response
      */
-    async createEbarimt(paymentId, receiverType = 'CITIZEN') {
+    async createEbarimt(paymentId, receiverType = 'CITIZEN', ebarimtReceiver = null) {
         try {
             const token = await this.getAccessToken();
-            
+            const body = {
+                payment_id: paymentId,
+                ebarimt_receiver_type: receiverType
+            };
+            if (ebarimtReceiver != null && ebarimtReceiver !== '') {
+                body.ebarimt_receiver = String(ebarimtReceiver);
+            }
             const response = await this.retryWithBackoff(async () => {
                 return await axios.post(
                     `${this.apiUrl}/ebarimt/create`,
-                    {
-                        payment_id: paymentId,
-                        ebarimt_receiver_type: receiverType
-                    },
+                    body,
                     {
                         headers: {
                             'Authorization': `Bearer ${token}`,
@@ -463,11 +468,12 @@ class QPayService {
                 message: error.message,
                 status: error.response?.status,
                 data: error.response?.data,
-                paymentId: paymentId,
-                receiverType: receiverType,
+                paymentId,
+                receiverType,
+                ebarimtReceiver: ebarimtReceiver ?? undefined,
                 timestamp: new Date().toISOString()
             });
-            const errorMessage = error.response?.data?.message || error.message;
+            const errorMessage = error.response?.data?.message || error.response?.data?.error || error.message;
             throw new Error(`Failed to create Ebarimt receipt: ${errorMessage}`);
         }
     }

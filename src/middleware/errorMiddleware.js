@@ -3,13 +3,14 @@
  * Catches all errors and formats them consistently
  */
 const { formatTimestamp } = require('../utils/response');
+const { getMongoliaTimestampISO } = require('../utils/dateUtils');
 
 const errorHandler = (err, req, res, next) => {
     // CRITICAL: Log to stderr (Passenger captures stderr)
     // Use multiple console.error calls to ensure all parts are logged
     process.stderr.write('\n');
     process.stderr.write('='.repeat(80) + '\n');
-    process.stderr.write('ERROR HANDLED: ' + new Date().toISOString() + '\n');
+    process.stderr.write('ERROR HANDLED: ' + getMongoliaTimestampISO() + '\n');
     process.stderr.write('Error Message: ' + (err.message || 'No message') + '\n');
     process.stderr.write('Error Code: ' + (err.code || 'No code') + '\n');
     process.stderr.write('Status Code: ' + (err.statusCode || 500) + '\n');

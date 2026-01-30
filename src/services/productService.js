@@ -1257,7 +1257,7 @@ class ProductService {
         const newStock = product.stock - qty;
 
         if (newStock < 0) {
-            const error = new Error(`Insufficient stock. Available: ${product.stock}, Requested: ${qty}`);
+            const error = new Error(`Барааны үлдэгдэл хүрэлцэхгүй байна. Байгаа: ${product.stock}, Авах гэсэн: ${qty}`);
             error.statusCode = 400;
             throw error;
         }

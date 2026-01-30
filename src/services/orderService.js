@@ -5,6 +5,7 @@ const addressService = require('./addressService');
 const otpService = require('./otpService');
 const smsService = require('./smsService');
 const { isValidDeliveryTimeSlot } = require('../constants/deliveryTimeSlots');
+const { getMongoliaDateParts } = require('../utils/dateUtils');
 
 /** Status value that triggers "delivery started" SMS to user */
 const STATUS_DELIVERY_STARTED = 'DELIVERY_STARTED';
@@ -27,11 +28,9 @@ class OrderService {
      * @returns {Promise<string>} - Generated order ID
      */
     async generateOrderId() {
-        const now = new Date();
-        const year = now.getFullYear().toString().slice(-2); // Last 2 digits of year
-        const month = String(now.getMonth() + 1).padStart(2, '0'); // Month (01-12)
-        const day = String(now.getDate()).padStart(2, '0'); // Day (01-31)
-        const datePrefix = `${year}${month}${day}`; // YYMMDD format
+        const { year, month, day } = getMongoliaDateParts();
+        const yearShort = year.slice(-2); // Last 2 digits of year
+        const datePrefix = `${yearShort}${month}${day}`; // YYMMDD format (Mongolian timezone)
 
         const maxAttempts = 100; // Maximum attempts to find a unique random ID
         let attempts = 0;
@@ -179,7 +178,7 @@ class OrderService {
 
             if (!stockCheck.hasStock) {
                 const error = new Error(
-                    `Insufficient stock for product "${cartItem.product.name}". Available: ${stockCheck.product.stock}, Requested: ${cartItem.quantity}`
+                    `Барааны үлдэгдэл хүрэлцэхгүй байна. Барааны нэр: "${cartItem.product.name}". Байгаа: ${stockCheck.product.stock}, Авах гэсэн: ${cartItem.quantity}`
                 );
                 error.statusCode = 400;
                 throw error;
@@ -422,7 +421,7 @@ class OrderService {
         const stockCheck = await productService.checkStockAvailability(prodId, qty);
         if (!stockCheck.hasStock) {
             const error = new Error(
-                `Insufficient stock for product "${stockCheck.product.name}". Available: ${stockCheck.product.stock}, Requested: ${qty}`
+                `Барааны үлдэгдэл хүрэлцэхгүй байна. Барааны нэр: "${stockCheck.product.name}". Байгаа: ${stockCheck.product.stock}, Авах гэсэн: ${qty}`
             );
             error.statusCode = 400;
             throw error;
@@ -623,7 +622,7 @@ class OrderService {
         const stockCheck = await productService.checkStockAvailability(prodId, qty);
         if (!stockCheck.hasStock) {
             const error = new Error(
-                `Insufficient stock for product "${stockCheck.product.name}". Available: ${stockCheck.product.stock}, Requested: ${qty}`
+                `Барааны үлдэгдэл хүрэлцэхгүй байна. Барааны нэр: "${stockCheck.product.name}". Байгаа: ${stockCheck.product.stock}, Авах гэсэн: ${qty}`
             );
             error.statusCode = 400;
             throw error;
@@ -811,13 +810,15 @@ class OrderService {
         }
 
         // Check access control: users can only see their own orders, admins can see all
-        // Guest orders (userId is null) can only be viewed by admins
+        // Guest orders: allow guests (no userId) to view by order ID (e.g. payment-status polling); logged-in non-admins cannot view guest orders
         if (!isAdmin) {
             if (order.userId === null) {
-                // Guest order - only admins can view
-                const error = new Error('Access denied. Guest orders can only be viewed by administrators.');
-                error.statusCode = 403;
-                throw error;
+                // Guest order - allow if requester is also guest (viewing by order ID, e.g. after checkout/payment)
+                if (userId != null && userId !== undefined) {
+                    const error = new Error('Access denied. Guest orders can only be viewed by administrators.');
+                    error.statusCode = 403;
+                    throw error;
+                }
             } else if (order.userId !== parseInt(userId)) {
                 // User order - must belong to the requesting user
                 const error = new Error('Access denied. You can only view your own orders.');

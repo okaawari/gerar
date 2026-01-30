@@ -1,0 +1,77 @@
+{
+  "timestamp": "2026-01-30T09:01:50.665Z",
+  "request": {
+    "url": "https://merchant.qpay.mn/v2/ebarimt_v3/create",
+    "payload": {
+      "invoice_code": "TEST_INVOICE",
+      "sender_invoice_no": "TEST_INVOICE_16",
+      "invoice_receiver_code": "23",
+      "sender_branch_code": "TEST_BRANCH",
+      "invoice_description": "Test invoice",
+      "callback_url": "https://example.com/callback",
+      "tax_type": "1",
+      "district_code": "3505",
+      "lines": [
+        {
+          "tax_product_code": "",
+          "line_description": "Улаан буудайн үр",
+          "barcode": "8434165457768",
+          "line_quantity": "1.00",
+          "line_unit_price": "50.00",
+          "note": "TEST",
+          "classification_code": "0111100",
+          "taxes": [
+            {
+              "tax_code": "VAT",
+              "description": "НӨАТ",
+              "amount": 4.5454,
+              "note": "НӨАТ"
+            }
+          ]
+        },
+        {
+          "tax_product_code": "",
+          "line_description": "Улаан буудайн үр",
+          "barcode": "8434165457768",
+          "line_quantity": "1.00",
+          "line_unit_price": "100.00",
+          "note": "TEST",
+          "classification_code": "0111100",
+          "taxes": [
+            {
+              "tax_code": "VAT",
+              "description": "НӨАТ",
+              "amount": 9.0909,
+              "note": "НӨАТ"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 400,
+    "data": {
+      "error": {
+        "payment_id": {
+          "type": "REQUIRED",
+          "message": "Required!"
+        },
+        "ebarimt_receiver_type": {
+          "type": "REQUIRED",
+          "message": "Required!"
+        }
+      },
+      "message": {
+        "payment_id": {
+          "type": "REQUIRED",
+          "message": "Required!"
+        },
+        "ebarimt_receiver_type": {
+          "type": "REQUIRED",
+          "message": "Required!"
+        }
+      }
+    }
+  }
+}

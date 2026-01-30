@@ -148,7 +148,7 @@ class CartService {
         // Check if product exists and has sufficient stock
         const stockCheck = await productService.checkStockAvailability(prodId, qty);
         if (!stockCheck.hasStock) {
-            const error = new Error(`Insufficient stock. Available: ${stockCheck.product.stock}, Requested: ${qty}`);
+            const error = new Error(`Барааны үлдэгдэл хүрэлцэхгүй байна. Байгаа: ${stockCheck.product.stock}, Авах гэсэн: ${qty}`);
             error.statusCode = 400;
             throw error;
         }
@@ -186,7 +186,7 @@ class CartService {
             const totalQuantity = existingCartItem.quantity + qty;
             const stockCheckForUpdate = await productService.checkStockAvailability(prodId, totalQuantity);
             if (!stockCheckForUpdate.hasStock) {
-                const error = new Error(`Insufficient stock. Available: ${stockCheckForUpdate.product.stock}, Requested total: ${totalQuantity}`);
+                const error = new Error(`Барааны үлдэгдэл хүрэлцэхгүй байна. Байгаа: ${stockCheckForUpdate.product.stock}, Авах гэсэн: ${totalQuantity}`);
                 error.statusCode = 400;
                 throw error;
             }
@@ -324,7 +324,7 @@ class CartService {
         // Check if product has sufficient stock for new quantity
         const stockCheck = await productService.checkStockAvailability(prodId, qty);
         if (!stockCheck.hasStock) {
-            const error = new Error(`Insufficient stock. Available: ${stockCheck.product.stock}, Requested: ${qty}`);
+            const error = new Error(`Барааны үлдэгдэл хүрэлцэхгүй байна. Байгаа: ${stockCheck.product.stock}, Авах гэсэн: ${qty}`);
             error.statusCode = 400;
             throw error;
         }
