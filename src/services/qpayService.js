@@ -11,7 +11,11 @@ class QPayService {
         this.username = process.env.QPAY_USERNAME;
         this.password = process.env.QPAY_PASSWORD;
         this.invoiceCode = process.env.QPAY_INVOICE_CODE;
+        /** Ebarimt/VAT invoice code from QPay (НӨАТ-ийн мэдээлэлтэй нэхэмжлэхийн код). Falls back to QPAY_INVOICE_CODE. */
+        this.ebarimtInvoiceCode = process.env.QPAY_EBARIMT_INVOICE_CODE || process.env.QPAY_INVOICE_CODE;
         this.callbackBaseUrl = process.env.QPAY_CALLBACK_BASE_URL;
+        /** District code for ebarimt invoice (Төлбөрийн баримтын байршлын код). */
+        this.districtCode = process.env.QPAY_DISTRICT_CODE || process.env.EB_GERAR_DISTRICT_CODE || '3505';
         
         // Token cache - critical: one token per timestamp
         this.tokenCache = {
@@ -235,6 +239,84 @@ class QPayService {
             });
             const errorMessage = error.response?.data?.message || error.message;
             throw new Error(`Failed to create QPAY invoice: ${errorMessage}`);
+        }
+    }
+
+    /**
+     * Create QPAY invoice with ebarimt (VAT) data – same POST /v2/invoice with ebarimt payload.
+     * Uses: invoice_code (VAT invoice code), tax_type, district_code, invoice_receiver_data, lines with taxes.
+     * No amount/allow_partial; total is derived from lines.
+     * @param {Object} order - Order object
+     * @param {Object} invoiceData - { receiverCode, receiverData, description, branchCode, taxType, districtCode, lines }
+     * @returns {Promise<Object>} Invoice response (invoice_id, qr_text, qr_image, qPay_shortUrl, urls)
+     */
+    async createEbarimtInvoice(order, invoiceData = {}) {
+        try {
+            const token = await this.getAccessToken();
+            const base = (this.callbackBaseUrl || '').replace(/\/$/, '');
+            const callbackUrl = `${base}/orders/${order.id}/payment-callback`;
+
+            const senderInvoiceNo = String(order.id).replace(/[^\w\-]/g, '') || String(this.testInvoiceCounter++);
+            const districtCode = invoiceData.districtCode || this.districtCode;
+            const taxType = invoiceData.taxType || '1';
+
+            const payload = {
+                invoice_code: this.ebarimtInvoiceCode,
+                sender_invoice_no: senderInvoiceNo,
+                invoice_receiver_code: invoiceData.receiverCode || String(order.id),
+                invoice_description: (invoiceData.description || `Order #${order.id}`).substring(0, 255),
+                tax_type: taxType,
+                district_code: districtCode,
+                callback_url: callbackUrl,
+                lines: invoiceData.lines || []
+            };
+
+            if (invoiceData.branchCode != null) payload.sender_branch_code = invoiceData.branchCode;
+            if (invoiceData.staffCode != null) payload.sender_staff_code = invoiceData.staffCode;
+
+            const receiver = invoiceData.receiverData || {};
+            payload.invoice_receiver_data = {
+                register: receiver.register != null ? String(receiver.register) : '',
+                name: receiver.name != null ? String(receiver.name) : 'Customer',
+                email: receiver.email != null ? String(receiver.email) : '',
+                phone: receiver.phone != null ? String(receiver.phone) : (receiver.phoneNumber != null ? String(receiver.phoneNumber) : '')
+            };
+
+            if (!payload.lines.length) {
+                throw new Error('Ebarimt invoice requires at least one line item');
+            }
+
+            console.log(`Creating QPAY ebarimt invoice for order ${order.id}, sender_invoice_no: ${senderInvoiceNo}, district: ${districtCode}`);
+            const response = await this.retryWithBackoff(async () => {
+                return await axios.post(
+                    `${this.apiUrl}/invoice`,
+                    payload,
+                    {
+                        headers: {
+                            'Authorization': `Bearer ${token}`,
+                            'Content-Type': 'application/json'
+                        },
+                        timeout: 15000
+                    }
+                );
+            });
+
+            console.log('QPAY Ebarimt Invoice Response:', {
+                invoice_id: response.data.invoice_id,
+                has_qr_image: !!response.data.qr_image,
+                has_qr_text: !!response.data.qr_text
+            });
+            return response.data;
+        } catch (error) {
+            console.error('QPAY Create Ebarimt Invoice Error:', {
+                message: error.message,
+                status: error.response?.status,
+                data: error.response?.data,
+                orderId: order.id,
+                timestamp: new Date().toISOString()
+            });
+            const errorMessage = error.response?.data?.message || error.message;
+            throw new Error(`Failed to create QPAY ebarimt invoice: ${errorMessage}`);
         }
     }
 

@@ -2,6 +2,15 @@
 
 This document provides comprehensive API documentation for front-end developers to integrate with the Ecommerce backend API.
 
+---
+
+## ⚠️ IMPORTANT: Use only GET and POST
+
+**DO NOT use PATCH, PUT, DELETE, or any other HTTP method.**  
+This API uses **only GET and POST**. All create/update/delete actions must be done via **POST** requests. See [IMPORTANT_NOTE.md](./IMPORTANT_NOTE.md) for details.
+
+---
+
 ## Table of Contents
 
 - [Base Information](#base-information)

@@ -13,13 +13,13 @@ router.post('/', optionallyAuthenticateUser, orderController.createOrder);
 // Finalize order - Convert draft to real order (requires auth) - must be before /:id route
 router.post('/finalize', authenticateUser, orderController.finalizeOrder);
 
+// Get order by ID - supports guests via X-Session-Token (must be before authenticateUser)
+router.get('/:id', optionallyAuthenticateUser, orderController.getOrderById);
+
 // All other order routes require authentication
 router.use(authenticateUser);
 
 // Get user's order history (authenticated only)
 router.get('/', orderController.getUserOrders);
-
-// Get order by ID
-router.get('/:id', orderController.getOrderById);
 
 module.exports = router;

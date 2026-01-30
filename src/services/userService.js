@@ -334,6 +334,140 @@ class UserService {
 
         return updatedUser;
     }
+
+    /**
+     * Get current user profile (for authenticated user)
+     * @param {number} userId - User ID from JWT
+     * @returns {Object} - User profile (id, phoneNumber, name, email, role, createdAt, updatedAt)
+     */
+    async getCurrentUser(userId) {
+        const id = parseInt(userId);
+
+        if (isNaN(id)) {
+            const error = new Error('Invalid user ID');
+            error.statusCode = 400;
+            throw error;
+        }
+
+        const user = await prisma.user.findUnique({
+            where: { id },
+            select: {
+                id: true,
+                phoneNumber: true,
+                name: true,
+                email: true,
+                role: true,
+                createdAt: true,
+                updatedAt: true,
+            },
+        });
+
+        if (!user) {
+            const error = new Error('User not found');
+            error.statusCode = 404;
+            throw error;
+        }
+
+        return user;
+    }
+
+    /**
+     * Update current user profile (name and/or email)
+     * @param {number} userId - User ID from JWT
+     * @param {Object} data - { name?, email? } at least one required
+     * @returns {Object} - Updated user profile
+     */
+    async updateProfile(userId, data) {
+        const id = parseInt(userId);
+
+        if (isNaN(id)) {
+            const error = new Error('Invalid user ID');
+            error.statusCode = 400;
+            throw error;
+        }
+
+        const { name, email } = data;
+
+        if (name === undefined && email === undefined) {
+            const error = new Error('At least one of name or email is required');
+            error.statusCode = 400;
+            throw error;
+        }
+
+        const updateData = {};
+
+        if (name !== undefined) {
+            const trimmed = typeof name === 'string' ? name.trim() : '';
+            if (trimmed.length === 0) {
+                const error = new Error('Name cannot be empty');
+                error.statusCode = 400;
+                throw error;
+            }
+            if (trimmed.length > 50) {
+                const error = new Error('Name must be at most 50 characters');
+                error.statusCode = 400;
+                throw error;
+            }
+            updateData.name = trimmed;
+        }
+
+        if (email !== undefined) {
+            // Allow empty string to clear email
+            const trimmed = typeof email === 'string' ? email.trim() : '';
+            if (trimmed.length > 0) {
+                const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                if (!emailRegex.test(trimmed)) {
+                    const error = new Error('Invalid email format');
+                    error.statusCode = 400;
+                    throw error;
+                }
+            }
+            updateData.email = trimmed.length > 0 ? trimmed : null;
+        }
+
+        const user = await prisma.user.findUnique({
+            where: { id },
+            select: { id: true },
+        });
+
+        if (!user) {
+            const error = new Error('User not found');
+            error.statusCode = 404;
+            throw error;
+        }
+
+        // Check email uniqueness when setting a non-empty email
+        if (updateData.email) {
+            const existing = await prisma.user.findFirst({
+                where: {
+                    email: updateData.email,
+                    id: { not: id },
+                },
+                select: { id: true },
+            });
+            if (existing) {
+                const error = new Error('Email is already in use');
+                error.statusCode = 409;
+                throw error;
+            }
+        }
+
+        const updatedUser = await prisma.user.update({
+            where: { id },
+            data: updateData,
+            select: {
+                id: true,
+                phoneNumber: true,
+                name: true,
+                email: true,
+                role: true,
+                createdAt: true,
+                updatedAt: true,
+            },
+        });
+
+        return updatedUser;
+    }
 }
 
 module.exports = new UserService();

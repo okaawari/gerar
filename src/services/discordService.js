@@ -37,8 +37,8 @@ async function sendPaymentNotification(order, paymentInfo = {}) {
         addressLine = parts.length ? parts.join(', ') : (a.fullName && a.phoneNumber ? `${a.fullName}, ${a.phoneNumber}` : '—');
     }
 
-    const customerName = order.address?.fullName || order.user?.name || 'Guest';
-    const customerPhone = order.address?.phoneNumber || order.user?.phoneNumber || '—';
+    const customerName = order.contactFullName || order.address?.fullName || order.user?.name || 'Guest';
+    const customerPhone = order.contactPhoneNumber || order.address?.phoneNumber || order.user?.phoneNumber || '—';
     const totalAmount = order.totalAmount != null ? Number(order.totalAmount) : 0;
     const paidAt = paymentInfo.paidAt ? new Date(paymentInfo.paidAt).toISOString() : new Date().toISOString();
     const paymentMethod = paymentInfo.paymentMethod || 'QPAY';
@@ -46,24 +46,60 @@ async function sendPaymentNotification(order, paymentInfo = {}) {
     const payload = {
         content: null,
         embeds: [
-            {
-                title: '💰 Payment received',
-                description: `Order **#${order.id}** has been paid.`,
-                color: 3066993, // green
-                timestamp: paidAt,
-                fields: [
-                    { name: 'Order ID', value: String(order.id), inline: true },
-                    { name: 'Total', value: `${totalAmount.toLocaleString()} MNT`, inline: true },
-                    { name: 'Payment', value: paymentMethod, inline: true },
-                    { name: 'Customer', value: customerName, inline: true },
-                    { name: 'Phone', value: customerPhone, inline: true },
-                    { name: 'Paid at', value: `<t:${Math.floor(new Date(paidAt).getTime() / 1000)}:F>`, inline: true },
-                    { name: 'Delivery address', value: addressLine.substring(0, 1024), inline: false },
-                    { name: 'Items', value: itemsText.substring(0, 1024), inline: false }
-                ]
-            }
+          {
+            title: '💰 Төлбөр амжилттай хийгдлээ',
+            description: `**Захиалга #${order.id}**-ын төлбөр бүрэн төлөгдсөн байна.`,
+            color: 0x2ecc71, // green
+            timestamp: paidAt,
+            footer: {
+              text: 'Захиалгын мэдэгдэл'
+            },
+            fields: [
+              {
+                name: '🧾 Захиалгын дугаар',
+                value: `#${order.id}`,
+                inline: true
+              },
+              {
+                name: '💵 Нийт дүн',
+                value: `${totalAmount.toLocaleString()} ₮`,
+                inline: true
+              },
+              {
+                name: '💳 Төлбөрийн хэлбэр',
+                value: paymentMethod,
+                inline: true
+              },
+              {
+                name: '👤 Харилцагч',
+                value: customerName,
+                inline: true
+              },
+              {
+                name: '📞 Утас',
+                value: customerPhone,
+                inline: true
+              },
+              {
+                name: '⏰ Төлсөн огноо',
+                value: `<t:${Math.floor(new Date(paidAt).getTime() / 1000)}:F>`,
+                inline: true
+              },
+              {
+                name: '📍 Хүргэлтийн хаяг',
+                value: addressLine.substring(0, 1024),
+                inline: false
+              },
+              {
+                name: '📦 Захиалсан бараа',
+                value: itemsText.substring(0, 1024),
+                inline: false
+              }
+            ]
+          }
         ]
-    };
+      };
+      
 
     try {
         const res = await axios.post(webhookUrl, payload, {

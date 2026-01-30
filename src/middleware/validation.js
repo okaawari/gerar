@@ -171,6 +171,117 @@ const validateUserLogin = (req, res, next) => {
     next();
 };
 
+/**
+ * Validate profile update (name and/or email; at least one required)
+ */
+const validateProfileUpdate = (req, res, next) => {
+    const { name, email } = req.body || {};
+    const errors = [];
+
+    const hasName = name !== undefined && name !== null;
+    const hasEmail = email !== undefined && email !== null;
+
+    if (!hasName && !hasEmail) {
+        errors.push('At least one of name or email is required');
+    }
+
+    if (name !== undefined && name !== null) {
+        const n = typeof name === 'string' ? name.trim() : '';
+        if (n.length === 0) {
+            errors.push('Name cannot be empty');
+        } else if (n.length > 50) {
+            errors.push('Name must be at most 50 characters');
+        }
+    }
+
+    if (email !== undefined && email !== null && email !== '') {
+        const e = typeof email === 'string' ? email.trim() : '';
+        if (e.length > 0 && !validateEmail(e)) {
+            errors.push('Invalid email format');
+        }
+    }
+
+    if (errors.length > 0) {
+        const error = new Error('Validation failed');
+        error.statusCode = 400;
+        error.code = 'VALIDATION_ERROR';
+        error.details = { errors };
+        return next(error);
+    }
+
+    next();
+};
+
+/**
+ * Validate contact info for create order / finalize (fullName, phoneNumber, email)
+ * @returns {Object} - { isValid, errors }
+ */
+const validateOrderContact = (body) => {
+    const errors = [];
+    const fullName = body?.fullName;
+    const phoneNumber = body?.phoneNumber;
+    const email = body?.email;
+
+    if (!fullName || typeof fullName !== 'string' || fullName.trim().length < 2) {
+        errors.push('fullName is required and must be at least 2 characters');
+    }
+    if (!phoneNumber || typeof phoneNumber !== 'string') {
+        errors.push('phoneNumber is required');
+    } else if (!/^\d{8}$/.test(phoneNumber.trim())) {
+        errors.push('phoneNumber must be exactly 8 digits');
+    }
+    if (!email || typeof email !== 'string' || !email.trim()) {
+        errors.push('email is required');
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+        errors.push('email must be a valid email format');
+    }
+
+    return {
+        isValid: errors.length === 0,
+        errors,
+        contact: errors.length === 0 ? {
+            fullName: fullName?.trim(),
+            phoneNumber: phoneNumber?.trim(),
+            email: email?.trim()
+        } : null
+    };
+};
+
+/**
+ * Validate deliveryDate (YYYY-MM-DD) and deliveryTimeSlot for create order
+ */
+const validateOrderDelivery = (body) => {
+    const errors = [];
+    const deliveryDate = body?.deliveryDate;
+    const deliveryTimeSlot = body?.deliveryTimeSlot;
+    const validSlots = ['10-14', '14-18', '18-21', '21-00'];
+
+    if (!deliveryDate || typeof deliveryDate !== 'string' || !deliveryDate.trim()) {
+        errors.push('deliveryDate is required (YYYY-MM-DD)');
+    } else {
+        const d = new Date(deliveryDate);
+        if (isNaN(d.getTime())) {
+            errors.push('deliveryDate must be a valid date (YYYY-MM-DD)');
+        }
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        d.setHours(0, 0, 0, 0);
+        if (d < today) {
+            errors.push('deliveryDate must be today or in the future');
+        }
+    }
+    if (!deliveryTimeSlot || typeof deliveryTimeSlot !== 'string') {
+        errors.push('deliveryTimeSlot is required');
+    } else if (!validSlots.includes(deliveryTimeSlot.trim())) {
+        errors.push('deliveryTimeSlot must be one of: 10-14, 14-18, 18-21, 21-00');
+    }
+
+    return {
+        isValid: errors.length === 0,
+        errors
+    };
+};
+
 module.exports = {
     handleJsonErrors,
     validateRequiredFields,
@@ -178,5 +289,8 @@ module.exports = {
     validatePin,
     validateEmail,
     validateUserRegistration,
-    validateUserLogin
+    validateUserLogin,
+    validateProfileUpdate,
+    validateOrderContact,
+    validateOrderDelivery
 };

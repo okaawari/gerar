@@ -127,9 +127,10 @@ class OrderService {
      * @param {Object|null} address - Address object (for guest users)
      * @param {string} deliveryTimeSlot - Delivery time slot (optional)
      * @param {string|Date|null} deliveryDate - Delivery date (optional, will calculate if not provided)
+     * @param {Object|null} contact - Contact info { fullName, phoneNumber, email } from order create form
      * @returns {Object} - Created order with items
      */
-    async createOrderFromCart(userId = null, sessionToken = null, addressId = null, address = null, deliveryTimeSlot = null, deliveryDate = null) {
+    async createOrderFromCart(userId = null, sessionToken = null, addressId = null, address = null, deliveryTimeSlot = null, deliveryDate = null, contact = null) {
         // Validate that either userId or sessionToken is provided
         if (!userId && !sessionToken) {
             const error = new Error('Either userId or sessionToken must be provided');
@@ -223,20 +224,33 @@ class OrderService {
         // Use transaction to ensure atomicity
         // Create order, order items, reduce stock, and clear cart in one transaction
         const order = await prisma.$transaction(async (tx) => {
-            // Create order
+            // Create order (use relation connect syntax for Prisma 7+)
             const orderData = {
                 id: orderId,
-                userId: userId ? parseInt(userId) : null,
-                addressId: finalAddressId,
+                ...(userId ? { user: { connect: { id: parseInt(userId) } } } : {}),
+                ...(finalAddressId ? { address: { connect: { id: finalAddressId } } } : {}),
                 deliveryTimeSlot: deliveryTimeSlot || null,
                 deliveryDate: calculatedDeliveryDate,
                 totalAmount: totalAmount,
-                status: 'PENDING'
+                status: 'PENDING',
+                ...(contact ? {
+                    contactFullName: contact.fullName,
+                    contactPhoneNumber: contact.phoneNumber,
+                    contactEmail: contact.email
+                } : {})
             };
 
-            const newOrder = await tx.order.create({
+            let newOrder = await tx.order.create({
                 data: orderData
             });
+
+            // Set sessionToken for guest orders (separate update in case create input omits it)
+            if (sessionToken) {
+                newOrder = await tx.order.update({
+                    where: { id: newOrder.id },
+                    data: { sessionToken }
+                });
+            }
 
             // Create order items and reduce stock
             const orderItems = [];
@@ -376,9 +390,10 @@ class OrderService {
      * @param {number} addressId - Delivery address ID (required)
      * @param {string} deliveryTimeSlot - Delivery time slot (optional)
      * @param {string|Date|null} deliveryDate - Delivery date (optional, will calculate if not provided)
+     * @param {Object|null} contact - Contact info { fullName, phoneNumber, email } from order create form
      * @returns {Object} - Created order with items
      */
-    async buyNow(userId, productId, quantity, addressId, deliveryTimeSlot = null, deliveryDate = null) {
+    async buyNow(userId, productId, quantity, addressId, deliveryTimeSlot = null, deliveryDate = null, contact = null) {
         const userIdInt = parseInt(userId);
         const prodId = parseInt(productId);
         const qty = parseInt(quantity);
@@ -440,16 +455,21 @@ class OrderService {
         // Use transaction to ensure atomicity
         // Create order, order item, and reduce stock in one transaction
         const order = await prisma.$transaction(async (tx) => {
-            // Create order
+            // Create order (use relation connect syntax for Prisma 7+)
             const newOrder = await tx.order.create({
                 data: {
                     id: orderId,
-                    userId: userIdInt,
-                    addressId: parseInt(addressId),
+                    user: { connect: { id: userIdInt } },
+                    address: { connect: { id: parseInt(addressId) } },
                     deliveryTimeSlot: deliveryTimeSlot || null,
                     deliveryDate: calculatedDeliveryDate,
                     totalAmount: totalAmount,
-                    status: 'PENDING'
+                    status: 'PENDING',
+                    ...(contact ? {
+                        contactFullName: contact.fullName,
+                        contactPhoneNumber: contact.phoneNumber,
+                        contactEmail: contact.email
+                    } : {})
                 }
             });
 
@@ -573,9 +593,10 @@ class OrderService {
      * @param {Object} address - Optional new address object to create
      * @param {string} deliveryTimeSlot - Delivery time slot (optional)
      * @param {string|Date|null} deliveryDate - Delivery date (optional, will calculate if not provided)
+     * @param {Object|null} contact - Contact info { fullName, phoneNumber, email } from order create form
      * @returns {Object} - Created order with items
      */
-    async finalizeOrderFromDraft(userId, draftOrder, addressId = null, address = null, deliveryTimeSlot = null, deliveryDate = null) {
+    async finalizeOrderFromDraft(userId, draftOrder, addressId = null, address = null, deliveryTimeSlot = null, deliveryDate = null, contact = null) {
         const userIdInt = parseInt(userId);
         const prodId = draftOrder.productId;
         const qty = draftOrder.quantity;
@@ -636,16 +657,21 @@ class OrderService {
 
         // Use transaction to ensure atomicity
         const order = await prisma.$transaction(async (tx) => {
-            // Create order
+            // Create order (use relation connect syntax for Prisma 7+)
             const newOrder = await tx.order.create({
                 data: {
                     id: orderId,
-                    userId: userIdInt,
-                    addressId: finalAddressId ? parseInt(finalAddressId) : null,
+                    user: { connect: { id: userIdInt } },
+                    ...(finalAddressId ? { address: { connect: { id: parseInt(finalAddressId) } } } : {}),
                     deliveryTimeSlot: deliveryTimeSlot || null,
                     deliveryDate: calculatedDeliveryDate,
                     totalAmount: draftOrder.totalAmount,
-                    status: 'PENDING'
+                    status: 'PENDING',
+                    ...(contact ? {
+                        contactFullName: contact.fullName,
+                        contactPhoneNumber: contact.phoneNumber,
+                        contactEmail: contact.email
+                    } : {})
                 }
             });
 
@@ -764,11 +790,12 @@ class OrderService {
     /**
      * Get order by ID
      * @param {string} orderId - Order ID (custom format: YYMMDDNNN)
-     * @param {number} userId - User ID (for access control)
+     * @param {number|undefined} userId - User ID (for access control; undefined for guests)
      * @param {boolean} isAdmin - Whether user is admin
+     * @param {string|undefined} sessionToken - X-Session-Token for guest access (order must belong to this session)
      * @returns {Object} - Order with items
      */
-    async getOrderById(orderId, userId, isAdmin = false) {
+    async getOrderById(orderId, userId, isAdmin = false, sessionToken = undefined) {
         const order = await prisma.order.findUnique({
             where: { id: String(orderId) },
             include: {
@@ -810,12 +837,18 @@ class OrderService {
         }
 
         // Check access control: users can only see their own orders, admins can see all
-        // Guest orders: allow guests (no userId) to view by order ID (e.g. payment-status polling); logged-in non-admins cannot view guest orders
+        // Guest orders: allow only when X-Session-Token matches order.sessionToken
         if (!isAdmin) {
             if (order.userId === null) {
-                // Guest order - allow if requester is also guest (viewing by order ID, e.g. after checkout/payment)
-                if (userId != null && userId !== undefined) {
-                    const error = new Error('Access denied. Guest orders can only be viewed by administrators.');
+                // Guest order - allow only when sessionToken matches
+                if (sessionToken && order.sessionToken === sessionToken) {
+                    // Allowed: guest presenting correct session token
+                } else if (userId != null && userId !== undefined) {
+                    const error = new Error('Access denied. Guest orders can only be viewed with the correct session token.');
+                    error.statusCode = 403;
+                    throw error;
+                } else {
+                    const error = new Error('Access denied. Provide X-Session-Token to view this order.');
                     error.statusCode = 403;
                     throw error;
                 }
@@ -1607,13 +1640,14 @@ class OrderService {
             }
         });
 
-        // When status changes to DELIVERY_STARTED (e.g. from PAID/COMPLETED), send SMS to user
-        if (newStatus.toUpperCase() === STATUS_DELIVERY_STARTED && order.user && order.user.phoneNumber) {
+        // When status changes to DELIVERY_STARTED (e.g. from PAID/COMPLETED), send SMS to contact/user phone
+        const deliveryPhone = order.contactPhoneNumber || order.address?.phoneNumber || order.user?.phoneNumber;
+        if (newStatus.toUpperCase() === STATUS_DELIVERY_STARTED && deliveryPhone) {
             const message = `Таны #${order.id} дугаартай захиалга хүргэлтэд гарлаа.`;
             try {
-                const smsResult = await smsService.sendSMS(order.user.phoneNumber, message);
+                const smsResult = await smsService.sendSMS(deliveryPhone, message);
                 if (!smsResult.success) {
-                    console.error(`Failed to send delivery-started SMS to ${order.user.phoneNumber}:`, smsResult.error);
+                    console.error(`Failed to send delivery-started SMS to ${deliveryPhone}:`, smsResult.error);
                 }
             } catch (smsError) {
                 console.error('Error sending delivery-started SMS:', smsError.message);

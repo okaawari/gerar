@@ -121,12 +121,13 @@ class PaymentController {
         try {
             const userId = req.user?.id;
             const isAdmin = req.user?.role === 'ADMIN' || req.user?.role === 'SUPER_ADMIN';
+            const sessionToken = req.headers['x-session-token'] || undefined;
             
             // Mark this order as having a pending invoice request
             this.pendingInvoices.set(orderId, Date.now());
             
             // Get order with full details
-            const order = await orderService.getOrderById(id, userId, isAdmin);
+            const order = await orderService.getOrderById(id, userId, isAdmin, sessionToken);
             
             if (!order) {
                 this.pendingInvoices.delete(orderId);
@@ -349,64 +350,59 @@ class PaymentController {
                 throw error;
             }
 
-            // Prepare invoice data
-            // Include total amount in description
+            // Prepare invoice data (receiver + lines for ebarimt when we have items)
             const invoiceData = {
                 description: `GERAR.MN - Захиалга #${order.id}`,
-                receiverCode: 'terminal',
+                receiverCode: String(order.id),
                 branchCode: 'ONLINE',
                 staffCode: 'online',
                 allowPartial: false,
                 allowExceed: false
             };
 
-            // Add receiver data if available (from address or user)
-            if (order.address || order.user) {
-                invoiceData.receiverData = {
-                    name: order.address?.fullName || order.user?.name || 'Customer',
-                    phone: order.address?.phoneNumber || order.user?.phoneNumber || '',
-                    email: order.user?.email || null,
-                    register: null // Can be added if available
-                };
-            }
+            const receiverData = {
+                name: order.contactFullName || order.address?.fullName || order.user?.name || 'Customer',
+                phone: order.contactPhoneNumber || order.address?.phoneNumber || order.user?.phoneNumber || order.user?.phone || '',
+                email: order.contactEmail || order.user?.email || '',
+                register: order.address?.register || order.user?.register || ''
+            };
+            invoiceData.receiverData = receiverData;
 
-            // Create detailed invoice lines from order items
-            if (order.items && order.items.length > 0) {
-                invoiceData.lines = order.items.map((item, index) => {
-                    // Use the price stored in order item (snapshot at order creation time)
-                    // This ensures we charge the correct price even if product price changes later
+            const hasItems = order.items && order.items.length > 0;
+            if (hasItems) {
+                invoiceData.lines = order.items.map((item) => {
                     const itemPrice = parseFloat(item.price) || 0;
-                    const itemQuantity = parseInt(item.quantity) || 1;
+                    const itemQuantity = parseFloat(item.quantity) || 1;
                     const lineTotal = itemPrice * itemQuantity;
-                    
-                    // Safely access product data
+                    const vatAmount = Math.round((lineTotal / 11) * 10000) / 10000;
                     const productName = item.product?.name || `Product #${item.productId || 'Unknown'}`;
-                    const productDescription = item.product?.description || '-';
-                    
-                    // Include price in description for clarity
+                    const barcode = item.product?.barcode || '';
                     return {
-                        tax_product_code: '6401', // Default product code, can be customized
-                        line_description: `${productName} x${itemQuantity} - ${itemPrice.toFixed(2)} MNT`,
+                        tax_product_code: '',
+                        line_description: productName.substring(0, 255),
+                        barcode: barcode || '',
                         line_quantity: itemQuantity.toFixed(2),
                         line_unit_price: itemPrice.toFixed(2),
-                        note: productDescription,
-                        discounts: [],
-                        surcharges: [],
+                        note: (item.product?.description || '').substring(0, 100),
+                        classification_code: '0111100',
                         taxes: [
-                            {
-                                tax_code: 'VAT',
-                                description: 'НӨАТ',
-                                amount: 0, // Prices are VAT-inclusive; do not add 10% on top (QPAY would show 550₮ for 500₮)
-                                note: 'НӨАТ'
-                            }
+                            { tax_code: 'VAT', description: 'НӨАТ', amount: vatAmount, note: 'НӨАТ' }
                         ]
                     };
                 });
             }
 
-            // Create QPAY invoice
-            console.log(`Creating QPAY invoice for order ${orderId}...`);
-            const invoiceResponse = await qpayService.createInvoice(order, invoiceData);
+            let invoiceResponse;
+            const useEbarimtInvoice = hasItems && invoiceData.lines.length > 0;
+            if (useEbarimtInvoice) {
+                console.log(`Creating QPAY ebarimt invoice for order ${orderId}...`);
+                invoiceResponse = await qpayService.createEbarimtInvoice(order, invoiceData);
+            } else {
+                invoiceData.amount = parseFloat(order.totalAmount);
+                invoiceData.receiverCode = invoiceData.receiverCode || 'terminal';
+                console.log(`Creating QPAY invoice for order ${orderId}...`);
+                invoiceResponse = await qpayService.createInvoice(order, invoiceData);
+            }
 
             // Validate invoice response
             if (!invoiceResponse || !invoiceResponse.invoice_id) {
@@ -775,7 +771,7 @@ class PaymentController {
                     try {
                         ebarimtResponse = await ebarimtTestService.createEbarimtFromPayment(paymentId, {
                             ebarimtReceiverType: 'CITIZEN',
-                            ebarimtReceiver: order.user?.phone ?? '80650025'
+                            ebarimtReceiver: order.contactPhoneNumber ?? order.user?.phone ?? order.address?.phoneNumber ?? '80650025'
                         });
                         
                         if (ebarimtResponse.ebarimt_id) {
@@ -794,20 +790,21 @@ class PaymentController {
                         };
                     }
 
-                    // Always send payment confirmation email when we have user email (with or without ebarimt)
-                    if (order.user?.email) {
+                    // Always send payment confirmation email when we have contact/user email (with or without ebarimt)
+                    const receiptEmail = order.contactEmail || order.user?.email;
+                    if (receiptEmail) {
                         try {
                             const orderData = this._buildOrderDataForReceipt(order);
                             const ebarimtForEmail = ebarimtResponse
                                 ? { ...ebarimtResponse }
                                 : { ebarimt_id: null, receipt_url: null, ebarimt_error: ebarimtErrorInfo };
-                            await emailService.sendEbarimtReceipt(order.user.email, orderData, ebarimtForEmail);
-                            console.log('[QPAY] Payment confirmation email sent to', order.user.email);
+                            await emailService.sendEbarimtReceipt(receiptEmail, orderData, ebarimtForEmail);
+                            console.log('[QPAY] Payment confirmation email sent to', receiptEmail);
                         } catch (emailError) {
                             console.error('[QPAY] Payment confirmation email failed:', emailError.message);
                         }
                     } else {
-                        console.log('[QPAY] No user email – skipping payment confirmation email');
+                        console.log('[QPAY] No contact/user email – skipping payment confirmation email');
                     }
 
                     // Notify admins via Discord (fire-and-forget; must not block or break callback)
@@ -864,6 +861,7 @@ class PaymentController {
             const { id } = req.params;
             const userId = req.user?.id;
             const isAdmin = req.user?.role === 'ADMIN' || req.user?.role === 'SUPER_ADMIN';
+            const sessionToken = req.headers['x-session-token'] || undefined;
             
             // Clean expired cache entries periodically
             this._cleanExpiredCache();
@@ -883,7 +881,7 @@ class PaymentController {
             }
 
             // Get order from database
-            const order = await orderService.getOrderById(id, userId, isAdmin);
+            const order = await orderService.getOrderById(id, userId, isAdmin, sessionToken);
 
             if (!order) {
                 const error = new Error('Order not found');
@@ -1012,7 +1010,7 @@ class PaymentController {
                     try {
                         ebarimtResponse = await ebarimtTestService.createEbarimtFromPayment(paymentId, {
                             ebarimtReceiverType: 'CITIZEN',
-                            ebarimtReceiver: order.user?.phone ?? '80650025'
+                            ebarimtReceiver: order.contactPhoneNumber ?? order.user?.phone ?? order.address?.phoneNumber ?? '80650025'
                         });
                         if (ebarimtResponse.ebarimt_id) {
                             await prisma.order.update({
@@ -1028,15 +1026,16 @@ class PaymentController {
                         };
                     }
 
-                    // Always send payment confirmation email when we have user email (with or without ebarimt)
-                    if (order.user?.email) {
+                    // Always send payment confirmation email when we have contact/user email (with or without ebarimt)
+                    const receiptEmailPoll = order.contactEmail || order.user?.email;
+                    if (receiptEmailPoll) {
                         try {
                             const orderData = this._buildOrderDataForReceipt(order);
                             const ebarimtForEmail = ebarimtResponse
                                 ? { ...ebarimtResponse }
                                 : { ebarimt_id: null, receipt_url: null, ebarimt_error: ebarimtErrorInfo };
-                            await emailService.sendEbarimtReceipt(order.user.email, orderData, ebarimtForEmail);
-                            console.log('[QPAY] Payment confirmation email sent (poll) to', order.user.email);
+                            await emailService.sendEbarimtReceipt(receiptEmailPoll, orderData, ebarimtForEmail);
+                            console.log('[QPAY] Payment confirmation email sent (poll) to', receiptEmailPoll);
                         } catch (emailError) {
                             console.error('[QPAY] Payment confirmation email failed:', emailError.message);
                         }
@@ -1126,9 +1125,10 @@ class PaymentController {
             const { id } = req.params;
             const userId = req.user?.id;
             const isAdmin = req.user?.role === 'ADMIN' || req.user?.role === 'SUPER_ADMIN';
+            const sessionToken = req.headers['x-session-token'] || undefined;
 
             // Get order
-            const order = await orderService.getOrderById(id, userId, isAdmin);
+            const order = await orderService.getOrderById(id, userId, isAdmin, sessionToken);
 
             if (!order) {
                 const error = new Error('Order not found');

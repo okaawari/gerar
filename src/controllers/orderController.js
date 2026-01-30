@@ -1,18 +1,37 @@
 const orderService = require('../services/orderService');
 const draftOrderService = require('../services/draftOrderService');
 const addressService = require('../services/addressService');
+const { validateOrderContact, validateOrderDelivery } = require('../middleware/validation');
 
 class OrderController {
     /**
      * Create order from user's cart or guest cart
      * POST /api/orders
+     * Body: addressId | (address + sessionToken), fullName, phoneNumber, email, deliveryDate, deliveryTimeSlot
      */
     async createOrder(req, res, next) {
         try {
-            const { addressId, address, deliveryTimeSlot, deliveryDate, sessionToken } = req.body;
-            
+            const { addressId, address, deliveryTimeSlot, deliveryDate, sessionToken, fullName, phoneNumber, email } = req.body;
+
+            const contactValidation = validateOrderContact(req.body);
+            if (!contactValidation.isValid) {
+                const error = new Error(contactValidation.errors.join('; '));
+                error.statusCode = 400;
+                error.details = { errors: contactValidation.errors };
+                throw error;
+            }
+            const deliveryValidation = validateOrderDelivery(req.body);
+            if (!deliveryValidation.isValid) {
+                const error = new Error(deliveryValidation.errors.join('; '));
+                error.statusCode = 400;
+                error.details = { errors: deliveryValidation.errors };
+                throw error;
+            }
+
+            const contact = contactValidation.contact;
             let order;
             let isGuest = false;
+            let guestSessionToken = null;
 
             // Check if user is authenticated
             if (req.user && req.user.id) {
@@ -22,11 +41,11 @@ class OrderController {
                     error.statusCode = 400;
                     throw error;
                 }
-                order = await orderService.createOrderFromCart(req.user.id, null, addressId, null, deliveryTimeSlot, deliveryDate);
+                order = await orderService.createOrderFromCart(req.user.id, null, addressId, null, deliveryTimeSlot, deliveryDate, contact);
             } else {
                 // Guest user - use address object and sessionToken
-                const guestSessionToken = sessionToken || req.headers['x-session-token'];
-                
+                guestSessionToken = sessionToken || req.headers['x-session-token'];
+
                 if (!guestSessionToken) {
                     const error = new Error('Session token is required for guest checkout');
                     error.statusCode = 400;
@@ -39,16 +58,20 @@ class OrderController {
                     throw error;
                 }
 
-                order = await orderService.createOrderFromCart(null, guestSessionToken, null, address, deliveryTimeSlot, deliveryDate);
+                order = await orderService.createOrderFromCart(null, guestSessionToken, null, address, deliveryTimeSlot, deliveryDate, contact);
                 isGuest = true;
             }
 
-            res.status(201).json({
+            const response = {
                 success: true,
                 message: 'Захиалга амжилттай үүслээ',
                 data: order,
                 isGuest: isGuest
-            });
+            };
+            if (isGuest && order && guestSessionToken) {
+                response.sessionToken = guestSessionToken;
+            }
+            res.status(201).json(response);
         } catch (error) {
             next(error);
         }
@@ -63,8 +86,8 @@ class OrderController {
      */
     async buyNow(req, res, next) {
         try {
-            const { productId, quantity, sessionToken, addressId, deliveryTimeSlot, deliveryDate } = req.body;
-            
+            const { productId, quantity, sessionToken, addressId, deliveryTimeSlot, deliveryDate, fullName, phoneNumber, email } = req.body;
+
             // Validate required fields
             if (!productId || !quantity) {
                 const error = new Error('Product ID and quantity are required');
@@ -74,13 +97,28 @@ class OrderController {
 
             // If user is authenticated AND provided addressId → create direct order (1-step checkout)
             if (req.user && req.user.id && addressId) {
+                const contactValidation = validateOrderContact(req.body);
+                const deliveryValidation = validateOrderDelivery(req.body);
+                if (!contactValidation.isValid) {
+                    const error = new Error(contactValidation.errors.join('; '));
+                    error.statusCode = 400;
+                    error.details = { errors: contactValidation.errors };
+                    throw error;
+                }
+                if (!deliveryValidation.isValid) {
+                    const error = new Error(deliveryValidation.errors.join('; '));
+                    error.statusCode = 400;
+                    error.details = { errors: deliveryValidation.errors };
+                    throw error;
+                }
                 const order = await orderService.buyNow(
-                    req.user.id, 
-                    productId, 
-                    quantity, 
-                    addressId, 
+                    req.user.id,
+                    productId,
+                    quantity,
+                    addressId,
                     deliveryTimeSlot,
-                    deliveryDate
+                    deliveryDate,
+                    contactValidation.contact
                 );
                 
                 return res.status(201).json({
@@ -126,6 +164,21 @@ class OrderController {
                 throw error;
             }
 
+            const contactValidation = validateOrderContact(req.body);
+            if (!contactValidation.isValid) {
+                const error = new Error(contactValidation.errors.join('; '));
+                error.statusCode = 400;
+                error.details = { errors: contactValidation.errors };
+                throw error;
+            }
+            const deliveryValidation = validateOrderDelivery(req.body);
+            if (!deliveryValidation.isValid) {
+                const error = new Error(deliveryValidation.errors.join('; '));
+                error.statusCode = 400;
+                error.details = { errors: deliveryValidation.errors };
+                throw error;
+            }
+
             // Get draft order
             const draftOrder = await draftOrderService.getDraftOrder(sessionToken);
 
@@ -136,7 +189,8 @@ class OrderController {
                 addressId,
                 address,
                 deliveryTimeSlot,
-                deliveryDate
+                deliveryDate,
+                contactValidation.contact
             );
 
             // Delete draft order after successful conversion
@@ -251,19 +305,26 @@ class OrderController {
     /**
      * Get order by ID
      * GET /api/orders/:id
+     * Supports guests via X-Session-Token when the order belongs to that session.
      */
     async getOrderById(req, res, next) {
         try {
-            const userId = req.user.id;
-            const isAdmin = req.user.role === 'ADMIN' || req.user.role === 'SUPER_ADMIN';
+            const userId = req.user ? req.user.id : undefined;
+            const isAdmin = req.user && (req.user.role === 'ADMIN' || req.user.role === 'SUPER_ADMIN');
+            const sessionToken = req.headers['x-session-token'] || undefined;
             const { id } = req.params;
 
-            const order = await orderService.getOrderById(id, userId, isAdmin);
+            const order = await orderService.getOrderById(id, userId, isAdmin, sessionToken);
+
+            // Do not expose sessionToken in response
+            const data = order && typeof order === 'object' && order.sessionToken !== undefined
+                ? { ...order, sessionToken: undefined }
+                : order;
 
             res.status(200).json({
                 success: true,
                 message: 'Order retrieved successfully',
-                data: order
+                data
             });
         } catch (error) {
             next(error);

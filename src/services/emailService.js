@@ -277,41 +277,109 @@ ${this.fromName}
      * @returns {Promise<Object>} - { success: boolean, messageId?: string, error?: string }
      */
     async sendWelcomeEmail(to, name) {
-        const subject = 'Welcome to Our Ecommerce Platform';
-        const text = `
-Dear ${name},
+        const subject = 'Манай онлайн дэлгүүрт тавтай морилно уу';
 
-Welcome to our ecommerce platform!
+const text = `
+Сайн байна уу, ${name},
 
-Thank you for registering with us. We're excited to have you as a customer.
+Манай онлайн дэлгүүрт бүртгүүлсэнд баярлалаа 🎉
 
-If you have any questions, please don't hesitate to contact us.
+Таны мэйл хаяг амжилттай бүртгэгдлээ. Бид танд чанартай үйлчилгээ үзүүлэхэд бэлэн байна.
 
-Best regards,
+Хэрэв танд асуух зүйл байвал бидэнтэй хүссэн үедээ холбогдоорой.
+
+Хүндэтгэсэн,
 ${this.fromName}
-        `.trim();
+`.trim();
 
-        const html = `
+
+const html = `
 <!DOCTYPE html>
-<html>
+<html lang="mn">
 <head>
-    <meta charset="UTF-8">
-    <style>
-        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-    </style>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Тавтай морилно уу</title>
+<style>
+  body {
+    margin: 0;
+    background: #f4f6f8;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    color: #333;
+  }
+  .container {
+    max-width: 640px;
+    margin: 0 auto;
+    padding: 20px;
+  }
+  .card {
+    background: #ffffff;
+    border-radius: 12px;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.06);
+    overflow: hidden;
+  }
+  .header {
+    background: linear-gradient(135deg, #4CAF50, #66BB6A);
+    color: #fff;
+    text-align: center;
+    padding: 28px 20px;
+  }
+  .header h1 {
+    margin: 0;
+    font-size: 22px;
+  }
+  .content {
+    padding: 24px;
+    font-size: 15px;
+    line-height: 1.6;
+  }
+  .welcome-box {
+    background: #f1f8f4;
+    border-left: 4px solid #4CAF50;
+    padding: 16px;
+    border-radius: 6px;
+    margin: 16px 0;
+  }
+  .footer {
+    text-align: center;
+    font-size: 12px;
+    color: #777;
+    padding: 16px;
+    background: #fafafa;
+  }
+</style>
 </head>
 <body>
-    <div class="container">
-        <p>Dear ${name},</p>
-        <p>Welcome to our ecommerce platform!</p>
-        <p>Thank you for registering with us. We're excited to have you as a customer.</p>
-        <p>If you have any questions, please don't hesitate to contact us.</p>
-        <p>Best regards,<br>${this.fromName}</p>
+  <div class="container">
+    <div class="card">
+      <div class="header">
+        <h1>Тавтай морилно уу 🎉</h1>
+      </div>
+
+      <div class="content">
+        <p>Сайн байна уу, <strong>${name}</strong>,</p>
+
+        <div class="welcome-box">
+          <p>Манай онлайн дэлгүүрт амжилттай бүртгүүллээ.</p>
+          <p>Бид танд чанартай бүтээгдэхүүн, найдвартай үйлчилгээг санал болгоход бэлэн байна.</p>
+        </div>
+
+        <p>
+          Хэрэв танд асуух зүйл, санал хүсэлт байвал бидэнтэй хүссэн үедээ холбогдоорой.
+        </p>
+
+        <p>Танд таатай худалдан авалт хүсье 😊</p>
+      </div>
+
+      <div class="footer">
+        Хүндэтгэсэн,<br />
+        ${this.fromName}
+      </div>
     </div>
+  </div>
 </body>
 </html>
-        `.trim();
+`.trim();
 
         return this.sendEmail(to, subject, text, html);
     }
@@ -359,88 +427,175 @@ ${this.fromName}
         const receiptUrl = ebarimtData.receipt_url || ebarimtData.url || null;
         const rawResponseText = this._formatEbarimtResponseForEmail(ebarimtData);
 
-        const subject = `Payment Receipt (Ebarimt) - Order #${orderNumber}`;
+        const subject = `Төлбөрийн баримт (И-Баримт) – Захиалга #${orderNumber}`;
         const text = `
-Dear Customer,
+Сайн байна уу,
 
-Your payment has been confirmed. Please find your fiscal receipt (Ebarimt) details below.
+Таны төлбөр амжилттай баталгаажлаа. Доор таны И-Баримтын мэдээллийг хүргэж байна.
 
-Order Number: ${orderNumber}
-Total Amount: ${totalAmount} MNT
-${deliveryDate ? `Delivery Date: ${deliveryDate}` : ''}
-${deliveryAddress ? `Delivery Address: ${deliveryAddress}` : ''}
+Захиалгын дугаар: ${orderNumber}
+Нийт дүн: ${totalAmount}₮
+${deliveryDate ? `Хүргэлтийн огноо: ${deliveryDate}` : ''}
+${deliveryAddress ? `Хүргэлтийн хаяг: ${deliveryAddress}` : ''}
 
-Items:
-${items.map(item => `- ${item.name} x${item.quantity} - ${item.price} MNT`).join('\n')}
+Бараанууд:
+${items.map(item => `- ${item.name} x${item.quantity} — ${item.price}₮`).join('\n')}
 
-Ebarimt Receipt ID: ${ebarimtId || 'N/A'}
-${receiptUrl ? `View receipt: ${receiptUrl}` : ''}
+И-Баримтын дугаар: ${ebarimtId || 'Байхгүй'}
+${receiptUrl ? `Баримт харах: ${receiptUrl}` : ''}
 
---- Ebarimt API response (for debugging) ---
-${rawResponseText}
--------------------------------------------
 
-Please keep this receipt for your records.
+Энэхүү баримтыг цаашид хадгална уу.
 
-Best regards,
+
+Best Хүндэтгэсэн,
 ${this.fromName}
         `.trim();
 
         const html = `
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <style>
-        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-        .header { background-color: #2196F3; color: white; padding: 20px; text-align: center; }
-        .content { padding: 20px; background-color: #f9f9f9; }
-        .order-info { background-color: white; padding: 15px; margin: 15px 0; border-radius: 5px; }
-        .receipt-box { background-color: #E3F2FD; padding: 15px; margin: 15px 0; border-radius: 5px; border-left: 4px solid #2196F3; }
-        .footer { text-align: center; padding: 20px; color: #666; font-size: 12px; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>Payment Receipt (Ebarimt)</h1>
-        </div>
-        <div class="content">
-            <p>Dear Customer,</p>
-            <p>Your payment has been confirmed. Please find your fiscal receipt (Ebarimt) details below.</p>
-            
-            <div class="order-info">
-                <p><strong>Order Number:</strong> #${orderNumber}</p>
-                <p><strong>Total Amount:</strong> ${totalAmount} MNT</p>
-                ${deliveryDate ? `<p><strong>Delivery Date:</strong> ${deliveryDate}</p>` : ''}
-                ${deliveryAddress ? `<p><strong>Delivery Address:</strong> ${deliveryAddress}</p>` : ''}
+        <!DOCTYPE html>
+        <html lang="mn">
+        <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>И-Баримт</title>
+        <style>
+        body {
+            margin: 0;
+            background: #f4f6f8;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+            color: #333;
+        }
+        .container {
+            max-width: 640px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .card {
+            background: #ffffff;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 6px 18px rgba(0,0,0,0.06);
+        }
+        .header {
+            background: linear-gradient(135deg, #1976D2, #2196F3);
+            color: #fff;
+            padding: 24px;
+            text-align: center;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 22px;
+        }
+        .content {
+            padding: 24px;
+        }
+        .section {
+            margin-bottom: 20px;
+        }
+        .info-box {
+            background: #f8fafc;
+            border-radius: 8px;
+            padding: 16px;
+            font-size: 14px;
+        }
+        .info-box p {
+            margin: 6px 0;
+        }
+        ul {
+            padding-left: 18px;
+            margin: 8px 0;
+        }
+        li {
+            margin-bottom: 6px;
+            font-size: 14px;
+        }
+        .receipt {
+            background: #E3F2FD;
+            border-left: 4px solid #2196F3;
+            padding: 14px;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+        .receipt a {
+            color: #1565C0;
+            text-decoration: none;
+            font-weight: 500;
+        }
+        .receipt a:hover {
+            text-decoration: underline;
+        }
+        .footer {
+            text-align: center;
+            font-size: 12px;
+            color: #777;
+            padding: 16px;
+            background: #fafafa;
+        }
+        details {
+            margin-top: 14px;
+            font-size: 12px;
+            background: #f5f5f5;
+            padding: 10px;
+            border-radius: 6px;
+        }
+        pre {
+            white-space: pre-wrap;
+            word-break: break-all;
+            margin-top: 8px;
+        }
+        </style>
+        </head>
+        <body>
+        <div class="container">
+            <div class="card">
+            <div class="header">
+                <h1>Төлбөрийн баримт (И-Баримт)</h1>
             </div>
 
-            <h3>Items:</h3>
-            <ul>
-                ${items.map(item => `<li>${item.name} x${item.quantity} - ${item.price} MNT</li>`).join('')}
-            </ul>
+            <div class="content">
+                <div class="section">
+                <p>Сайн байна уу,</p>
+                <p>Таны төлбөр амжилттай баталгаажлаа. Доор таны И-Баримтын мэдээллийг хүргэж байна.</p>
+                </div>
 
-            <div class="receipt-box">
-                <p><strong>Ebarimt Receipt ID:</strong> ${ebarimtId || 'N/A'}</p>
-                ${receiptUrl ? `<p><a href="${receiptUrl}">View receipt</a></p>` : ''}
+                <div class="section info-box">
+                <p><strong>Захиалгын дугаар:</strong> #${orderNumber}</p>
+                <p><strong>Нийт дүн:</strong> ${totalAmount}₮</p>
+                ${deliveryDate ? `<p><strong>Хүргэлтийн огноо:</strong> ${deliveryDate}</p>` : ''}
+                ${deliveryAddress ? `<p><strong>Хүргэлтийн хаяг:</strong> ${deliveryAddress}</p>` : ''}
+                </div>
+
+                <div class="section">
+                <strong>Бараанууд:</strong>
+                <ul>
+                    ${items.map(item => `<li>${item.name} x${item.quantity} — ${item.price}₮</li>`).join('')}
+                </ul>
+                </div>
+
+                <div class="section receipt">
+                <p><strong>И-Баримтын дугаар:</strong> ${ebarimtId || 'Байхгүй'}</p>
+                ${receiptUrl ? `<p><a href="${receiptUrl}" target="_blank">Баримт харах</a></p>` : ''}
+                </div>
+
+                <details>
+                <summary><strong>И-Баримт API хариу (debug)</strong></summary>
+                <pre>${rawResponseText.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>
+                </details>
+
+                <p>Энэхүү баримтыг цаашид хадгална уу.</p>
             </div>
 
-            <details style="margin-top: 15px; padding: 10px; background: #f5f5f5; border-radius: 5px;">
-                <summary style="cursor: pointer;"><strong>Ebarimt API response (for debugging)</strong></summary>
-                <pre style="white-space: pre-wrap; word-break: break-all; font-size: 11px; margin: 10px 0 0;">${rawResponseText.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>
-            </details>
-
-            <p>Please keep this receipt for your records.</p>
+            <div class="footer">
+                Хүндэтгэсэн,<br />
+                ${this.fromName}
+            </div>
+            </div>
         </div>
-        <div class="footer">
-            <p>Best regards,<br>${this.fromName}</p>
-        </div>
-    </div>
-</body>
-</html>
+        </body>
+        </html>
         `.trim();
+
 
         return this.sendEmail(to, subject, text, html);
     }

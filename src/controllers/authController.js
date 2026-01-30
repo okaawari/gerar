@@ -1,4 +1,5 @@
 const authService = require('../services/authService');
+const userService = require('../services/userService');
 
 class AuthController {
     /**
@@ -89,6 +90,44 @@ class AuthController {
                     user: result.user,
                     token: result.token,
                 },
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    /**
+     * Get current user profile (authenticated)
+     * GET /api/auth/me
+     */
+    async getMe(req, res, next) {
+        try {
+            const user = await userService.getCurrentUser(req.user.id);
+
+            res.status(200).json({
+                success: true,
+                message: 'Profile retrieved successfully',
+                data: user,
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    /**
+     * Update current user profile (name and/or email)
+     * PATCH /api/auth/me
+     */
+    async updateProfile(req, res, next) {
+        try {
+            const { name, email } = req.body;
+
+            const user = await userService.updateProfile(req.user.id, { name, email });
+
+            res.status(200).json({
+                success: true,
+                message: 'Profile updated successfully',
+                data: user,
             });
         } catch (error) {
             next(error);

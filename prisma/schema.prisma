@@ -121,6 +121,10 @@ model order {
   deliveryDate     DateTime? // Expected delivery date
   totalAmount      Decimal   @db.Decimal(10, 2)
   status           String    @default("PENDING")
+  // Contact info from order create form (contact section)
+  contactFullName    String?  @db.VarChar(255)
+  contactPhoneNumber String?  @db.VarChar(8)
+  contactEmail       String?  @db.VarChar(255)
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
@@ -134,11 +138,15 @@ model order {
   paidAt        DateTime?
   ebarimtId     String?   @db.VarChar(255)
 
+  // Guest orders: session token to allow GET /orders/:id with X-Session-Token
+  sessionToken String?   @db.VarChar(255)
+
   user    user?       @relation(fields: [userId], references: [id])
   address address?    @relation(fields: [addressId], references: [id])
   items   orderitem[]
 
   @@index([userId])
+  @@index([sessionToken])
   @@index([status])
   @@index([addressId])
   @@index([deliveryTimeSlot])
