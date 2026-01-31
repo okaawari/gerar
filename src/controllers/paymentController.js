@@ -14,19 +14,19 @@ class PaymentController {
     constructor() {
         // In-memory lock to prevent concurrent payment initiation for the same order
         this.pendingInvoices = new Map();
-        
+
         // Cache for payment status checks to reduce QPAY API calls
         // Key: orderId, Value: { status, timestamp, qpayCheckedAt }
         // Cache expires after 30 seconds to allow fresh checks
         this.paymentStatusCache = new Map();
         this.cacheExpiryMs = 30000; // 30 seconds
-        
+
         // Rate limiting: Track last QPAY API check per invoice
         // Only check QPAY API once per 15 seconds per invoice (even if multiple users poll)
         this.qpayCheckRateLimit = new Map(); // Key: invoiceId, Value: timestamp
         this.qpayCheckIntervalMs = 15000; // 15 seconds minimum between QPAY API calls
     }
-    
+
     /**
      * Clear expired cache entries (call periodically or on each request)
      */
@@ -37,7 +37,7 @@ class PaymentController {
                 this.paymentStatusCache.delete(key);
             }
         }
-        
+
         // Clean rate limit map (keep only recent entries)
         for (const [key, timestamp] of this.qpayCheckRateLimit.entries()) {
             if (now - timestamp > this.qpayCheckIntervalMs * 2) {
@@ -45,7 +45,7 @@ class PaymentController {
             }
         }
     }
-    
+
     /**
      * Check if we should skip QPAY API call due to rate limiting
      * @param {string} invoiceId - QPAY invoice ID
@@ -53,14 +53,14 @@ class PaymentController {
      */
     _shouldSkipQpayCheck(invoiceId) {
         if (!invoiceId) return false;
-        
+
         const lastCheck = this.qpayCheckRateLimit.get(invoiceId);
         if (!lastCheck) return false;
-        
+
         const timeSinceLastCheck = Date.now() - lastCheck;
         return timeSinceLastCheck < this.qpayCheckIntervalMs;
     }
-    
+
     /**
      * Mark that we've checked QPAY API for this invoice
      * @param {string} invoiceId - QPAY invoice ID
@@ -107,7 +107,7 @@ class PaymentController {
     async initiatePayment(req, res, next) {
         const { id } = req.params;
         const orderId = String(id); // Order ID is now String format (YYMMDDNNN)
-        
+
         // Check if there's already a pending request for this order
         if (this.pendingInvoices.has(orderId)) {
             console.log(`Payment initiation already in progress for order ${orderId}`);
@@ -122,13 +122,13 @@ class PaymentController {
             const userId = req.user?.id;
             const isAdmin = req.user?.role === 'ADMIN' || req.user?.role === 'SUPER_ADMIN';
             const sessionToken = req.headers['x-session-token'] || undefined;
-            
+
             // Mark this order as having a pending invoice request
             this.pendingInvoices.set(orderId, Date.now());
-            
+
             // Get order with full details
             const order = await orderService.getOrderById(id, userId, isAdmin, sessionToken);
-            
+
             if (!order) {
                 this.pendingInvoices.delete(orderId);
                 const error = new Error('Order not found');
@@ -139,16 +139,16 @@ class PaymentController {
             // Check if order already has a payment invoice
             if (order.qpayInvoiceId) {
                 this.pendingInvoices.delete(orderId);
-                
+
                 // Use stored QR text if available, otherwise construct correct URL
                 // QPAY uses qpay.mn (not merchant.qpay.mn) for invoice URLs
                 const qrText = order.qpayQrText || `https://merchant.qpay.mn/v2/invoice/${order.qpayInvoiceId}`;
-                
+
                 // Prefer stored QPAY QR code image, otherwise generate from QR text
                 let qrCodeBase64 = order.qpayQrCode || null;
-                
+
                 console.log(`Retrieving QR code for invoice ${order.qpayInvoiceId}: ${qrCodeBase64 ? `Found in DB (${qrCodeBase64.length} bytes)` : 'NOT FOUND in DB'}`);
-                
+
                 // If we have stored QR code, ensure it has data URI prefix for frontend
                 if (qrCodeBase64) {
                     // Check if it already has data URI prefix
@@ -163,7 +163,7 @@ class PaymentController {
                     console.log(`No stored QR code found, generating from QR text for invoice ${order.qpayInvoiceId}`);
                     console.log(`QR text type: ${qrText.startsWith('0002') ? 'EMV Payment QR' : qrText.startsWith('http') ? 'URL' : 'Other'}`);
                     console.log(`QR text length: ${qrText.length}, preview: ${qrText.substring(0, 100)}...`);
-                    
+
                     try {
                         // EMV Payment QR codes need specific settings
                         // Payment apps are very strict about QR code format
@@ -187,10 +187,10 @@ class PaymentController {
                         // Continue without QR code - frontend can generate from qrText
                     }
                 }
-                
+
                 // Construct web URL from QR text
                 const invoiceUrl = qrText.startsWith('http') ? qrText : `https://qpay.mn/invoice/${order.qpayInvoiceId}`;
-                
+
                 // QPay returns urls as an array of bank-specific deeplinks
                 // If we don't have stored URLs, construct bank-specific deeplinks from QR text
                 let urls = null;
@@ -318,7 +318,7 @@ class PaymentController {
                         }
                     ];
                 }
-                
+
                 // Return existing invoice info with QR code
                 return res.status(200).json({
                     success: true,
@@ -370,19 +370,21 @@ class PaymentController {
 
             const hasItems = order.items && order.items.length > 0;
             if (hasItems) {
+                // QPay ebarimt: VAT from (qty × unit_price)/11, floor to 4 decimals.
+                // Note: QPay validates each line VAT individually. Do not force sum of VATs to match TotalAmount/11.
                 invoiceData.lines = order.items.map((item) => {
-                    const itemPrice = parseFloat(item.price) || 0;
-                    const itemQuantity = parseFloat(item.quantity) || 1;
-                    const lineTotal = itemPrice * itemQuantity;
-                    const vatAmount = Math.round((lineTotal / 11) * 10000) / 10000;
-                    const productName = item.product?.name || `Product #${item.productId || 'Unknown'}`;
-                    const barcode = item.product?.barcode || '';
+                    const price = Number(item.price) || 0;
+                    const qty = Number(item.quantity) || 1;
+                    const lineTotal = price * qty;
+                    // Calculate VAT for this line: floor(total/11 * 10000)/10000
+                    const vatAmount = Math.floor((lineTotal / 11) * 10000) / 10000;
+
                     return {
                         tax_product_code: '',
-                        line_description: productName.substring(0, 255),
-                        barcode: barcode || '',
-                        line_quantity: itemQuantity.toFixed(2),
-                        line_unit_price: itemPrice.toFixed(2),
+                        line_description: (item.product?.name || `Product #${item.productId || 'Unknown'}`).substring(0, 255),
+                        barcode: item.product?.barcode || '',
+                        line_quantity: Number(qty).toFixed(2),
+                        line_unit_price: Number(price).toFixed(2),
                         note: (item.product?.description || '').substring(0, 100),
                         classification_code: '0111100',
                         taxes: [
@@ -411,7 +413,7 @@ class PaymentController {
 
             // QPAY returns qr_image (not qr_code!) - this is the base64 QR code image
             const qrImage = invoiceResponse.qr_image || invoiceResponse.qr_code || null;
-            
+
             // Log full QPAY response for debugging
             console.log(`QPAY Invoice Response for order ${orderId} (sender_invoice_no: ${order.id}):`, {
                 invoice_id: invoiceResponse.invoice_id,
@@ -426,14 +428,14 @@ class PaymentController {
                 qr_text_preview: invoiceResponse.qr_text ? invoiceResponse.qr_text.substring(0, 100) : null,
                 response_keys: Object.keys(invoiceResponse)
             });
-            
+
             // Log QR text from QPAY response for debugging
             if (invoiceResponse.qr_text) {
                 console.log(`QPAY returned qr_text for invoice ${invoiceResponse.invoice_id}: ${invoiceResponse.qr_text.substring(0, 100)}...`);
             } else {
                 console.warn(`QPAY did not return qr_text for invoice ${invoiceResponse.invoice_id}`);
             }
-            
+
             // Log QR code availability - THIS IS CRITICAL
             if (qrImage) {
                 console.log(`✅ QPAY returned qr_image (base64 image) for invoice ${invoiceResponse.invoice_id}, length: ${qrImage.length} bytes`);
@@ -446,7 +448,7 @@ class PaymentController {
             // Store the raw base64 string (without data URI prefix) in database
             const qrCodeToStore = qrImage ? (qrImage.startsWith('data:image') ? qrImage.split(',')[1] : qrImage) : null;
             console.log(`Storing QR code in database: ${qrCodeToStore ? `Present (${qrCodeToStore.length} bytes, starts with: ${qrCodeToStore.substring(0, 20)}...)` : 'NULL'}`);
-            
+
             const updatedOrder = await prisma.order.update({
                 where: { id: orderId },
                 data: {
@@ -456,7 +458,7 @@ class PaymentController {
                     paymentStatus: 'PENDING'
                 }
             });
-            
+
             // Verify it was stored
             const verifyOrder = await prisma.order.findUnique({
                 where: { id: orderId },
@@ -477,12 +479,12 @@ class PaymentController {
                 // IMPORTANT: Use QPAY's QR image exactly as provided - don't modify it
                 // Payment apps are very strict about QR code format
                 const cleanBase64 = qrImage.trim().replace(/\s/g, '').replace(/\n/g, '').replace(/\r/g, '');
-                
+
                 // Verify it's valid base64 before proceeding
                 try {
                     const buffer = Buffer.from(cleanBase64, 'base64');
                     console.log(`✅ QR code base64 is valid (decoded to ${buffer.length} bytes PNG)`);
-                    
+
                     // Verify it's a PNG image (PNG files start with specific bytes)
                     if (buffer.length > 8) {
                         const pngSignature = buffer.slice(0, 8);
@@ -496,7 +498,7 @@ class PaymentController {
                 } catch (e) {
                     console.error(`❌ QR code base64 is INVALID:`, e.message);
                 }
-                
+
                 // Check if it already has data URI prefix
                 if (cleanBase64.startsWith('data:image')) {
                     qrCodeToReturn = cleanBase64;
@@ -505,7 +507,7 @@ class PaymentController {
                     qrCodeToReturn = `data:image/png;base64,${cleanBase64}`;
                 }
             }
-            
+
             if (!qrCodeToReturn) {
                 console.warn(`WARNING: QPAY did not return qr_image for invoice ${invoiceResponse.invoice_id}. Payment apps may not be able to scan regenerated QR codes.`);
                 console.warn(`Order ID: ${orderId}`);
@@ -517,10 +519,10 @@ class PaymentController {
             // QPay returns urls as an array of bank-specific deeplinks
             // Each entry has: name, description, logo, link (deeplink)
             let urls = null;
-            const webUrl = invoiceResponse.qr_text && invoiceResponse.qr_text.startsWith('http') 
-                ? invoiceResponse.qr_text 
+            const webUrl = invoiceResponse.qr_text && invoiceResponse.qr_text.startsWith('http')
+                ? invoiceResponse.qr_text
                 : `https://qpay.mn/invoice/${invoiceResponse.invoice_id}`;
-            
+
             if (invoiceResponse.urls && Array.isArray(invoiceResponse.urls) && invoiceResponse.urls.length > 0) {
                 // Use QPay's provided URLs array (bank-specific deeplinks)
                 urls = invoiceResponse.urls;
@@ -655,7 +657,7 @@ class PaymentController {
         } catch (error) {
             // Remove from pending map on error
             this.pendingInvoices.delete(orderId);
-            
+
             // Log error details for debugging
             console.error(`Payment initiation failed for order ${orderId}:`, {
                 message: error.message,
@@ -664,11 +666,11 @@ class PaymentController {
                 name: error.name,
                 code: error.code
             });
-            
+
             // Return proper error response
             const statusCode = error.statusCode || 500;
             const errorMessage = error.message || 'Failed to initiate payment';
-            
+
             // If it's a QPAY API error, provide more details
             if (error.message.includes('QPAY') || error.message.includes('qpay') || error.message.includes('QPAY')) {
                 return res.status(statusCode).json({
@@ -678,15 +680,15 @@ class PaymentController {
                     details: process.env.NODE_ENV === 'development' ? error.stack : undefined
                 });
             }
-            
+
             // For other errors, return proper JSON response instead of using next()
             return res.status(statusCode).json({
                 success: false,
                 message: errorMessage,
                 error: error.name || 'INTERNAL_ERROR',
-                ...(process.env.NODE_ENV === 'development' && { 
+                ...(process.env.NODE_ENV === 'development' && {
                     details: error.stack,
-                    code: error.code 
+                    code: error.code
                 })
             });
         }
@@ -752,7 +754,7 @@ class PaymentController {
                 if (successfulPayment) {
                     // Payment confirmed - update order (support snake_case and camelCase from QPAY)
                     const paymentId = successfulPayment.payment_id ?? successfulPayment.paymentId ?? successfulPayment.id;
-                    
+
                     // Update order status to PAID
                     const updatedOrder = await prisma.order.update({
                         where: { id: String(id) },
@@ -773,7 +775,7 @@ class PaymentController {
                             ebarimtReceiverType: 'CITIZEN',
                             ebarimtReceiver: order.contactPhoneNumber ?? order.user?.phone ?? order.address?.phoneNumber ?? '80650025'
                         });
-                        
+
                         if (ebarimtResponse.ebarimt_id) {
                             await prisma.order.update({
                                 where: { id: String(id) },
@@ -832,7 +834,7 @@ class PaymentController {
                 }
             } catch (checkError) {
                 console.error('[QPAY] Callback – payment check failed:', checkError.message);
-                
+
                 return res.status(200).json({
                     success: true,
                     message: 'Callback received, verification pending'
@@ -862,7 +864,7 @@ class PaymentController {
             const userId = req.user?.id;
             const isAdmin = req.user?.role === 'ADMIN' || req.user?.role === 'SUPER_ADMIN';
             const sessionToken = req.headers['x-session-token'] || undefined;
-            
+
             // Clean expired cache entries periodically
             this._cleanExpiredCache();
 
@@ -898,14 +900,14 @@ class PaymentController {
                     message: 'Payment not yet initiated',
                     shouldStopPolling: false
                 };
-                
+
                 // Cache the response
                 this.paymentStatusCache.set(id, {
                     status: order.paymentStatus || 'PENDING',
                     timestamp: Date.now(),
                     data: responseData
                 });
-                
+
                 return res.status(200).json({
                     success: true,
                     data: responseData
@@ -925,14 +927,14 @@ class PaymentController {
                     shouldStopPolling: true, // Signal frontend to stop polling
                     message: 'Payment confirmed'
                 };
-                
+
                 // Cache paid status (longer cache for paid orders)
                 this.paymentStatusCache.set(id, {
                     status: 'PAID',
                     timestamp: Date.now(),
                     data: responseData
                 });
-                
+
                 return res.status(200).json({
                     success: true,
                     data: responseData
@@ -942,7 +944,7 @@ class PaymentController {
             // Rate limiting: Check if we've checked QPAY API recently for this invoice
             // This prevents hammering QPAY API when multiple users poll the same invoice
             const shouldSkipQpayCheck = this._shouldSkipQpayCheck(order.qpayInvoiceId);
-            
+
             if (shouldSkipQpayCheck) {
                 // Return database status without calling QPAY API
                 // This is safe because:
@@ -960,14 +962,14 @@ class PaymentController {
                     message: 'Payment pending (rate limited - using cached status)',
                     rateLimited: true // Indicate this response is rate-limited
                 };
-                
+
                 // Cache the response
                 this.paymentStatusCache.set(id, {
                     status: order.paymentStatus,
                     timestamp: Date.now(),
                     data: responseData
                 });
-                
+
                 return res.status(200).json({
                     success: true,
                     data: responseData
@@ -979,7 +981,7 @@ class PaymentController {
             try {
                 // Mark that we're checking QPAY now (before the async call)
                 this._markQpayCheck(order.qpayInvoiceId);
-                
+
                 const paymentCheck = await qpayService.checkPayment(order.qpayInvoiceId);
 
                 const paymentsListGps = Array.isArray(paymentCheck.rows) ? paymentCheck.rows : (Array.isArray(paymentCheck.data) ? paymentCheck.data : []);
@@ -1003,7 +1005,7 @@ class PaymentController {
                             paymentMethod: latestPayment.payment_type ?? latestPayment.paymentType ?? 'QPAY'
                         }
                     });
-                    
+
                     // Try to generate Ebarimt (test: ebarimt_v3/create with payment_id, ebarimt_receiver_type, ebarimt_receiver)
                     let ebarimtResponse = null;
                     let ebarimtErrorInfo = null;
@@ -1047,7 +1049,7 @@ class PaymentController {
                         paymentMethod: latestPayment.payment_type ?? latestPayment.paymentType ?? 'QPAY',
                         paidAt: latestPayment.paid_date || latestPayment.created_date || new Date()
                     }).catch(err => console.error('Discord payment notification failed:', err.message));
-                    
+
                     // Clear cache so subsequent requests get fresh paid status
                     this.paymentStatusCache.delete(String(id));
                 }
@@ -1069,7 +1071,7 @@ class PaymentController {
                     shouldStopPolling: isPaid, // Signal frontend to stop polling if paid
                     message: isPaid ? 'Payment confirmed' : 'Payment pending'
                 };
-                
+
                 // Cache the response (especially important for paid status)
                 this.paymentStatusCache.set(id, {
                     status: isPaid ? 'PAID' : order.paymentStatus,
@@ -1077,7 +1079,7 @@ class PaymentController {
                     qpayCheckedAt: Date.now(),
                     data: responseData
                 });
-                
+
                 return res.status(200).json({
                     success: true,
                     data: responseData
@@ -1086,7 +1088,7 @@ class PaymentController {
                 // Return order status even if QPAY check fails
                 // Don't fail the request, just use stored status
                 console.error('QPAY payment check failed:', checkError.message);
-                
+
                 const responseData = {
                     orderId: order.id,
                     paymentStatus: order.paymentStatus,
@@ -1098,14 +1100,14 @@ class PaymentController {
                     shouldStopPolling: order.paymentStatus === 'PAID',
                     message: 'Unable to verify with QPAY, using stored status'
                 };
-                
+
                 // Cache the error response too (short cache to allow retry)
                 this.paymentStatusCache.set(id, {
                     status: order.paymentStatus,
                     timestamp: Date.now(),
                     data: responseData
                 });
-                
+
                 return res.status(200).json({
                     success: true,
                     data: responseData

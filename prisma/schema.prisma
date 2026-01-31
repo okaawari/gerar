@@ -97,7 +97,7 @@ model product {
 model cartitem {
   id           Int      @id @default(autoincrement())
   userId       Int? // Nullable for guest carts
-  sessionToken String?  @unique // Session token for guest carts
+  sessionToken String? // Session token for guest carts (multiple items per session via @@unique([sessionToken, productId]))
   productId    Int
   quantity     Int
   createdAt    DateTime @default(now())
