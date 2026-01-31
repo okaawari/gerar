@@ -793,7 +793,7 @@ class PaymentController {
                     }
 
                     // Always send payment confirmation email when we have contact/user email (with or without ebarimt)
-                    const receiptEmail = order.contactEmail || order.user?.email;
+                    const receiptEmail = (order.contactEmail || order.user?.email || '').trim() || null;
                     if (receiptEmail) {
                         try {
                             const orderData = this._buildOrderDataForReceipt(order);
@@ -803,10 +803,10 @@ class PaymentController {
                             await emailService.sendEbarimtReceipt(receiptEmail, orderData, ebarimtForEmail);
                             console.log('[QPAY] Payment confirmation email sent to', receiptEmail);
                         } catch (emailError) {
-                            console.error('[QPAY] Payment confirmation email failed:', emailError.message);
+                            console.error('[QPAY] Payment confirmation email failed:', emailError.message, emailError.stack);
                         }
                     } else {
-                        console.log('[QPAY] No contact/user email – skipping payment confirmation email');
+                        console.warn('[QPAY] No contact/user email for order', id, '– skipping payment confirmation email');
                     }
 
                     // Notify admins via Discord (fire-and-forget; must not block or break callback)
@@ -1029,7 +1029,7 @@ class PaymentController {
                     }
 
                     // Always send payment confirmation email when we have contact/user email (with or without ebarimt)
-                    const receiptEmailPoll = order.contactEmail || order.user?.email;
+                    const receiptEmailPoll = (order.contactEmail || order.user?.email || '').trim() || null;
                     if (receiptEmailPoll) {
                         try {
                             const orderData = this._buildOrderDataForReceipt(order);
@@ -1039,8 +1039,10 @@ class PaymentController {
                             await emailService.sendEbarimtReceipt(receiptEmailPoll, orderData, ebarimtForEmail);
                             console.log('[QPAY] Payment confirmation email sent (poll) to', receiptEmailPoll);
                         } catch (emailError) {
-                            console.error('[QPAY] Payment confirmation email failed:', emailError.message);
+                            console.error('[QPAY] Payment confirmation email failed (poll):', emailError.message, emailError.stack);
                         }
+                    } else {
+                        console.warn('[QPAY] No contact/user email for order', id, '(poll) – skipping payment confirmation email');
                     }
 
                     // Notify admins via Discord (fire-and-forget; must not block or break flow)

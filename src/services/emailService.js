@@ -87,11 +87,7 @@ class EmailService {
             }
 
             if (!this.transporter) {
-                return {
-                    success: false,
-                    error: 'EMAIL_NOT_CONFIGURED',
-                    message: 'Email service is not configured. Please set SMTP_USER and SMTP_PASSWORD environment variables.'
-                };
+                throw new Error('Email service is not configured. Please set SMTP_USER and SMTP_PASSWORD environment variables.');
             }
 
             // Prepare email options
@@ -114,32 +110,17 @@ class EmailService {
             };
 
         } catch (error) {
-            // Handle different error scenarios
+            // Re-throw so callers (e.g. payment confirmation) can log and handle
             if (error.code === 'EAUTH') {
-                return {
-                    success: false,
-                    error: 'AUTHENTICATION_FAILED',
-                    message: 'SMTP authentication failed. Please check your credentials.'
-                };
-            } else if (error.code === 'ECONNECTION') {
-                return {
-                    success: false,
-                    error: 'CONNECTION_FAILED',
-                    message: 'Failed to connect to SMTP server. Please check your network and SMTP settings.'
-                };
-            } else if (error.code === 'ETIMEDOUT') {
-                return {
-                    success: false,
-                    error: 'TIMEOUT',
-                    message: 'SMTP connection timeout. Please try again.'
-                };
+                throw new Error('SMTP authentication failed. Please check SMTP_USER and SMTP_PASSWORD.');
             }
-
-            return {
-                success: false,
-                error: error.code || 'UNKNOWN_ERROR',
-                message: error.message || 'Failed to send email'
-            };
+            if (error.code === 'ECONNECTION') {
+                throw new Error('Failed to connect to SMTP server. Check network and SMTP settings.');
+            }
+            if (error.code === 'ETIMEDOUT') {
+                throw new Error('SMTP connection timeout. Please try again.');
+            }
+            throw new Error(error.message || 'Failed to send email');
         }
     }
 
