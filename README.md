@@ -1344,6 +1344,16 @@ try {
 
 ---
 
+## Deployment (Linux / sharp)
+
+The app uses **sharp** for image resizing. Sharp uses native binaries that depend on the OS and Node version.
+
+- **On the server (Linux)**: Run `npm install` or `npm ci` **on the server** (or in a Linux build step) so sharp installs the correct Linux binaries. Do not deploy a `node_modules` folder that was installed on Windows.
+- If the app was already deployed with wrong binaries: on the server run `npm rebuild sharp`, then restart the app.
+- If sharp still fails (e.g. missing system libs), the API will start anyway; image upload endpoints will return `503` with a message to fix sharp on the server.
+
+---
+
 ## Support
 
 For questions or issues, please contact the backend development team or refer to the source code.

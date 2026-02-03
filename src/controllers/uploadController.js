@@ -1,7 +1,20 @@
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
-const sharp = require('sharp');
+
+// Lazy-load sharp so app can start even if native binary fails (e.g. wrong platform).
+// On Linux server, run: npm install (or npm rebuild sharp) on the server so correct binaries are installed.
+let sharp;
+function getSharp() {
+    if (sharp !== undefined) return sharp;
+    try {
+        sharp = require('sharp');
+        return sharp;
+    } catch (err) {
+        sharp = null;
+        return null;
+    }
+}
 
 // Ensure uploads directory exists
 const uploadsDir = path.join(__dirname, '../../public/uploads');
@@ -47,11 +60,19 @@ const upload = multer({
  */
 const processImageToWebp = async (req, res, next) => {
     try {
+        const sharpLib = getSharp();
+        if (!sharpLib) {
+            const err = new Error(
+                'Image processing unavailable. On the server, run: npm install or npm rebuild sharp (install on the target platform, not on Windows).'
+            );
+            err.statusCode = 503;
+            return next(err);
+        }
         const processOne = async (file) => {
             if (!file.buffer) return;
             const filename = generateProductImageFilename();
             const filePath = path.join(uploadsDir, filename);
-            await sharp(file.buffer)
+            await sharpLib(file.buffer)
                 .resize(PRODUCT_IMAGE_MAX_DIMENSION, PRODUCT_IMAGE_MAX_DIMENSION, {
                     fit: 'inside',
                     withoutEnlargement: true
