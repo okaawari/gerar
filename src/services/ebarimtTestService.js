@@ -7,6 +7,8 @@
  */
 
 const axios = require('axios');
+const fs = require('fs');
+const path = require('path');
 const qpayService = require('./qpayService');
 
 const EBARIMT_V3_CREATE_URL = 'https://merchant.qpay.mn/v2/ebarimt_v3/create';
@@ -31,9 +33,37 @@ async function createEbarimtFromPayment(paymentId, options = {}) {
         ebarimt_receiver: ebarimtReceiver
     };
 
+    const BUFFER_MS = 60000; // Reuse order token if it expires in more than 1 minute
+    const usePreferredToken = options.preferredToken
+        && options.tokenExpiresAt
+        && new Date(options.tokenExpiresAt).getTime() > Date.now() + BUFFER_MS;
     let raw = {};
     try {
-        const token = await qpayService.getAccessToken();
+        const token = usePreferredToken
+            ? options.preferredToken
+            : await qpayService.getAccessToken();
+        if (usePreferredToken) {
+            console.log('[QPAY] Using same token as invoice create for ebarimt-from-invoice');
+        }
+        const requestToSave = {
+            _comment: 'Exact request sent when taking ebarimt from paid invoice (ebarimt_v3/create). Saved on each create.',
+            savedAt: new Date().toISOString(),
+            paymentId: String(paymentId),
+            method: 'POST',
+            url: EBARIMT_V3_CREATE_URL,
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body
+        };
+        const outPath = path.join(__dirname, '..', '..', 'ebarimt_from_invoice_request_sent.json');
+        try {
+            fs.writeFileSync(outPath, JSON.stringify(requestToSave, null, 2), 'utf8');
+            console.log('[QPAY] Ebarimt-from-invoice request saved to', outPath);
+        } catch (writeErr) {
+            console.warn('[QPAY] Could not save ebarimt-from-invoice request to file:', writeErr.message);
+        }
         const response = await axios.post(EBARIMT_V3_CREATE_URL, body, {
             headers: {
                 'Authorization': `Bearer ${token}`,

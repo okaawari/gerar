@@ -1,0 +1,9 @@
+{
+  "watch": ["src"],
+  "ignore": [
+    "ebarimt_invoice_request_sent.json",
+    "ebarimt_from_invoice_request_sent.json",
+    "ebarimt_request_example.json"
+  ],
+  "ext": "js,json"
+}

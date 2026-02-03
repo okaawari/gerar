@@ -379,6 +379,7 @@ class OrderService {
             });
         }
 
+        await this.recordOrderActivity(order.id, { type: 'ORDER_CREATED', title: 'Order placed', toValue: 'PENDING' });
         return orderWithDetails;
     }
 
@@ -582,6 +583,7 @@ class OrderService {
             });
         }
 
+        await this.recordOrderActivity(order.id, { type: 'ORDER_CREATED', title: 'Order placed', toValue: 'PENDING' });
         return orderWithDetails;
     }
 
@@ -784,6 +786,7 @@ class OrderService {
             });
         }
 
+        await this.recordOrderActivity(order.id, { type: 'ORDER_CREATED', title: 'Order placed', toValue: 'PENDING' });
         return orderWithDetails;
     }
 
@@ -1393,18 +1396,23 @@ class OrderService {
             }
         });
 
-        // Send SMS to user with cancellation code using OTP service
+        let smsSent = false;
         try {
             const smsService = require('./smsService');
             const smsResult = await smsService.sendOTP(order.user.phoneNumber, cancellationCode, 'ORDER_CANCELLATION');
-            
+            smsSent = smsResult.success;
             if (!smsResult.success) {
-                // If SMS fails, we still created the OTP record
-                // Log error but don't fail the request
                 console.error(`Failed to send cancellation SMS to ${order.user.phoneNumber}:`, smsResult.error);
+            } else {
+                await this.recordOrderActivity(order.id, {
+                    type: 'MESSAGE_SENT',
+                    title: 'Cancellation code sent to user',
+                    description: '4-digit code sent via SMS',
+                    channel: 'sms',
+                    toValue: order.user.phoneNumber
+                });
             }
         } catch (smsError) {
-            // Log SMS error but don't fail the request
             console.error(`Error sending cancellation SMS:`, smsError.message);
         }
 
@@ -1415,7 +1423,7 @@ class OrderService {
             userPhone: order.user.phoneNumber,
             expiresAt: expiresAt.toISOString(),
             expiresInMinutes: 10,
-            smsSent: smsResult.success
+            smsSent
         };
     }
 
@@ -1423,9 +1431,10 @@ class OrderService {
      * Confirm order cancellation with 4-digit code (admin only)
      * @param {string} orderId - Order ID
      * @param {string} code - 4-digit cancellation code
+     * @param {number|null} performedBy - Admin user ID who confirmed (for timeline)
      * @returns {Promise<Object>} - Cancelled order info
      */
-    async confirmCancellation(orderId, code) {
+    async confirmCancellation(orderId, code, performedBy = null) {
         const order = await prisma.order.findUnique({
             where: { id: String(orderId) },
             include: {
@@ -1540,6 +1549,15 @@ class OrderService {
             return updatedOrder;
         });
 
+        await this.recordOrderActivity(order.id, {
+            type: 'STATUS_CHANGED',
+            title: 'Order cancelled',
+            fromValue: order.status,
+            toValue: STATUS_CANCELLED_BY_ADMIN,
+            description: 'User confirmed cancellation with code',
+            performedBy: performedBy != null && performedBy !== '' ? parseInt(performedBy) : null
+        });
+
         return {
             success: true,
             message: 'Order cancelled successfully',
@@ -1551,9 +1569,10 @@ class OrderService {
      * Update order status (admin only)
      * @param {string} orderId - Order ID
      * @param {string} status - New order status
+     * @param {number|null} performedBy - Admin user ID who changed status (for timeline)
      * @returns {Promise<Object>} Updated order
      */
-    async updateOrderStatus(orderId, status) {
+    async updateOrderStatus(orderId, status, performedBy = null) {
         const order = await prisma.order.findUnique({
             where: { id: String(orderId) },
             include: {
@@ -1602,6 +1621,15 @@ class OrderService {
             throw error;
         }
 
+        // Record status change for timeline (before update so we have old status)
+        await this.recordOrderActivity(orderId, {
+            type: 'STATUS_CHANGED',
+            title: 'Status updated',
+            fromValue: order.status,
+            toValue: newStatus,
+            performedBy: performedBy != null && performedBy !== '' ? parseInt(performedBy) : null
+        });
+
         // Update order status
         const updatedOrder = await prisma.order.update({
             where: { id: String(orderId) },
@@ -1648,6 +1676,15 @@ class OrderService {
                 const smsResult = await smsService.sendSMS(deliveryPhone, message);
                 if (!smsResult.success) {
                     console.error(`Failed to send delivery-started SMS to ${deliveryPhone}:`, smsResult.error);
+                } else {
+                    await this.recordOrderActivity(orderId, {
+                        type: 'MESSAGE_SENT',
+                        title: 'Delivery started SMS sent',
+                        description: 'User notified that delivery has started',
+                        channel: 'sms',
+                        toValue: deliveryPhone,
+                        performedBy: performedBy != null && performedBy !== '' ? parseInt(performedBy) : null
+                    });
                 }
             } catch (smsError) {
                 console.error('Error sending delivery-started SMS:', smsError.message);
@@ -1673,6 +1710,108 @@ class OrderService {
         }
 
         return updatedOrder;
+    }
+
+    /**
+     * Record an order activity for the timeline (status changes, messages sent, etc.)
+     * @param {string} orderId - Order ID
+     * @param {Object} data - { type, title?, description?, fromValue?, toValue?, channel?, performedBy? }
+     * @returns {Promise<Object>} Created activity
+     */
+    async recordOrderActivity(orderId, data = {}) {
+        const { type, title, description, fromValue, toValue, channel, performedBy } = data;
+        if (!type || typeof type !== 'string') return null;
+        try {
+            return await prisma.orderactivity.create({
+                data: {
+                    orderId: String(orderId),
+                    type: type.trim(),
+                    ...(title != null && { title: String(title).slice(0, 255) }),
+                    ...(description != null && { description: String(description) }),
+                    ...(fromValue != null && { fromValue: String(fromValue).slice(0, 100) }),
+                    ...(toValue != null && { toValue: String(toValue).slice(0, 100) }),
+                    ...(channel != null && { channel: String(channel).slice(0, 20) }),
+                    ...(performedBy != null && performedBy !== '' && { performedBy: parseInt(performedBy) })
+                }
+            });
+        } catch (err) {
+            console.error('[OrderService] recordOrderActivity failed:', err.message);
+            return null;
+        }
+    }
+
+    /**
+     * Get order timeline (activities) for admin dashboard
+     * @param {string} orderId - Order ID
+     * @returns {Promise<Array>} Activities sorted by createdAt desc, with optional synthetic "Order created" event
+     */
+    async getOrderTimeline(orderId) {
+        const order = await prisma.order.findUnique({
+            where: { id: String(orderId) },
+            select: { id: true, createdAt: true, status: true, paymentStatus: true, paidAt: true }
+        });
+        if (!order) {
+            const error = new Error('Order not found');
+            error.statusCode = 404;
+            throw error;
+        }
+
+        const activities = await prisma.orderactivity.findMany({
+            where: { orderId: String(orderId) },
+            include: {
+                performer: {
+                    select: { id: true, name: true }
+                }
+            },
+            orderBy: { createdAt: 'asc' }
+        });
+
+        // Prepend synthetic "Order created" so timeline always has a start
+        const syntheticCreated = {
+            id: 0,
+            orderId: order.id,
+            type: 'ORDER_CREATED',
+            title: 'Order placed',
+            description: null,
+            fromValue: null,
+            toValue: 'PENDING',
+            channel: null,
+            performedBy: null,
+            createdAt: order.createdAt,
+            performer: null,
+            _synthetic: true
+        };
+
+        const list = [syntheticCreated, ...activities.map(a => ({
+            ...a,
+            createdAt: a.createdAt,
+            performer: a.performer ? { id: a.performer.id, name: a.performer.name } : null
+        }))];
+
+        // Sort by createdAt asc for timeline display (oldest first)
+        list.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+        return list;
+    }
+
+    /**
+     * Get ebarimt (receipt) info for an order – for admin print.
+     * @param {string} orderId - Order ID
+     * @returns {Promise<{ ebarimtId: string|null, receiptUrl: string|null }>}
+     */
+    async getOrderEbarimtForPrint(orderId) {
+        const order = await prisma.order.findUnique({
+            where: { id: String(orderId) },
+            select: { ebarimtId: true, ebarimtReceiptUrl: true }
+        });
+        if (!order) {
+            const error = new Error('Order not found');
+            error.statusCode = 404;
+            throw error;
+        }
+        return {
+            ebarimtId: order.ebarimtId ?? null,
+            receiptUrl: order.ebarimtReceiptUrl ?? null
+        };
     }
 }
 

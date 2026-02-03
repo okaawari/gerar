@@ -1041,19 +1041,26 @@ Replace all districts and their khoroo counts.
 
 All order management endpoints are under `/api/admin/orders`.
 
-### Get All Orders (with Advanced Search)
+### Get All Orders (Two Modes)
 
-Retrieve all orders from all users with full details. When no query parameters are provided, returns all orders. When any query parameter is provided, performs filtered search with pagination.
+Retrieve orders from all users with full details. **Behavior depends on whether any query parameters are sent:**
+
+| Mode | When | Response |
+|------|------|----------|
+| **All orders (no pagination)** | No query parameters at all | Returns every order; `data` is the full array; no `pagination` in response. |
+| **Search with pagination** | Any query parameter is present (e.g. `page`, `limit`, or any filter) | Returns only orders matching the filters; response includes `pagination` (`total`, `page`, `limit`, `totalPages`). |
+
+**Recommendation:** For admin dashboards, always send at least `page` and `limit` so you get paginated results and avoid loading the entire list when order count is large.
 
 **Endpoint:** `GET /api/admin/orders/all`
 
 **Authentication:** Required (Admin only)
 
-**Query Parameters (all optional):**
+**Query Parameters (all optional; if any is present, search + pagination mode is used):**
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `orderId` | string | Order ID or partial match (e.g. `260126` for orders from that date) |
+| `orderId` | string | Order ID or partial match. Order IDs are strings in format `YYMMDDNNN` (e.g. `260126001`); `orderId=260126` matches IDs containing that substring. |
 | `status` | string | Order status (exact): e.g. `PENDING`, `PAID`, `COMPLETED`, `CANCELLED`, `CANCELLED_BY_ADMIN` |
 | `paymentStatus` | string | Payment status (exact): e.g. `PENDING`, `PAID`, `CANCELLED` |
 | `dateFrom` | string (ISO date) | Orders created on or after this date |
@@ -1065,87 +1072,26 @@ Retrieve all orders from all users with full details. When no query parameters a
 | `totalMin` | number | Minimum order total amount |
 | `totalMax` | number | Maximum order total amount |
 | `deliveryTimeSlot` | string | Exact slot: `10-14`, `14-18`, `18-21`, `21-00` |
-| `page` | number | Page number (default: 1). Used when any filter is present. |
-| `limit` | number | Items per page (default: 50, max: 100). Used when any filter is present. |
+| `page` | number | Page number (default: 1). Used only in search mode. |
+| `limit` | number | Items per page (default: 50, max: 100). Used only in search mode. |
 | `sortBy` | string | Sort field: `createdAt`, `updatedAt`, `totalAmount`, `status`, `paymentStatus`, `deliveryDate` (default: `createdAt`) |
 | `sortOrder` | string | `asc` or `desc` (default: `desc`) |
 
-**Response (no query params):** `200 OK`
+**Response (no query params – all orders):** `200 OK`
 ```json
 {
   "success": true,
   "message": "All orders retrieved successfully",
-  "data": [
-    {
-      "id": 1,
-      "userId": 1,
-      "addressId": 1,
-      "deliveryTimeSlot": "14-18",
-      "totalAmount": "1999.98",
-      "status": "PENDING",
-      "createdAt": "2024-01-15T10:30:00.000Z",
-      "updatedAt": "2024-01-15T10:30:00.000Z",
-      "user": {
-        "id": 1,
-        "phoneNumber": "12345678",
-        "email": "user@example.com",
-        "name": "John Doe"
-      },
-      "address": {
-        "id": 1,
-        "fullName": "John Doe",
-        "phoneNumber": "12345678",
-        "provinceOrDistrict": "Ulaanbaatar",
-        "khorooOrSoum": "Bayangol",
-        "street": "Peace Avenue",
-        "neighborhood": "Downtown",
-        "residentialComplex": "Green Complex",
-        "building": "Building 5",
-        "entrance": "Entrance A",
-        "apartmentNumber": "Apt 12B",
-        "addressNote": "Next to the blue gate, call when arrived",
-        "label": "Home"
-      },
-      "items": [
-        {
-          "id": 1,
-          "orderId": 1,
-          "productId": 1,
-          "quantity": 2,
-          "price": "999.99",
-          "product": {
-            "id": 1,
-            "name": "Laptop",
-            "description": "High-performance laptop",
-            "price": "999.99",
-            "stock": 50,
-            "categories": [
-              {
-                "id": 1,
-                "name": "Electronics",
-                "description": "Electronic devices"
-              }
-            ],
-            "categoryId": 1,
-            "category": {
-              "id": 1,
-              "name": "Electronics",
-              "description": "Electronic devices"
-            }
-          }
-        }
-      ]
-    }
-  ]
+  "data": [ /* array of orders; no pagination */ ]
 }
 ```
 
-**Response (with query params – advanced search):** `200 OK`
+**Response (with at least one query param – search with pagination):** `200 OK`
 ```json
 {
   "success": true,
   "message": "Orders retrieved successfully",
-  "data": [ /* array of orders (same shape as above) */ ],
+  "data": [ /* array of orders (same shape as below) */ ],
   "pagination": {
     "total": 42,
     "page": 1,
@@ -1155,26 +1101,197 @@ Retrieve all orders from all users with full details. When no query parameters a
 }
 ```
 
+**Order object shape:** Each order in `data` includes:
+- `id` (string) – Order ID in format `YYMMDDNNN` (e.g. `"260126001"`).
+- `userId`, `addressId` – May be `null` for guest orders.
+- `deliveryTimeSlot`, `deliveryDate` – Delivery slot and expected delivery date; either may be `null`.
+- `totalAmount` (string, decimal), `status`, `paymentStatus` – Order and payment status.
+- `contactFullName`, `contactPhoneNumber`, `contactEmail` – Contact info from order form; used for guest orders when `user` is null.
+- `createdAt`, `updatedAt` – Timestamps.
+- `user` – `{ id, phoneNumber, name }` for registered users, or `null` for guest orders. Email is not included.
+- `address` – Delivery address object, or `null` if not set.
+- `items` – Array of order items; each has `product` (with `categories`/`category`) and quantity/price.
+
+Example single order (relevant fields):
+```json
+{
+  "id": "260126001",
+  "userId": 1,
+  "addressId": 1,
+  "deliveryTimeSlot": "14-18",
+  "deliveryDate": "2026-01-27T00:00:00.000Z",
+  "totalAmount": "1999.98",
+  "status": "PAID",
+  "paymentStatus": "PAID",
+  "contactFullName": "John Doe",
+  "contactPhoneNumber": "12345678",
+  "contactEmail": "user@example.com",
+  "createdAt": "2026-01-26T10:30:00.000Z",
+  "updatedAt": "2026-01-26T10:30:00.000Z",
+  "user": {
+    "id": 1,
+    "phoneNumber": "12345678",
+    "name": "John Doe"
+  },
+  "address": { /* full delivery address */ },
+  "items": [ /* order items with product and category */ ]
+}
+```
+
 **Notes:**
-- When no query parameters are provided, returns all orders (no pagination). When any parameter is provided, returns filtered results with pagination.
-- Orders are sorted by `createdAt` in descending order (newest first) unless `sortBy`/`sortOrder` are set.
-- Each order includes full user information (with email if provided)
-- Each order includes delivery address information
-- Each order includes delivery time slot if selected (`"10-14"`, `"14-18"`, `"18-21"`, `"21-00"` or `null`)
-- Default order status is `"PENDING"` (can be `"PENDING"`, `"COMPLETED"`, `"CANCELLED"`, `"CANCELLED_BY_ADMIN"`, etc.). Use `"CANCELLED_BY_ADMIN"` to show a distinct label (e.g. "Cancelled (admin confirmed)") for orders cancelled via the admin SMS confirmation flow.
-- Each order item includes full product and category information
-- **Phone search**: Matches both registered users (by `user.phoneNumber`) and guest orders (by `address.phoneNumber`). **Name search**: Matches registered users only (by `user.name`).
+- **Two modes:** No query params → all orders, no pagination. Any query param → filtered search with pagination. To get pagination without filtering, call with e.g. `?page=1&limit=50`.
+- Order `id` is always a **string** (custom format `YYMMDDNNN`), not a number.
+- Orders are sorted by `createdAt` descending unless `sortBy`/`sortOrder` are set.
+- `user` is `null` for guest orders; use `contactFullName` / `contactPhoneNumber` / `contactEmail` on the order for display.
+- Status values include `PENDING`, `PAID`, `COMPLETED`, `CANCELLED`, `CANCELLED_BY_ADMIN`. Use `CANCELLED_BY_ADMIN` for orders cancelled via the admin SMS confirmation flow.
+- **Phone search:** Matches `user.phoneNumber` and `address.phoneNumber` (guest orders). **Name search:** Registered users only (`user.name`).
 
 **Delivery Time Slot Format:**
-- `"10-14"` - 10:00 to 14:00
-- `"14-18"` - 14:00 to 18:00
-- `"18-21"` - 18:00 to 21:00
-- `"21-00"` - 21:00 to 00:00 (midnight)
-- `null` - No time slot selected
+- `"10-14"`, `"14-18"`, `"18-21"`, `"21-00"` – time ranges; `null` if not selected.
 
 **Errors:**
-- `401` - Authentication required
-- `403` - Admin privileges required
+- `401` – Authentication required
+- `403` – Admin privileges required
+
+---
+
+### Get Order Ebarimt (Print)
+
+Retrieve ebarimt (tax receipt) information for an order so the admin dashboard can offer a "Print ebarimt" action. Returns the official QPay receipt URL when available; open it in a new window and use the browser print to print the receipt.
+
+**Endpoint:** `GET /api/admin/orders/:id/ebarimt`
+
+**Authentication:** Required (Admin only)
+
+**URL Parameters:**
+- `id` (required) – Order ID (e.g. `260126001`)
+
+**Response:** `200 OK`
+```json
+{
+  "success": true,
+  "message": "Ebarimt info retrieved successfully",
+  "data": {
+    "ebarimtId": "abc123",
+    "receiptUrl": "https://..."
+  }
+}
+```
+
+- `ebarimtId` – Ebarimt receipt ID when the order has an ebarimt; `null` otherwise.
+- `receiptUrl` – Official QPay receipt URL to open for printing; `null` if no receipt was stored (e.g. older orders, or ebarimt created before this field was added).
+
+**Usage:** When `receiptUrl` is present, open it in a new tab/window so the user can print the receipt. When `receiptUrl` is `null` but `ebarimtId` is set, you may show the ebarimt ID only (no print URL available for that order).
+
+**Errors:**
+- `401` – Authentication required
+- `403` – Admin privileges required
+- `404` – Order not found
+
+---
+
+### Get Order Timeline
+
+Retrieve the status timeline for an order: when the order was placed, when status changed (e.g. PENDING → PAID → DELIVERY_STARTED → DELIVERED), when payment was confirmed, and when messages were sent to the user (SMS cancellation code, delivery-started SMS, payment receipt email). Use this to render a timeline in the admin order detail view.
+
+**Endpoint:** `GET /api/admin/orders/:id/timeline`
+
+**Authentication:** Required (Admin only)
+
+**URL Parameters:**
+- `id` (required) – Order ID (e.g. `260126001`)
+
+**Response:** `200 OK`
+```json
+{
+  "success": true,
+  "message": "Order timeline retrieved successfully",
+  "data": [
+    {
+      "id": 0,
+      "orderId": "260126001",
+      "type": "ORDER_CREATED",
+      "title": "Order placed",
+      "description": null,
+      "fromValue": null,
+      "toValue": "PENDING",
+      "channel": null,
+      "performedBy": null,
+      "createdAt": "2026-01-26T10:30:00.000Z",
+      "performer": null,
+      "_synthetic": true
+    },
+    {
+      "id": 1,
+      "orderId": "260126001",
+      "type": "PAYMENT_STATUS_CHANGED",
+      "title": "Payment confirmed",
+      "description": null,
+      "fromValue": "PENDING",
+      "toValue": "PAID",
+      "channel": null,
+      "performedBy": null,
+      "createdAt": "2026-01-26T10:35:00.000Z",
+      "performer": null
+    },
+    {
+      "id": 2,
+      "orderId": "260126001",
+      "type": "MESSAGE_SENT",
+      "title": "Payment receipt email sent",
+      "description": null,
+      "fromValue": null,
+      "toValue": "user@example.com",
+      "channel": "email",
+      "performedBy": null,
+      "createdAt": "2026-01-26T10:35:01.000Z",
+      "performer": null
+    },
+    {
+      "id": 3,
+      "orderId": "260126001",
+      "type": "STATUS_CHANGED",
+      "title": "Status updated",
+      "description": null,
+      "fromValue": "PAID",
+      "toValue": "DELIVERY_STARTED",
+      "channel": null,
+      "performedBy": 2,
+      "createdAt": "2026-01-26T11:00:00.000Z",
+      "performer": { "id": 2, "name": "Admin User" }
+    },
+    {
+      "id": 4,
+      "orderId": "260126001",
+      "type": "MESSAGE_SENT",
+      "title": "Delivery started SMS sent",
+      "description": "User notified that delivery has started",
+      "fromValue": null,
+      "toValue": "12345678",
+      "channel": "sms",
+      "performedBy": 2,
+      "createdAt": "2026-01-26T11:00:01.000Z",
+      "performer": { "id": 2, "name": "Admin User" }
+    }
+  ]
+}
+```
+
+**Activity types:**
+- `ORDER_CREATED` – Order was placed (synthetic event from order `createdAt`; `_synthetic: true`, `id: 0`).
+- `STATUS_CHANGED` – Order status changed (e.g. PENDING → PAID, PAID → DELIVERY_STARTED, → DELIVERED). `fromValue` / `toValue` hold previous/new status; `performer` is the admin who changed it (if any).
+- `PAYMENT_STATUS_CHANGED` – Payment status changed (e.g. PENDING → PAID).
+- `MESSAGE_SENT` – A message was sent to the user. `channel` is `"sms"` or `"email"`; `title` describes the message (e.g. "Payment receipt email sent", "Delivery started SMS sent", "Cancellation code sent to user"); `toValue` may be phone or email.
+
+**Notes:**
+- Events are sorted by `createdAt` ascending (oldest first) for timeline display.
+- The first event is always a synthetic "Order placed" with `type: "ORDER_CREATED"` and `_synthetic: true`.
+- `performer` is set when an admin performed the action (e.g. status change, sending delivery SMS).
+
+**Errors:**
+- `401` – Authentication required
+- `403` – Admin privileges required
+- `404` – Order not found
 
 ---
 
@@ -2161,15 +2278,22 @@ curl -X GET http://localhost:3000/api/admin/categories \
   -H "Authorization: Bearer YOUR_JWT_TOKEN"
 ```
 
-#### Get All Orders
+#### Get All Orders (no params – returns every order, no pagination)
 ```bash
-curl -X GET http://localhost:3000/api/admin/orders/all \
+curl -X GET "http://localhost:3000/api/admin/orders/all" \
   -H "Authorization: Bearer YOUR_JWT_TOKEN"
 ```
 
-#### Get All Orders (Advanced Search)
+#### Get All Orders (with pagination – recommended for dashboards)
 ```bash
-# Filter by status and date range with pagination
+# Paginated list (page 1, 20 per page)
+curl -X GET "http://localhost:3000/api/admin/orders/all?page=1&limit=20" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
+
+#### Get All Orders (filtered search with pagination)
+```bash
+# Filter by status and date range
 curl -X GET "http://localhost:3000/api/admin/orders/all?status=PAID&dateFrom=2026-01-01&dateTo=2026-01-31&page=1&limit=20" \
   -H "Authorization: Bearer YOUR_JWT_TOKEN"
 
@@ -2257,19 +2381,31 @@ const getAllCategories = async (token) => {
 };
 ```
 
-#### Get All Orders
+#### Get All Orders (paginated – recommended)
 ```javascript
-const getAllOrders = async (token) => {
-  const response = await fetch('http://localhost:3000/api/admin/orders/all', {
+const getOrders = async (token, filters = {}) => {
+  const params = new URLSearchParams();
+  if (filters.page) params.append('page', filters.page);
+  if (filters.limit) params.append('limit', filters.limit);
+  if (filters.status) params.append('status', filters.status);
+  if (filters.orderId) params.append('orderId', filters.orderId);
+  if (filters.phone) params.append('phone', filters.phone);
+  // ... other filters: dateFrom, dateTo, paymentStatus, etc.
+
+  const url = params.toString()
+    ? `http://localhost:3000/api/admin/orders/all?${params}`
+    : 'http://localhost:3000/api/admin/orders/all';
+  const response = await fetch(url, {
     method: 'GET',
-    headers: {
-      'Authorization': `Bearer ${token}`
-    }
+    headers: { 'Authorization': `Bearer ${token}` }
   });
-  
   const data = await response.json();
-  return data.data; // Returns array of orders
+  return {
+    orders: data.data,
+    pagination: data.pagination  // present only when any query param was sent
+  };
 };
+// Usage: getOrders(token, { page: 1, limit: 50 })
 ```
 
 #### Get All Users
@@ -2394,10 +2530,11 @@ const deleteProduct = (productId) => {
   return api.post(`/products/${productId}/delete`, {});
 };
 
-// Get all orders
-const getAllOrders = () => {
-  return api.get('/orders/all');
-};
+// Get all orders (no params = all orders, no pagination)
+const getAllOrders = () => api.get('/orders/all');
+
+// Get orders with pagination (recommended for dashboards)
+const getOrdersPaginated = (params = {}) => api.get('/orders/all', { params: { page: 1, limit: 50, ...params } });
 
 // Get all users with optional filters
 const getAllUsers = (filters = {}) => {
@@ -2478,7 +2615,8 @@ While not admin-specific, admins can also use these public endpoints for viewing
 - `POST /api/admin/products/:id/delete` - Delete product
 
 ### Order Endpoints
-- `GET /api/admin/orders/all` - Get all orders (supports advanced search via query params)
+- `GET /api/admin/orders/all` - Get orders (no params = all orders; with params = filtered search + pagination)
+- `GET /api/admin/orders/:id/ebarimt` - Get ebarimt (receipt) info for printing
 
 ### Constants Endpoints
 - `GET /api/admin/constants/delivery-time-slots` - Get delivery time slots

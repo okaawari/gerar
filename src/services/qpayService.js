@@ -1,4 +1,6 @@
 const axios = require('axios');
+const fs = require('fs');
+const path = require('path');
 
 /**
  * QPAY Service
@@ -16,14 +18,14 @@ class QPayService {
         this.callbackBaseUrl = process.env.QPAY_CALLBACK_BASE_URL;
         /** District code for ebarimt invoice (Төлбөрийн баримтын байршлын код). */
         this.districtCode = process.env.QPAY_DISTRICT_CODE || process.env.EB_GERAR_DISTRICT_CODE || '3505';
-        
+
         // Token cache - critical: one token per timestamp
         this.tokenCache = {
             token: null,
             timestamp: null,
             expiresAt: null
         };
-        
+
         // TEST MODE: Simple counter for sender_invoice_no to test if order ID format is causing QR code issues
         this.testInvoiceCounter = 1;
     }
@@ -63,16 +65,21 @@ class QPayService {
      * @returns {Promise<string>} Access token
      */
     async getAccessToken() {
+        // Use permanent token if available
+        if (process.env.QPAY_PERMANENT_TOKEN) {
+            return process.env.QPAY_PERMANENT_TOKEN;
+        }
+
         const currentTimestamp = Math.floor(Date.now() / 1000);
-        
+
         // Check if we have a valid cached token (use it if not expired, regardless of timestamp)
-        if (this.tokenCache.token && 
-            this.tokenCache.expiresAt && 
+        if (this.tokenCache.token &&
+            this.tokenCache.expiresAt &&
             Date.now() < this.tokenCache.expiresAt) {
             // Token is still valid, use cached token
             return this.tokenCache.token;
         }
-        
+
         // If we have a token but it's from a different timestamp and expired, we need a new one
         // CRITICAL: Only fetch one token per timestamp as per QPAY requirements
         // If timestamp changed, we must fetch a new token even if old one hasn't expired yet
@@ -93,12 +100,12 @@ class QPayService {
 
             // Create Basic Auth header
             const credentials = Buffer.from(`${this.username}:${this.password}`).toString('base64');
-            
+
             // Only log if we don't have a cached token (to reduce log noise)
             if (!this.tokenCache.token) {
                 console.log(`Fetching QPAY access token from ${this.apiUrl}/auth/token...`);
             }
-            
+
             const response = await this.retryWithBackoff(async () => {
                 return await axios.post(
                     `${this.apiUrl}/auth/token`,
@@ -119,7 +126,7 @@ class QPayService {
 
             const token = response.data.access_token;
             const expiresIn = response.data.expires_in || 3600; // Default to 1 hour
-            
+
             // Cache the token with current timestamp
             this.tokenCache = {
                 token: token,
@@ -141,7 +148,7 @@ class QPayService {
                 apiUrl: this.apiUrl,
                 timestamp: new Date().toISOString()
             });
-            
+
             // Provide more helpful error messages
             if (error.code === 'ECONNREFUSED' || error.code === 'ENOTFOUND') {
                 throw new Error(`Cannot connect to QPAY API at ${this.apiUrl}. Please check your network connection and QPAY_API_URL configuration.`);
@@ -150,7 +157,7 @@ class QPayService {
             } else if (error.response?.status === 404) {
                 throw new Error(`QPAY API endpoint not found: ${this.apiUrl}/auth/token. Please check QPAY_API_URL configuration.`);
             }
-            
+
             throw new Error(`Failed to get QPAY access token: ${error.message}`);
         }
     }
@@ -164,25 +171,25 @@ class QPayService {
     async createInvoice(order, invoiceData = {}) {
         try {
             const token = await this.getAccessToken();
-            
+
             // Build callback URL (strip trailing slash from base to avoid // in path)
             const base = (this.callbackBaseUrl || '').replace(/\/$/, '');
             const callbackUrl = `${base}/orders/${order.id}/payment-callback`;
             console.log(`📞 Callback URL for QPAY: ${callbackUrl}`);
             console.log(`🌐 QPAY API URL: ${this.apiUrl}/invoice`);
-            
+
             // TEMPORARY TEST MODE: Use simple sequential integer (1, 2, 3...) for sender_invoice_no
             // This tests if the order ID format change (from INT to VARCHAR like "260126010") is causing QR code scanning issues
             // TODO: Remove this test mode after confirming if order ID format is the issue
             const senderInvoiceNo = String(this.testInvoiceCounter++);
             console.log(`🧪 TEST MODE: Using simple sender_invoice_no: ${senderInvoiceNo} (original order.id: ${order.id})`);
             console.log(`Creating QPAY invoice with sender_invoice_no: ${senderInvoiceNo} (type: ${typeof senderInvoiceNo}, length: ${senderInvoiceNo.length})`);
-            
+
             const invoicePayload = {
                 invoice_code: this.invoiceCode,
                 sender_invoice_no: senderInvoiceNo,
-                invoice_receiver_code: invoiceData.receiverCode || 'terminal',
-                sender_branch_code: invoiceData.branchCode || 'ONLINE',
+                invoice_receiver_code: invoiceData.receiverCode,
+                sender_branch_code: invoiceData.branchCode || 'GERAR_ONLINE',
                 invoice_description: invoiceData.description || `Order #${order.id} - ${parseFloat(order.totalAmount).toFixed(2)} MNT`,
                 allow_partial: invoiceData.allowPartial || false,
                 minimum_amount: invoiceData.minimumAmount || null,
@@ -190,7 +197,7 @@ class QPayService {
                 maximum_amount: invoiceData.maximumAmount || null,
                 amount: parseFloat(order.totalAmount),
                 callback_url: callbackUrl,
-                sender_staff_code: invoiceData.staffCode || 'online',
+                sender_staff_code: invoiceData.staffCode || 'gerar_online',
                 note: invoiceData.note || null
             };
 
@@ -255,26 +262,32 @@ class QPayService {
             const token = await this.getAccessToken();
             const base = (this.callbackBaseUrl || '').replace(/\/$/, '');
             const callbackUrl = `${base}/orders/${order.id}/payment-callback`;
+            console.log(`📞 Callback URL for QPAY: ${callbackUrl}`);
+            console.log(`🌐 QPAY API URL: ${this.apiUrl}/invoice`);
 
-            const senderInvoiceNo = String(order.id).replace(/[^\w\-]/g, '') || String(this.testInvoiceCounter++);
+            const senderInvoiceNo = String(order.id).replace(/[^\w\-]/g, '');
             const districtCode = invoiceData.districtCode || this.districtCode;
             const taxType = invoiceData.taxType || '1';
+            const receiver = invoiceData.receiverData || {};
+            const receiverPhone = (receiver.phone != null ? String(receiver.phone) : '') || (receiver.phoneNumber != null ? String(receiver.phoneNumber) : '');
+            const invoiceReceiverCode = receiverPhone || (order.userId != null ? String(order.userId) : '') || `RECV-${senderInvoiceNo}`;
+            console.log(`Creating QPAY ebarimt invoice for order ${order.id}, sender_invoice_no: ${senderInvoiceNo} (type: ${typeof senderInvoiceNo}, length: ${senderInvoiceNo.length}), district: ${districtCode}`);
 
+            const branchCode = invoiceData.branchCode != null ? String(invoiceData.branchCode) : 'GERAR_BRANCH';
             const payload = {
                 invoice_code: this.ebarimtInvoiceCode,
                 sender_invoice_no: senderInvoiceNo,
-                invoice_receiver_code: invoiceData.receiverCode || String(order.id),
+                invoice_receiver_code: invoiceReceiverCode,
                 invoice_description: (invoiceData.description || `Order #${order.id}`).substring(0, 255),
                 tax_type: taxType,
                 district_code: districtCode,
                 callback_url: callbackUrl,
+                sender_branch_code: branchCode,
                 lines: invoiceData.lines || []
             };
 
-            if (invoiceData.branchCode != null) payload.sender_branch_code = invoiceData.branchCode;
             if (invoiceData.staffCode != null) payload.sender_staff_code = invoiceData.staffCode;
 
-            const receiver = invoiceData.receiverData || {};
             payload.invoice_receiver_data = {
                 register: receiver.register != null ? String(receiver.register) : '',
                 name: receiver.name != null ? String(receiver.name) : 'Customer',
@@ -286,10 +299,25 @@ class QPayService {
                 throw new Error('Ebarimt invoice requires at least one line item');
             }
 
-            console.log(`Creating QPAY ebarimt invoice for order ${order.id}, sender_invoice_no: ${senderInvoiceNo}, district: ${districtCode}`);
+            // Save exact request and response to file (for debugging)
+            const requestUrl = `${this.apiUrl}/invoice`;
+            const outPath = path.join(__dirname, '..', '..', 'ebarimt_invoice_request_sent.json');
+            const requestToSave = {
+                _comment: 'Exact request and response when creating QPAY ebarimt invoice. Saved on each create.',
+                savedAt: new Date().toISOString(),
+                orderId: order.id,
+                method: 'POST',
+                url: requestUrl,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: payload
+            };
+
             const response = await this.retryWithBackoff(async () => {
                 return await axios.post(
-                    `${this.apiUrl}/invoice`,
+                    requestUrl,
                     payload,
                     {
                         headers: {
@@ -301,12 +329,33 @@ class QPayService {
                 );
             });
 
-            console.log('QPAY Ebarimt Invoice Response:', {
+            requestToSave.response = {
+                status: response.status,
+                statusText: response.statusText,
+                data: response.data
+            };
+            try {
+                fs.writeFileSync(outPath, JSON.stringify(requestToSave, null, 2), 'utf8');
+                console.log('[QPAY] Ebarimt invoice request and response saved to', outPath);
+            } catch (writeErr) {
+                console.warn('[QPAY] Could not save request/response to file:', writeErr.message);
+            }
+
+            // Log full QPAY response to see what fields are returned
+            console.log('QPAY Ebarimt Invoice Response Keys:', Object.keys(response.data));
+            console.log('QPAY Ebarimt Invoice Response Sample:', {
                 invoice_id: response.data.invoice_id,
-                has_qr_image: !!response.data.qr_image,
-                has_qr_text: !!response.data.qr_text
+                qr_image: response.data.qr_image ? `Present (${response.data.qr_image.length} bytes)` : 'MISSING',
+                qr_code: response.data.qr_code ? `Present (${response.data.qr_code.length} bytes)` : 'MISSING',
+                qr_text: response.data.qr_text ? `Present (${response.data.qr_text.length} chars)` : 'MISSING',
+                urls: response.data.urls ? 'Present' : 'MISSING'
             });
-            return response.data;
+            // Return token so controller can store on order; ebarimt-from-invoice will reuse same token
+            return {
+                ...response.data,
+                _token: token,
+                _tokenExpiresAt: this.tokenCache.expiresAt
+            };
         } catch (error) {
             console.error('QPAY Create Ebarimt Invoice Error:', {
                 message: error.message,
@@ -328,7 +377,7 @@ class QPayService {
     async checkPayment(invoiceId) {
         try {
             const token = await this.getAccessToken();
-            
+
             const response = await this.retryWithBackoff(async () => {
                 return await axios.post(
                     `${this.apiUrl}/payment/check`,
@@ -372,7 +421,7 @@ class QPayService {
     async getPayment(paymentId) {
         try {
             const token = await this.getAccessToken();
-            
+
             const response = await this.retryWithBackoff(async () => {
                 return await axios.get(
                     `${this.apiUrl}/payment/${paymentId}`,
@@ -408,7 +457,7 @@ class QPayService {
     async cancelInvoice(invoiceId) {
         try {
             const token = await this.getAccessToken();
-            
+
             const response = await this.retryWithBackoff(async () => {
                 return await axios.delete(
                     `${this.apiUrl}/invoice/${invoiceId}`,
@@ -445,7 +494,7 @@ class QPayService {
     async cancelPayment(paymentId, cancelData = {}) {
         try {
             const token = await this.getAccessToken();
-            
+
             const response = await this.retryWithBackoff(async () => {
                 return await axios.delete(
                     `${this.apiUrl}/payment/cancel/${paymentId}`,
@@ -485,7 +534,7 @@ class QPayService {
     async refundPayment(paymentId) {
         try {
             const token = await this.getAccessToken();
-            
+
             const response = await this.retryWithBackoff(async () => {
                 return await axios.delete(
                     `${this.apiUrl}/payment/refund/${paymentId}`,
@@ -529,6 +578,26 @@ class QPayService {
             };
             if (ebarimtReceiver != null && ebarimtReceiver !== '') {
                 body.ebarimt_receiver = String(ebarimtReceiver);
+            }
+            const requestUrl = `${this.apiUrl}/ebarimt/create`;
+            const requestToSave = {
+                _comment: 'Exact request sent when taking ebarimt from paid invoice (ebarimt/create). Saved on each create.',
+                savedAt: new Date().toISOString(),
+                paymentId,
+                method: 'POST',
+                url: requestUrl,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body
+            };
+            const outPath = path.join(__dirname, '..', '..', 'ebarimt_from_invoice_request_sent.json');
+            try {
+                fs.writeFileSync(outPath, JSON.stringify(requestToSave, null, 2), 'utf8');
+                console.log('[QPAY] Ebarimt-from-invoice request saved to', outPath);
+            } catch (writeErr) {
+                console.warn('[QPAY] Could not save ebarimt-from-invoice request to file:', writeErr.message);
             }
             const response = await this.retryWithBackoff(async () => {
                 return await axios.post(

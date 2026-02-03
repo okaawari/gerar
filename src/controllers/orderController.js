@@ -365,6 +365,7 @@ class OrderController {
         try {
             const { id } = req.params;
             const { code } = req.body;
+            const performedBy = req.user ? req.user.id : null;
 
             if (!code) {
                 const error = new Error('Cancellation code is required');
@@ -372,7 +373,7 @@ class OrderController {
                 throw error;
             }
 
-            const result = await orderService.confirmCancellation(id, code);
+            const result = await orderService.confirmCancellation(id, code, performedBy);
 
             res.status(200).json({
                 success: true,
@@ -394,6 +395,7 @@ class OrderController {
         try {
             const { id } = req.params;
             const { status } = req.body;
+            const performedBy = req.user ? req.user.id : null;
 
             if (!status) {
                 const error = new Error('Order status is required');
@@ -401,12 +403,49 @@ class OrderController {
                 throw error;
             }
 
-            const order = await orderService.updateOrderStatus(id, status);
+            const order = await orderService.updateOrderStatus(id, status, performedBy);
 
             res.status(200).json({
                 success: true,
                 message: 'Order status updated successfully',
                 data: order
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    /**
+     * Get order timeline (admin only) – status changes, messages sent, etc.
+     * GET /api/admin/orders/:id/timeline
+     */
+    async getOrderTimeline(req, res, next) {
+        try {
+            const { id } = req.params;
+            const timeline = await orderService.getOrderTimeline(id);
+            res.status(200).json({
+                success: true,
+                message: 'Order timeline retrieved successfully',
+                data: timeline
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    /**
+     * Get ebarimt (receipt) info for printing (admin only).
+     * GET /api/admin/orders/:id/ebarimt
+     * Returns ebarimtId and receiptUrl; open receiptUrl in a new window to print.
+     */
+    async getOrderEbarimt(req, res, next) {
+        try {
+            const { id } = req.params;
+            const data = await orderService.getOrderEbarimtForPrint(id);
+            res.status(200).json({
+                success: true,
+                message: 'Ebarimt info retrieved successfully',
+                data
             });
         } catch (error) {
             next(error);

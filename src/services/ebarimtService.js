@@ -28,15 +28,20 @@ function getConfig() {
  * @returns {Object} Payload for GERAR ebarimt API
  */
 function buildPayload(order, config) {
-    const baseUrl = process.env.API_BASE_URL || 'https://example.com';
+    const baseUrl = process.env.API_BASE_URL;
     const callbackUrl = process.env.EBARIMT_CALLBACK_URL || `${baseUrl.replace(/\/$/, '')}/api/payments/ebarimt-callback`;
 
     const lines = (order.items || []).map((item) => {
         const itemPrice = parseFloat(item.price) || 0;
         const itemQuantity = parseFloat(item.quantity) || 1;
         const lineTotal = itemPrice * itemQuantity;
-        // 10% VAT inclusive: VAT amount = lineTotal / 11
-        const vatAmount = Math.round((lineTotal / 11) * 10000) / 10000;
+        const productVatAmount = item.product?.vatAmount != null ? parseFloat(item.product.vatAmount) : null;
+        const lineVatAmount = productVatAmount != null
+            ? Math.round(productVatAmount * itemQuantity * 10000) / 10000
+            : Math.round((lineTotal / 11) * 10000) / 10000;
+        const classificationCode = (item.product?.classificationCode != null && item.product?.classificationCode !== '')
+            ? String(item.product.classificationCode)
+            : '6224400';
 
         const productName = item.product?.name || `Product #${item.productId || 'Unknown'}`;
         const barcode = item.product?.barcode || '';
@@ -48,12 +53,12 @@ function buildPayload(order, config) {
             line_quantity: itemQuantity.toFixed(2),
             line_unit_price: itemPrice.toFixed(2),
             note: item.product?.description || 'TEST',
-            classification_code: '0111100',
+            classification_code: classificationCode,
             taxes: [
                 {
                     tax_code: 'VAT',
                     description: 'НӨАТ',
-                    amount: vatAmount,
+                    amount: lineVatAmount,
                     note: 'НӨАТ'
                 }
             ]
@@ -63,7 +68,7 @@ function buildPayload(order, config) {
     return {
         invoice_code: config.invoice,
         sender_invoice_no: String(order.id),
-        invoice_receiver_code: '23',
+        invoice_receiver_code: '56',
         sender_branch_code: config.branchCode,
         invoice_description: `Order #${order.id}`,
         callback_url: callbackUrl,

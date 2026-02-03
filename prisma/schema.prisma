@@ -36,6 +36,7 @@ model user {
   updatedCategories category[] @relation("CategoryUpdatedBy")
   createdProducts   product[]  @relation("ProductCreatedBy")
   updatedProducts   product[]  @relation("ProductUpdatedBy")
+  performedOrderActivities orderactivity[]
 
   @@map("user")
 }
@@ -66,19 +67,21 @@ model category {
 }
 
 model product {
-  id            Int      @id @default(autoincrement())
-  name          String
-  description   String   @db.Text
-  price         Decimal  @db.Decimal(10, 2)
-  originalPrice Decimal? @db.Decimal(10, 2) // Original price before discount (if null, no discount)
-  images        Json? // JSON array of image URLs
-  stock         Int      @default(0)
-  isHidden      Boolean  @default(false) // If true, product is hidden from public view
-  deletedAt     DateTime? // Soft delete timestamp - if set, product is considered deleted
-  createdBy     Int? // Admin user ID who created this product
-  updatedBy     Int? // Admin user ID who last updated this product
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id                 Int      @id @default(autoincrement())
+  name               String
+  description        String   @db.Text
+  price              Decimal  @db.Decimal(10, 2)
+  originalPrice      Decimal? @db.Decimal(10, 2) // Original price before discount (if null, no discount)
+  images             Json? // JSON array of image URLs
+  stock              Int      @default(0)
+  isHidden           Boolean  @default(false) // If true, product is hidden from public view
+  classificationCode String?  @db.VarChar(50) @map("classification_code") // e.g. HS/tax classification code
+  vatAmount          Decimal? @db.Decimal(10, 2) @map("vat_amount") // VAT amount for the product
+  deletedAt          DateTime? // Soft delete timestamp - if set, product is considered deleted
+  createdBy          Int? // Admin user ID who created this product
+  updatedBy          Int? // Admin user ID who last updated this product
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
   categories  productcategory[]
   cartItems   cartitem[]
@@ -133,10 +136,13 @@ model order {
   qpayPaymentId String?   @db.VarChar(255)
   qpayQrText    String?   @db.Text // QR code text/URL from QPAY
   qpayQrCode    String?   @db.LongText // QR code base64 image from QPAY (preferred over regenerating)
+  qpayAccessToken    String?   @db.Text // Reused for ebarimt-from-invoice so same token as invoice create
+  qpayTokenExpiresAt DateTime? // When the token expires (use same token for ebarimt/create)
   paymentStatus String    @default("PENDING") @db.VarChar(50)
   paymentMethod String?   @db.VarChar(50)
   paidAt        DateTime?
   ebarimtId     String?   @db.VarChar(255)
+  ebarimtReceiptUrl String? @db.VarChar(1024) // QPay receipt URL for printing
 
   // Guest orders: session token to allow GET /orders/:id with X-Session-Token
   sessionToken String?   @db.VarChar(255)
@@ -144,6 +150,7 @@ model order {
   user    user?       @relation(fields: [userId], references: [id])
   address address?    @relation(fields: [addressId], references: [id])
   items   orderitem[]
+  activities orderactivity[]
 
   @@index([userId])
   @@index([sessionToken])
@@ -154,6 +161,27 @@ model order {
   @@index([qpayInvoiceId])
   @@index([qpayPaymentId])
   @@map("order")
+}
+
+model orderactivity {
+  id          Int      @id @default(autoincrement())
+  orderId     String   @db.VarChar(9)
+  type        String   @db.VarChar(50)   // STATUS_CHANGED, PAYMENT_STATUS_CHANGED, MESSAGE_SENT, ORDER_CREATED
+  title       String?  @db.VarChar(255)  // Short label for timeline UI
+  description String?  @db.Text          // Optional longer description
+  fromValue   String?  @db.VarChar(100)   // e.g. previous status
+  toValue     String?  @db.VarChar(100)   // e.g. new status
+  channel     String?  @db.VarChar(20)   // sms, email (for MESSAGE_SENT)
+  performedBy Int?     // Admin user ID if applicable
+  createdAt   DateTime @default(now())
+
+  order     order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  performer user? @relation(fields: [performedBy], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+  @@index([orderId, createdAt])
+  @@index([performedBy])
+  @@map("orderactivity")
 }
 
 model address {

@@ -47,7 +47,7 @@ function buildEbarimtPayload() {
             line_quantity: "1.00",
             line_unit_price: "50.00",
             note: "TEST",
-            classification_code: "0111100",
+            classification_code: "6224400",
             taxes: [
                 {
                     tax_code: "VAT",
@@ -64,7 +64,7 @@ function buildEbarimtPayload() {
             line_quantity: "1.00",
             line_unit_price: "100.00",
             note: "TEST",
-            classification_code: "0111100",
+            classification_code: "6224400",
             taxes: [
                 {
                     tax_code: "VAT",

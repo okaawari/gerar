@@ -94,6 +94,19 @@ class ProductService {
             }
         }
 
+        if (data.classificationCode !== undefined && data.classificationCode !== null && data.classificationCode !== '') {
+            if (typeof data.classificationCode !== 'string' || data.classificationCode.length > 50) {
+                errors.push('Classification code must be a string of at most 50 characters');
+            }
+        }
+
+        if (data.vatAmount !== undefined && data.vatAmount !== null) {
+            const vatAmount = parseFloat(data.vatAmount);
+            if (isNaN(vatAmount) || vatAmount < 0) {
+                errors.push('VAT amount must be a valid non-negative number');
+            }
+        }
+
         // Validate categoryIds (array) - at least one category is required
         if (data.categoryIds !== undefined && data.categoryIds !== null) {
             if (!Array.isArray(data.categoryIds)) {
@@ -624,6 +637,14 @@ class ProductService {
             }
         }
 
+        // Add classification code and VAT amount if provided
+        if (data.classificationCode !== undefined && data.classificationCode !== null && data.classificationCode !== '') {
+            productData.classificationCode = String(data.classificationCode).trim();
+        }
+        if (data.vatAmount !== undefined && data.vatAmount !== null) {
+            productData.vatAmount = parseFloat(data.vatAmount);
+        }
+
         // Add admin tracking if provided
         if (data.adminId !== undefined && data.adminId !== null) {
             productData.createdBy = parseInt(data.adminId);
@@ -796,6 +817,12 @@ class ProductService {
         }
         if (data.stock !== undefined) {
             updateData.stock = parseInt(data.stock);
+        }
+        if (data.classificationCode !== undefined) {
+            updateData.classificationCode = data.classificationCode === null || data.classificationCode === '' ? null : String(data.classificationCode).trim();
+        }
+        if (data.vatAmount !== undefined) {
+            updateData.vatAmount = data.vatAmount === null || data.vatAmount === '' ? null : parseFloat(data.vatAmount);
         }
         if (data.isHidden !== undefined) {
             // Allow boolean or string 'true'/'false'

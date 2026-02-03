@@ -406,6 +406,7 @@ const html = `
         const { orderNumber, totalAmount, items, deliveryDate, deliveryAddress } = orderData;
         const ebarimtId = ebarimtData.ebarimt_id || ebarimtData.ebarimtId || null;
         const receiptUrl = ebarimtData.receipt_url || ebarimtData.url || null;
+        const qrImage = ebarimtData.qr_image || ebarimtData.ebarimt_qr_image || null;
         const rawResponseText = this._formatEbarimtResponseForEmail(ebarimtData);
 
         const subject = `Төлбөрийн баримт (И-Баримт) – Захиалга #${orderNumber}`;
@@ -424,6 +425,7 @@ ${items.map(item => `- ${item.name} x${item.quantity} — ${item.price}₮`).joi
 
 И-Баримтын дугаар: ${ebarimtId || 'Байхгүй'}
 ${receiptUrl ? `Баримт харах: ${receiptUrl}` : ''}
+${qrImage ? 'И-Баримтын QR кодыг имэйлийн HTML хувилбар дээр харна уу.' : ''}
 
 
 Энэхүү баримтыг цаашид хадгална уу.
@@ -557,6 +559,7 @@ ${this.fromName}
                 <div class="section receipt">
                 <p><strong>И-Баримтын дугаар:</strong> ${ebarimtId || 'Байхгүй'}</p>
                 ${receiptUrl ? `<p><a href="${receiptUrl}" target="_blank">Баримт харах</a></p>` : ''}
+                ${qrImage ? `<p style="margin-top:12px;"><strong>И-Баримтын QR код:</strong></p><p><img src="${qrImage}" alt="И-Баримт QR" width="200" height="200" style="display:block;border:1px solid #ddd;border-radius:8px;" /></p>` : ''}
                 </div>
 
                 <details>

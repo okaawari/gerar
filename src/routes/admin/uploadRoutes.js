@@ -7,7 +7,8 @@ const {
     uploadFiles,
     deleteImage,
     handleUploadError,
-    normalizeSingleUpload
+    normalizeSingleUpload,
+    processImageToWebp
 } = require('../../controllers/uploadController');
 
 const router = express.Router();
@@ -16,7 +17,7 @@ const router = express.Router();
 router.use(authenticateUser, authorizeAdmin);
 
 // Single file upload endpoint
-// Chain: uploadSingle -> normalizeSingleUpload -> uploadFile
+// Chain: uploadSingle -> normalizeSingleUpload -> processImageToWebp -> uploadFile
 // Multer errors are handled by the error handler middleware
 router.post('/', 
     (req, res, next) => {
@@ -28,6 +29,7 @@ router.post('/',
         });
     },
     normalizeSingleUpload,
+    processImageToWebp,
     uploadFile
 );
 
@@ -41,6 +43,7 @@ router.post('/multiple',
             next();
         });
     },
+    processImageToWebp,
     uploadFiles
 );
 

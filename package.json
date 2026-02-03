@@ -35,7 +35,8 @@
     "mysql2": "^3.16.0",
     "nodemailer": "^7.0.12",
     "prisma": "^7.2.0",
-    "qrcode": "^1.5.4"
+    "qrcode": "^1.5.4",
+    "sharp": "^0.34.5"
   },
   "devDependencies": {
     "fast-check": "^4.5.3",

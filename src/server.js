@@ -23,7 +23,7 @@ const startServer = async () => {
             console.log(`✅ Server is running on port ${PORT}`);
             console.log(`📦 Environment: ${NODE_ENV}`);
             console.log(`🌐 API Base URL: http://localhost:${PORT}/api`);
-            console.log(`📱 Network Access: http://192.168.1.4:${PORT}/api`);
+            console.log(`📱 Network Access: http://192.168.1.3:${PORT}/api`);
             console.log(`📚 Health Check: http://localhost:${PORT}/`);
             console.log('='.repeat(50));
         });

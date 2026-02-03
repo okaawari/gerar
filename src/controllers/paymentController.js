@@ -354,7 +354,7 @@ class PaymentController {
             const invoiceData = {
                 description: `GERAR.MN - Захиалга #${order.id}`,
                 receiverCode: String(order.id),
-                branchCode: 'ONLINE',
+                branchCode: 'GERAR_BRANCH',
                 staffCode: 'online',
                 allowPartial: false,
                 allowExceed: false
@@ -370,14 +370,18 @@ class PaymentController {
 
             const hasItems = order.items && order.items.length > 0;
             if (hasItems) {
-                // QPay ebarimt: VAT from (qty × unit_price)/11, floor to 4 decimals.
-                // Note: QPay validates each line VAT individually. Do not force sum of VATs to match TotalAmount/11.
+                // QPay ebarimt: Use product classification_code and vat_amount when available; else fallback to calculated VAT (lineTotal/11).
                 invoiceData.lines = order.items.map((item) => {
                     const price = Number(item.price) || 0;
                     const qty = Number(item.quantity) || 1;
                     const lineTotal = price * qty;
-                    // Calculate VAT for this line: floor(total/11 * 10000)/10000
-                    const vatAmount = Math.floor((lineTotal / 11) * 10000) / 10000;
+                    const productVatAmount = item.product?.vatAmount != null ? parseFloat(item.product.vatAmount) : null;
+                    const lineVatAmount = productVatAmount != null
+                        ? Math.floor(productVatAmount * qty * 10000) / 10000
+                        : Math.floor((lineTotal / 11) * 10000) / 10000;
+                    const classificationCode = (item.product?.classificationCode != null && item.product?.classificationCode !== '')
+                        ? String(item.product.classificationCode)
+                        : '6224400';
 
                     return {
                         tax_product_code: '',
@@ -386,9 +390,9 @@ class PaymentController {
                         line_quantity: Number(qty).toFixed(2),
                         line_unit_price: Number(price).toFixed(2),
                         note: (item.product?.description || '').substring(0, 100),
-                        classification_code: '0111100',
+                        classification_code: classificationCode,
                         taxes: [
-                            { tax_code: 'VAT', description: 'НӨАТ', amount: vatAmount, note: 'НӨАТ' }
+                            { tax_code: 'VAT', description: 'НӨАТ', amount: lineVatAmount, note: 'НӨАТ' }
                         ]
                     };
                 });
@@ -401,7 +405,7 @@ class PaymentController {
                 invoiceResponse = await qpayService.createEbarimtInvoice(order, invoiceData);
             } else {
                 invoiceData.amount = parseFloat(order.totalAmount);
-                invoiceData.receiverCode = invoiceData.receiverCode || 'terminal';
+                invoiceData.receiverCode = invoiceData.receiverCode;
                 console.log(`Creating QPAY invoice for order ${orderId}...`);
                 invoiceResponse = await qpayService.createInvoice(order, invoiceData);
             }
@@ -449,14 +453,20 @@ class PaymentController {
             const qrCodeToStore = qrImage ? (qrImage.startsWith('data:image') ? qrImage.split(',')[1] : qrImage) : null;
             console.log(`Storing QR code in database: ${qrCodeToStore ? `Present (${qrCodeToStore.length} bytes, starts with: ${qrCodeToStore.substring(0, 20)}...)` : 'NULL'}`);
 
+            const orderUpdateData = {
+                qpayInvoiceId: invoiceResponse.invoice_id,
+                qpayQrText: invoiceResponse.qr_text || null,
+                qpayQrCode: qrCodeToStore, // Store raw base64 without prefix
+                paymentStatus: 'PENDING'
+            };
+            // Reuse same token for ebarimt-from-invoice (only for ebarimt invoice flow)
+            if (useEbarimtInvoice && invoiceResponse._token != null && invoiceResponse._tokenExpiresAt != null) {
+                orderUpdateData.qpayAccessToken = invoiceResponse._token;
+                orderUpdateData.qpayTokenExpiresAt = new Date(invoiceResponse._tokenExpiresAt);
+            }
             const updatedOrder = await prisma.order.update({
                 where: { id: orderId },
-                data: {
-                    qpayInvoiceId: invoiceResponse.invoice_id,
-                    qpayQrText: invoiceResponse.qr_text || null,
-                    qpayQrCode: qrCodeToStore, // Store raw base64 without prefix
-                    paymentStatus: 'PENDING'
-                }
+                data: orderUpdateData
             });
 
             // Verify it was stored
@@ -767,29 +777,46 @@ class PaymentController {
                         }
                     });
 
-                    // Generate Ebarimt receipt (test: ebarimt_v3/create with payment_id, ebarimt_receiver_type, ebarimt_receiver)
+                    await orderService.recordOrderActivity(id, {
+                        type: 'PAYMENT_STATUS_CHANGED',
+                        title: 'Payment confirmed',
+                        fromValue: order.paymentStatus || 'PENDING',
+                        toValue: 'PAID'
+                    });
+
+                    // Generate Ebarimt receipt only when invoice was created as ebarimt (order has line items).
+                    // QPay ebarimt_v3/create only works for payments from ebarimt-type invoices; simple (amount-only) invoices fail.
                     let ebarimtResponse = null;
                     let ebarimtErrorInfo = null;
-                    try {
-                        ebarimtResponse = await ebarimtTestService.createEbarimtFromPayment(paymentId, {
-                            ebarimtReceiverType: 'CITIZEN',
-                            ebarimtReceiver: order.contactPhoneNumber ?? order.user?.phone ?? order.address?.phoneNumber ?? '80650025'
-                        });
-
-                        if (ebarimtResponse.ebarimt_id) {
-                            await prisma.order.update({
-                                where: { id: String(id) },
-                                data: {
-                                    ebarimtId: ebarimtResponse.ebarimt_id
-                                }
+                    const orderHasItems = order.items && order.items.length > 0;
+                    if (orderHasItems) {
+                        console.log('[QPAY] Creating ebarimt for order', id, 'paymentId:', paymentId, '(order has line items – ebarimt invoice)');
+                        try {
+                            ebarimtResponse = await ebarimtTestService.createEbarimtFromPayment(paymentId, {
+                                ebarimtReceiverType: 'CITIZEN',
+                                ebarimtReceiver: order.contactPhoneNumber ?? order.user?.phone ?? order.address?.phoneNumber ?? '80650025',
+                                preferredToken: order.qpayAccessToken ?? undefined,
+                                tokenExpiresAt: order.qpayTokenExpiresAt ?? undefined
                             });
+
+                            if (ebarimtResponse.ebarimt_id) {
+                                await prisma.order.update({
+                                    where: { id: String(id) },
+                                    data: {
+                                        ebarimtId: ebarimtResponse.ebarimt_id,
+                                        ebarimtReceiptUrl: ebarimtResponse.receipt_url ?? null
+                                    }
+                                });
+                            }
+                        } catch (ebarimtError) {
+                            console.error('[QPAY] Ebarimt generation failed:', ebarimtError.message);
+                            ebarimtErrorInfo = {
+                                message: ebarimtError.message,
+                                response: ebarimtError.response?.data
+                            };
                         }
-                    } catch (ebarimtError) {
-                        console.error('[QPAY] Ebarimt generation failed:', ebarimtError.message);
-                        ebarimtErrorInfo = {
-                            message: ebarimtError.message,
-                            response: ebarimtError.response?.data
-                        };
+                    } else {
+                        console.log('[QPAY] Skipping ebarimt for order', id, '(invoice was simple amount-only; ebarimt only works for ebarimt-type invoices)');
                     }
 
                     // Always send payment confirmation email when we have contact/user email (with or without ebarimt)
@@ -797,11 +824,30 @@ class PaymentController {
                     if (receiptEmail) {
                         try {
                             const orderData = this._buildOrderDataForReceipt(order);
-                            const ebarimtForEmail = ebarimtResponse
+                            let ebarimtForEmail = ebarimtResponse
                                 ? { ...ebarimtResponse }
                                 : { ebarimt_id: null, receipt_url: null, ebarimt_error: ebarimtErrorInfo };
+                            // Generate QR image from ebarimt_qr_data for receipt email
+                            if (ebarimtForEmail.ebarimt_qr_data) {
+                                try {
+                                    ebarimtForEmail.qr_image = await QRCode.toDataURL(ebarimtForEmail.ebarimt_qr_data, {
+                                        type: 'image/png',
+                                        margin: 2,
+                                        width: 200,
+                                        errorCorrectionLevel: 'M'
+                                    });
+                                } catch (qrErr) {
+                                    console.warn('[QPAY] Ebarimt QR code generation failed:', qrErr.message);
+                                }
+                            }
                             await emailService.sendEbarimtReceipt(receiptEmail, orderData, ebarimtForEmail);
                             console.log('[QPAY] Payment confirmation email sent to', receiptEmail);
+                            await orderService.recordOrderActivity(id, {
+                                type: 'MESSAGE_SENT',
+                                title: 'Payment receipt email sent',
+                                channel: 'email',
+                                toValue: receiptEmail
+                            });
                         } catch (emailError) {
                             console.error('[QPAY] Payment confirmation email failed:', emailError.message, emailError.stack);
                         }
@@ -1006,26 +1052,44 @@ class PaymentController {
                         }
                     });
 
-                    // Try to generate Ebarimt (test: ebarimt_v3/create with payment_id, ebarimt_receiver_type, ebarimt_receiver)
+                    await orderService.recordOrderActivity(id, {
+                        type: 'PAYMENT_STATUS_CHANGED',
+                        title: 'Payment confirmed',
+                        fromValue: order.paymentStatus || 'PENDING',
+                        toValue: 'PAID'
+                    });
+
+                    // Try to generate Ebarimt only when invoice was ebarimt-type (order has line items)
                     let ebarimtResponse = null;
                     let ebarimtErrorInfo = null;
-                    try {
-                        ebarimtResponse = await ebarimtTestService.createEbarimtFromPayment(paymentId, {
-                            ebarimtReceiverType: 'CITIZEN',
-                            ebarimtReceiver: order.contactPhoneNumber ?? order.user?.phone ?? order.address?.phoneNumber ?? '80650025'
-                        });
-                        if (ebarimtResponse.ebarimt_id) {
-                            await prisma.order.update({
-                                where: { id: String(id) },
-                                data: { ebarimtId: ebarimtResponse.ebarimt_id }
+                    const orderHasItemsPoll = order.items && order.items.length > 0;
+                    if (orderHasItemsPoll) {
+                        console.log('[QPAY] Creating ebarimt for order', id, 'paymentId:', paymentId, '(poll – order has line items)');
+                        try {
+                            ebarimtResponse = await ebarimtTestService.createEbarimtFromPayment(paymentId, {
+                                ebarimtReceiverType: 'CITIZEN',
+                                ebarimtReceiver: order.contactPhoneNumber ?? order.user?.phone ?? order.address?.phoneNumber ?? '80650025',
+                                preferredToken: order.qpayAccessToken ?? undefined,
+                                tokenExpiresAt: order.qpayTokenExpiresAt ?? undefined
                             });
+                            if (ebarimtResponse.ebarimt_id) {
+                                await prisma.order.update({
+                                    where: { id: String(id) },
+                                    data: {
+                                        ebarimtId: ebarimtResponse.ebarimt_id,
+                                        ebarimtReceiptUrl: ebarimtResponse.receipt_url ?? null
+                                    }
+                                });
+                            }
+                        } catch (ebarimtError) {
+                            console.error('[QPAY] Ebarimt generation failed (poll path):', ebarimtError.message);
+                            ebarimtErrorInfo = {
+                                message: ebarimtError.message,
+                                response: ebarimtError.response?.data
+                            };
                         }
-                    } catch (ebarimtError) {
-                        console.error('[QPAY] Ebarimt generation failed (poll path):', ebarimtError.message);
-                        ebarimtErrorInfo = {
-                            message: ebarimtError.message,
-                            response: ebarimtError.response?.data
-                        };
+                    } else {
+                        console.log('[QPAY] Skipping ebarimt for order', id, '(poll path – invoice was simple amount-only)');
                     }
 
                     // Always send payment confirmation email when we have contact/user email (with or without ebarimt)
@@ -1033,11 +1097,29 @@ class PaymentController {
                     if (receiptEmailPoll) {
                         try {
                             const orderData = this._buildOrderDataForReceipt(order);
-                            const ebarimtForEmail = ebarimtResponse
+                            let ebarimtForEmail = ebarimtResponse
                                 ? { ...ebarimtResponse }
                                 : { ebarimt_id: null, receipt_url: null, ebarimt_error: ebarimtErrorInfo };
+                            if (ebarimtForEmail.ebarimt_qr_data) {
+                                try {
+                                    ebarimtForEmail.qr_image = await QRCode.toDataURL(ebarimtForEmail.ebarimt_qr_data, {
+                                        type: 'image/png',
+                                        margin: 2,
+                                        width: 200,
+                                        errorCorrectionLevel: 'M'
+                                    });
+                                } catch (qrErr) {
+                                    console.warn('[QPAY] Ebarimt QR code generation failed (poll):', qrErr.message);
+                                }
+                            }
                             await emailService.sendEbarimtReceipt(receiptEmailPoll, orderData, ebarimtForEmail);
                             console.log('[QPAY] Payment confirmation email sent (poll) to', receiptEmailPoll);
+                            await orderService.recordOrderActivity(id, {
+                                type: 'MESSAGE_SENT',
+                                title: 'Payment receipt email sent',
+                                channel: 'email',
+                                toValue: receiptEmailPoll
+                            });
                         } catch (emailError) {
                             console.error('[QPAY] Payment confirmation email failed (poll):', emailError.message, emailError.stack);
                         }

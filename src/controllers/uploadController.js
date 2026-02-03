@@ -1,6 +1,7 @@
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const sharp = require('sharp');
 
 // Ensure uploads directory exists
 const uploadsDir = path.join(__dirname, '../../public/uploads');
@@ -8,20 +9,17 @@ if (!fs.existsSync(uploadsDir)) {
     fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
-// Configure multer storage
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        cb(null, uploadsDir);
-    },
-    filename: (req, file, cb) => {
-        // Generate unique filename: timestamp-random-originalname
-        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-        const ext = path.extname(file.originalname);
-        const basename = path.basename(file.originalname, ext);
-        const filename = `${basename}-${uniqueSuffix}${ext}`;
-        cb(null, filename);
-    }
-});
+// Max dimension for product images (width and height)
+const PRODUCT_IMAGE_MAX_DIMENSION = 300;
+
+/** Generate a short, recognizable filename for product images: img-<id>.webp */
+function generateProductImageFilename() {
+    const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    return `img-${id}.webp`;
+}
+
+// Use memory storage so we can process images (resize + webp) before writing
+const storage = multer.memoryStorage();
 
 // File filter for images only
 const fileFilter = (req, file, cb) => {
@@ -42,6 +40,41 @@ const upload = multer({
         fileSize: 10 * 1024 * 1024 // 10MB limit
     }
 });
+
+/**
+ * Process uploaded image(s): resize to max 300x300 and convert to .webp.
+ * Writes to disk and sets filename on req.file / req.files for URL response.
+ */
+const processImageToWebp = async (req, res, next) => {
+    try {
+        const processOne = async (file) => {
+            if (!file.buffer) return;
+            const filename = generateProductImageFilename();
+            const filePath = path.join(uploadsDir, filename);
+            await sharp(file.buffer)
+                .resize(PRODUCT_IMAGE_MAX_DIMENSION, PRODUCT_IMAGE_MAX_DIMENSION, {
+                    fit: 'inside',
+                    withoutEnlargement: true
+                })
+                .webp({ quality: 85 })
+                .toFile(filePath);
+            file.filename = filename;
+            file.path = filePath;
+            file.mimetype = 'image/webp';
+        };
+
+        if (req.file) {
+            await processOne(req.file);
+        } else if (req.files && req.files.length > 0) {
+            for (const file of req.files) {
+                await processOne(file);
+            }
+        }
+        next();
+    } catch (err) {
+        next(err);
+    }
+};
 
 /**
  * Middleware for single file upload
@@ -318,5 +351,6 @@ module.exports = {
     uploadFiles,
     deleteImage,
     handleUploadError,
-    normalizeSingleUpload
+    normalizeSingleUpload,
+    processImageToWebp
 };
