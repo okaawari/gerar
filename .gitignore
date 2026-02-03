@@ -46,3 +46,7 @@ Thumbs.db
 public/uploads/*
 !public/uploads/.gitkeep
 QPAY
+
+# Ebarimt request/response dumps (local only)
+ebarimt_invoice_request_sent.json
+ebarimt_from_invoice_request_sent.json
