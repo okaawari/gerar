@@ -3,9 +3,18 @@ const path = require('path');
 
 const deliveryTimeSlots = require('../constants/deliveryTimeSlots');
 const districts = require('../constants/districts');
+const { getOffDeliveryDatesConfig, setOffDeliveryDatesConfig } = require('../config/offDeliveryDates');
 
 const DELIVERY_TIME_SLOTS_PATH = path.join(__dirname, '../constants/deliveryTimeSlots.js');
 const DISTRICTS_PATH = path.join(__dirname, '../constants/districts.js');
+
+const YYYY_MM_DD_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+const isValidDateString = (s) => {
+    if (!YYYY_MM_DD_REGEX.test(s)) return false;
+    const d = new Date(s);
+    if (Number.isNaN(d.getTime())) return false;
+    return d.toISOString().slice(0, 10) === s;
+};
 
 const RESERVED_KEYS = new Set(['__proto__', 'prototype', 'constructor']);
 
@@ -347,9 +356,59 @@ const updateDistricts = (req, res, next) => {
     }
 };
 
+const getOffDeliveryDates = (req, res) => {
+    const { offWeekdays, offDates } = getOffDeliveryDatesConfig();
+    res.status(200).json({
+        success: true,
+        data: { offWeekdays, offDates }
+    });
+};
+
+const updateOffDeliveryDates = (req, res, next) => {
+    try {
+        const { offWeekdays, offDates } = req.body;
+
+        if (!Array.isArray(offWeekdays) || !Array.isArray(offDates)) {
+            const error = new Error('Request body must include offWeekdays and offDates arrays.');
+            error.statusCode = 400;
+            throw error;
+        }
+
+        for (let i = 0; i < offWeekdays.length; i++) {
+            const n = offWeekdays[i];
+            if (!Number.isInteger(n) || n < 0 || n > 6) {
+                const error = new Error(`offWeekdays[${i}] must be an integer between 0 and 6 (0=Sunday).`);
+                error.statusCode = 400;
+                throw error;
+            }
+        }
+
+        for (let i = 0; i < offDates.length; i++) {
+            const s = offDates[i];
+            if (typeof s !== 'string' || !isValidDateString(s)) {
+                const error = new Error(`offDates[${i}] must be a valid date string in YYYY-MM-DD format.`);
+                error.statusCode = 400;
+                throw error;
+            }
+        }
+
+        const payload = { offWeekdays, offDates };
+        setOffDeliveryDatesConfig(payload);
+
+        res.status(200).json({
+            success: true,
+            data: { offWeekdays, offDates }
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
 module.exports = {
     getDeliveryTimeSlots,
     updateDeliveryTimeSlots,
     getDistricts,
-    updateDistricts
+    updateDistricts,
+    getOffDeliveryDates,
+    updateOffDeliveryDates
 };

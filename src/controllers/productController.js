@@ -30,7 +30,8 @@ class ProductController {
                 sortBy,
                 sortOrder,
                 page,
-                limit
+                limit,
+                onSale
             } = req.query;
 
             const filters = {};
@@ -109,6 +110,10 @@ class ProductController {
                 filters.limit = limit;
             }
 
+            if (onSale !== undefined) {
+                filters.onSale = onSale === true || onSale === 'true';
+            }
+
             // Include userId if user is authenticated (for favorite status)
             if (req.user && req.user.id) {
                 filters.userId = req.user.id;
@@ -124,6 +129,55 @@ class ProductController {
             res.status(200).json({
                 success: true,
                 message: 'Products retrieved successfully',
+                data: result.products,
+                pagination: result.pagination
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    /**
+     * Get all products on sale (have discount / originalPrice set)
+     * GET /api/products/sale?
+     *   categoryId=1&categoryIds[]=1
+     *   &sortBy=discountPercentage&sortOrder=desc
+     *   &page=1&limit=20
+     */
+    async getProductsOnSale(req, res, next) {
+        try {
+            const query = { ...req.query };
+            query.onSale = true;
+
+            const filters = {};
+            const categoryIdsArray = req.query['categoryIds[]'] || query.categoryIds;
+            if (categoryIdsArray) {
+                if (Array.isArray(categoryIdsArray)) {
+                    const validIds = categoryIdsArray.filter(id => id != null && String(id).trim().length > 0);
+                    if (validIds.length > 0) filters.categoryIds = validIds;
+                } else if (typeof categoryIdsArray === 'string') {
+                    const validIds = categoryIdsArray.split(',').map(id => id.trim()).filter(id => id.length > 0);
+                    if (validIds.length > 0) filters.categoryIds = validIds;
+                }
+            }
+            if (!filters.categoryIds && query.categoryId) filters.categoryId = query.categoryId;
+            if (query.search) filters.search = query.search;
+            if (query.inStock !== undefined) filters.inStock = query.inStock;
+            if (query.minPrice !== undefined) filters.minPrice = query.minPrice;
+            if (query.maxPrice !== undefined) filters.maxPrice = query.maxPrice;
+            if (query.sortBy) filters.sortBy = query.sortBy;
+            if (query.sortOrder) filters.sortOrder = query.sortOrder;
+            if (query.page !== undefined) filters.page = query.page;
+            if (query.limit !== undefined) filters.limit = query.limit;
+            if (req.user && req.user.id) filters.userId = req.user.id;
+            if (req.user && (req.user.role === 'ADMIN' || req.user.role === 'SUPER_ADMIN')) filters.includeHidden = true;
+
+            filters.onSale = true;
+            const result = await productService.getAllProducts(filters);
+
+            res.status(200).json({
+                success: true,
+                message: 'Products on sale retrieved successfully',
                 data: result.products,
                 pagination: result.pagination
             });

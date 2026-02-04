@@ -1,5 +1,6 @@
 const addressService = require('../services/addressService');
 const { getDistricts, getKhorooOptions, isValidDistrict } = require('../constants/districts');
+const { getOffDeliveryDatesConfig } = require('../config/offDeliveryDates');
 
 class AddressController {
     /**
@@ -134,6 +135,25 @@ class AddressController {
                 success: true,
                 message: 'Districts retrieved successfully',
                 data: districts
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    /**
+     * Get off-delivery dates (weekdays and specific dates when delivery is unavailable)
+     * GET /api/addresses/off-delivery-dates
+     * Used by orders/create page when user selects delivery date.
+     */
+    async getOffDeliveryDates(req, res, next) {
+        try {
+            const { offWeekdays, offDates } = getOffDeliveryDatesConfig();
+
+            res.status(200).json({
+                success: true,
+                message: 'Off-delivery dates retrieved successfully',
+                data: { offWeekdays, offDates }
             });
         } catch (error) {
             next(error);

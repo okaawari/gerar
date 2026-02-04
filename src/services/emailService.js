@@ -28,11 +28,13 @@ class EmailService {
         this.transporter = nodemailer.createTransport({
             host: this.smtpHost,
             port: this.smtpPort,
-            secure: this.smtpSecure, // true for 465, false for other ports
+            secure: this.smtpSecure, // true for 465, false for 587 (STARTTLS)
             auth: {
                 user: this.smtpUser,
                 pass: this.smtpPassword
-            }
+            },
+            connectionTimeout: 15000,
+            greetingTimeout: 10000
         });
     }
 
@@ -114,8 +116,11 @@ class EmailService {
             if (error.code === 'EAUTH') {
                 throw new Error('SMTP authentication failed. Please check SMTP_USER and SMTP_PASSWORD.');
             }
-            if (error.code === 'ECONNECTION') {
-                throw new Error('Failed to connect to SMTP server. Check network and SMTP settings.');
+            if (error.code === 'ECONNECTION' || error.code === 'ECONNREFUSED') {
+                const hint = this.smtpPort === 587
+                    ? ' If this server blocks outbound port 587, try SMTP_PORT=465 and SMTP_SECURE=true, or use a transactional email provider (e.g. SendGrid, Mailgun).'
+                    : '';
+                throw new Error('Failed to connect to SMTP server (connection refused). Check firewall and SMTP host/port.' + hint);
             }
             if (error.code === 'ETIMEDOUT') {
                 throw new Error('SMTP connection timeout. Please try again.');

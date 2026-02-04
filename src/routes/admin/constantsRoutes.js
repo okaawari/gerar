@@ -4,7 +4,9 @@ const {
     getDeliveryTimeSlots,
     updateDeliveryTimeSlots,
     getDistricts,
-    updateDistricts
+    updateDistricts,
+    getOffDeliveryDates,
+    updateOffDeliveryDates
 } = require('../../controllers/adminConstantsController');
 
 const router = express.Router();
@@ -17,5 +19,8 @@ router.post('/delivery-time-slots', updateDeliveryTimeSlots);
 
 router.get('/districts', getDistricts);
 router.post('/districts', updateDistricts);
+
+router.get('/off-delivery-dates', getOffDeliveryDates);
+router.post('/off-delivery-dates', updateOffDeliveryDates);
 
 module.exports = router;

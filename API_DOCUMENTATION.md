@@ -753,7 +753,8 @@ GET /api/categories/1/products?includeSubcategories=true&page=1&limit=20
 **Authentication**: Optional (if authenticated, returns favorite status for each product)
 
 **Query Parameters** (optional, added to URL):
-- `category` (number): Filter by category ID
+- `categoryId` / `categoryIds[]`: Filter by category ID(s)
+- `onSale` (boolean): If `true`, only return products that have a discount (originalPrice set)
 - `page` (number): Page number (default: 1)
 - `limit` (number): Items per page (default: 20)
 - `search` (string): Search query
@@ -793,6 +794,25 @@ GET /api/products?category=1&page=1&limit=20&sortBy=price&sortOrder=asc
   ]
 }
 ```
+
+---
+
+### Get Products on Sale
+
+**Method**: `GET` (retrieves only products that have a discount/sale - **NO request body**)
+
+**Endpoint**: `GET /api/products/sale`
+
+**Authentication**: Optional (if authenticated, returns favorite status for each product)
+
+**Query Parameters** (optional): Same as Get All Products (`categoryId`, `categoryIds[]`, `search`, `minPrice`, `maxPrice`, `sortBy`, `sortOrder`, `page`, `limit`). Results are limited to products with `originalPrice` set (on sale).
+
+**Example Request**:
+```
+GET /api/products/sale?page=1&limit=20&sortBy=price&sortOrder=asc
+```
+
+**Response**: `200 OK` — Same shape as Get All Products. Each product includes `hasDiscount`, `originalPrice`, `discountAmount`, and `discountPercentage` when on sale.
 
 ---
 

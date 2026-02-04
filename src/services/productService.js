@@ -210,6 +210,11 @@ class ProductService {
             where.isHidden = false;
         }
 
+        // Filter products on sale (have originalPrice set, i.e. discount)
+        if (filters.onSale === true || filters.onSale === 'true') {
+            where.originalPrice = { not: null };
+        }
+
         // Filter by single category or multiple categories
         if (filters.categoryIds && Array.isArray(filters.categoryIds)) {
             // Multiple categories - filter products that have ANY of these categories

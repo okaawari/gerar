@@ -7,6 +7,7 @@ const router = express.Router();
 
 // Public endpoints (no authentication needed, just return data)
 router.get('/districts', addressController.getDistricts);
+router.get('/off-delivery-dates', addressController.getOffDeliveryDates);
 router.get('/khoroo', addressController.getKhorooOptions);
 
 // All other routes require authentication
