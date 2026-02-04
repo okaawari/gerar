@@ -278,17 +278,17 @@ class ProductService {
         // Stock filtering - handle inStock and minStock/maxStock together
         // Priority: minStock/maxStock > inStock > no filter
         const hasStockRange = filters.minStock !== undefined || filters.maxStock !== undefined;
-        
+
         if (hasStockRange) {
             // Stock range filtering takes precedence
             const stockFilter = {};
-            
+
             if (filters.minStock !== undefined) {
                 const minStock = parseInt(filters.minStock);
                 if (!isNaN(minStock) && minStock >= 0) {
                     // If inStock is true and minStock is specified, ensure minStock is at least 1
-                    const effectiveMinStock = (filters.inStock === 'true' || filters.inStock === true) 
-                        ? Math.max(minStock, 1) 
+                    const effectiveMinStock = (filters.inStock === 'true' || filters.inStock === true)
+                        ? Math.max(minStock, 1)
                         : minStock;
                     stockFilter.gte = effectiveMinStock;
                 }
@@ -296,14 +296,14 @@ class ProductService {
                 // No minStock but inStock=true, so stock must be > 0
                 stockFilter.gt = 0;
             }
-            
+
             if (filters.maxStock !== undefined) {
                 const maxStock = parseInt(filters.maxStock);
                 if (!isNaN(maxStock) && maxStock >= 0) {
                     stockFilter.lte = maxStock;
                 }
             }
-            
+
             if (Object.keys(stockFilter).length > 0) {
                 where.stock = stockFilter;
             }
@@ -339,7 +339,7 @@ class ProductService {
         let orderBy;
         let shouldSortByCategoryOrder = false;
         let singleCategoryId = null;
-        
+
         if ((filters.categoryId || (filters.categoryIds && filters.categoryIds.length === 1)) && !filters.sortBy) {
             // Single category filter without explicit sortBy - we'll sort by category order in post-processing
             shouldSortByCategoryOrder = true;
@@ -352,9 +352,9 @@ class ProductService {
             const sortBy = filters.sortBy || 'createdAt';
             const validSortFields = ['name', 'price', 'stock', 'createdAt', 'updatedAt'];
             const sortField = validSortFields.includes(sortBy) ? sortBy : 'createdAt';
-            
+
             const sortOrder = (filters.sortOrder === 'asc' || filters.sortOrder === 'ASC') ? 'asc' : 'desc';
-            
+
             orderBy = {
                 [sortField]: sortOrder
             };
@@ -369,67 +369,114 @@ class ProductService {
         const validPage = page > 0 ? page : 1;
         const validLimit = limit > 0 && limit <= 100 ? limit : 50; // Max 100 items per page
 
-        // Get total count for pagination
-        const total = await prisma.product.count({ where });
+        // Get total count and products
+        let total, products, totalPages;
 
-        // Get products with pagination
-        let products = await prisma.product.findMany({
-            where,
-            include: {
-                categories: {
-                    include: {
-                        category: {
-                            select: {
-                                id: true,
-                                name: true,
-                                description: true
+        // OPTIMIZATION: If sorting by category order (single category view), query productcategory directly
+        // This avoids fetching ALL products in a category to sort them in memory
+        if (shouldSortByCategoryOrder && singleCategoryId) {
+            // Remove categories filter from product where since we query by categoryId directly
+            const productWhere = { ...where };
+            delete productWhere.categories;
+
+            // Count from junction to match the query
+            total = await prisma.productcategory.count({
+                where: {
+                    categoryId: singleCategoryId,
+                    product: productWhere
+                }
+            });
+
+            // Fetch paginated results from junction table using the index
+            const productCategories = await prisma.productcategory.findMany({
+                where: {
+                    categoryId: singleCategoryId,
+                    product: productWhere
+                },
+                include: {
+                    product: {
+                        include: {
+                            categories: {
+                                include: {
+                                    category: {
+                                        select: {
+                                            id: true,
+                                            name: true,
+                                            description: true
+                                        }
+                                    }
+                                }
+                            },
+                            creator: {
+                                select: {
+                                    id: true,
+                                    name: true,
+                                    phoneNumber: true,
+                                    email: true
+                                }
+                            },
+                            updater: {
+                                select: {
+                                    id: true,
+                                    name: true,
+                                    phoneNumber: true,
+                                    email: true
+                                }
                             }
                         }
                     }
                 },
-                creator: {
-                    select: {
-                        id: true,
-                        name: true,
-                        phoneNumber: true,
-                        email: true
+                orderBy: [
+                    { order: 'asc' },
+                    { product: { createdAt: 'desc' } }
+                ],
+                skip: (validPage - 1) * validLimit,
+                take: validLimit
+            });
+
+            products = productCategories.map(pc => pc.product);
+        } else {
+            // Standard query for other cases
+            total = await prisma.product.count({ where });
+
+            products = await prisma.product.findMany({
+                where,
+                include: {
+                    categories: {
+                        include: {
+                            category: {
+                                select: {
+                                    id: true,
+                                    name: true,
+                                    description: true
+                                }
+                            }
+                        }
+                    },
+                    creator: {
+                        select: {
+                            id: true,
+                            name: true,
+                            phoneNumber: true,
+                            email: true
+                        }
+                    },
+                    updater: {
+                        select: {
+                            id: true,
+                            name: true,
+                            phoneNumber: true,
+                            email: true
+                        }
                     }
                 },
-                updater: {
-                    select: {
-                        id: true,
-                        name: true,
-                        phoneNumber: true,
-                        email: true
-                    }
-                }
-            },
-            orderBy,
-            skip: (validPage - 1) * validLimit,
-            take: shouldSortByCategoryOrder ? undefined : validLimit // Fetch all if sorting by order, then paginate after
-        });
-
-        // If sorting by category order, sort products now and then paginate
-        if (shouldSortByCategoryOrder && singleCategoryId) {
-            products = products.sort((a, b) => {
-                const aCategory = a.categories.find(pc => pc.categoryId === singleCategoryId);
-                const bCategory = b.categories.find(pc => pc.categoryId === singleCategoryId);
-                
-                const aOrder = aCategory ? (aCategory.order || 0) : 999999;
-                const bOrder = bCategory ? (bCategory.order || 0) : 999999;
-                
-                if (aOrder !== bOrder) {
-                    return aOrder - bOrder; // Lower order number = appears first
-                }
-                // If order is same, sort by createdAt (newer first)
-                return new Date(b.createdAt) - new Date(a.createdAt);
+                orderBy,
+                skip: (validPage - 1) * validLimit,
+                take: validLimit
             });
-            
-            // Apply pagination after sorting
-            products = products.slice((validPage - 1) * validLimit, validPage * validLimit);
         }
 
-        const totalPages = Math.ceil(total / validLimit);
+        totalPages = Math.ceil(total / validLimit);
 
         // Get favorite statuses if userId is provided
         let favoriteStatuses = {};
@@ -481,12 +528,12 @@ class ProductService {
      */
     async getProductById(id, userId = null, includeHidden = false, includeDeleted = false) {
         const where = { id: parseInt(id) };
-        
+
         // Filter out deleted products unless includeDeleted is true
         if (!includeDeleted) {
             where.deletedAt = null;
         }
-        
+
         const product = await prisma.product.findUnique({
             where,
             include: {
@@ -855,8 +902,8 @@ class ProductService {
                 return entry ? parseInt(entry.order) : null;
             } else if (typeof categoryOrders === 'object' && categoryOrders !== null) {
                 // Try both string and number keys
-                const value = categoryOrders[categoryId] !== undefined 
-                    ? categoryOrders[categoryId] 
+                const value = categoryOrders[categoryId] !== undefined
+                    ? categoryOrders[categoryId]
                     : categoryOrders[String(categoryId)];
                 return value !== undefined ? parseInt(value) : null;
             }
@@ -867,7 +914,7 @@ class ProductService {
             // Updating categories (and possibly their orders)
             categoryUpdateNeeded = true;
             categoryIdsForUpdate = categoryIds;
-            
+
             // Store order data for later use
             categoryOrdersData = categoryIdsForUpdate.reduce((acc, categoryId) => {
                 const order = getOrderForCategory(categoryId);
@@ -877,19 +924,19 @@ class ProductService {
         } else if (categoryOrders !== undefined && categoryOrders !== null) {
             // Only updating category orders without changing categories
             categoryOrdersOnly = true;
-            
+
             // Get existing product categories
             const existingCategories = await prisma.productcategory.findMany({
                 where: { productId: parseInt(id) },
                 select: { categoryId: true }
             });
-            
+
             if (existingCategories.length === 0) {
                 const error = new Error('Product has no categories. Please provide categoryIds when setting categoryOrders.');
                 error.statusCode = 400;
                 throw error;
             }
-            
+
             // Prepare order updates for existing categories
             const orderUpdates = [];
             for (const pc of existingCategories) {
@@ -902,12 +949,12 @@ class ProductService {
                     });
                 }
             }
-            
+
             if (orderUpdates.length === 0) {
                 // No valid orders provided, skip update
                 categoryOrdersOnly = false;
             }
-            
+
             // Store for batch update
             categoryOrdersData = { orderUpdates };
         }
@@ -1247,7 +1294,7 @@ class ProductService {
      */
     async checkStockAvailability(productId, quantity) {
         const product = await prisma.product.findUnique({
-            where: { 
+            where: {
                 id: parseInt(productId),
                 deletedAt: null // Only check stock for non-deleted products
             }
@@ -1273,7 +1320,7 @@ class ProductService {
      */
     async reduceStock(productId, quantity) {
         const product = await prisma.product.findUnique({
-            where: { 
+            where: {
                 id: parseInt(productId),
                 deletedAt: null // Only reduce stock for non-deleted products
             }
