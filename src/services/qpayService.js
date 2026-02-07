@@ -60,6 +60,51 @@ class QPayService {
     }
 
     /**
+     * SAFE retry helper for invoice creation - ONLY retries on definite network failures
+     * CRITICAL: Invoice creation is NOT idempotent on QPay side. If QPay received the request,
+     * retrying will create duplicate invoices which corrupts ebarimt state.
+     * 
+     * Only retry when we are CERTAIN the request never reached QPay:
+     * - ECONNRESET, ECONNREFUSED, ETIMEDOUT, ENOTFOUND (network layer failures)
+     * - NO response object (request definitely didn't complete)
+     * 
+     * DO NOT retry if:
+     * - Any HTTP response was received (even 5xx - QPay may have processed it)
+     * - Timeout occurred (request may have reached QPay)
+     * - Unclear error state
+     * 
+     * @param {Function} fn - Function to execute (should be invoice creation)
+     * @param {string} orderId - Order ID for logging
+     * @returns {Promise} Result of function
+     */
+    async safeInvoiceRequest(fn, orderId) {
+        // Network errors that definitively mean request never reached QPay
+        const SAFE_TO_RETRY_CODES = ['ECONNREFUSED', 'ENOTFOUND', 'ECONNRESET'];
+
+        try {
+            return await fn();
+        } catch (error) {
+            // If we got ANY response from QPay, DO NOT retry - the invoice may exist
+            if (error.response) {
+                console.error(`[QPAY IDEMPOTENCY] Order ${orderId}: Got HTTP ${error.response.status} - NOT retrying (invoice may exist)`);
+                throw error;
+            }
+
+            // Only retry on specific network errors where we KNOW request didn't reach QPay
+            if (error.code && SAFE_TO_RETRY_CODES.includes(error.code)) {
+                console.log(`[QPAY IDEMPOTENCY] Order ${orderId}: Network error ${error.code} - safe to retry once`);
+                // Single retry after 2 seconds
+                await new Promise(resolve => setTimeout(resolve, 2000));
+                return await fn();
+            }
+
+            // For timeout or unknown errors, DO NOT retry - request may have reached QPay
+            console.error(`[QPAY IDEMPOTENCY] Order ${orderId}: Error '${error.code || error.message}' - NOT retrying (uncertain state)`);
+            throw error;
+        }
+    }
+
+    /**
      * Get access token with timestamp-based caching
      * CRITICAL: Only fetch one token per timestamp as per QPAY requirements
      * @returns {Promise<string>} Access token
@@ -170,6 +215,18 @@ class QPayService {
      */
     async createInvoice(order, invoiceData = {}) {
         try {
+            // ═══════════════════════════════════════════════════════════════════
+            // IDEMPOTENCY CHECK: If order already has an invoice, DO NOT create another
+            // This is the CRITICAL guard against duplicate invoice creation
+            // ═══════════════════════════════════════════════════════════════════
+            const existingInvoiceId = order.qpayInvoiceId || order.qpay_invoice_id;
+            console.log(`[QPAY IDEMPOTENCY] Creating invoice for order ${order.id}, existingInvoiceId: ${existingInvoiceId || 'null'}`);
+
+            if (existingInvoiceId) {
+                console.warn(`[QPAY IDEMPOTENCY] ⚠️ Order ${order.id} ALREADY has invoice ${existingInvoiceId} - ABORTING creation`);
+                throw new Error(`Order ${order.id} already has invoice ${existingInvoiceId}. Cannot create duplicate.`);
+            }
+
             const token = await this.getAccessToken();
 
             // Build callback URL (strip trailing slash from base to avoid // in path)
@@ -183,7 +240,7 @@ class QPayService {
             // TODO: Remove this test mode after confirming if order ID format is the issue
             const senderInvoiceNo = String(this.testInvoiceCounter++);
             console.log(`🧪 TEST MODE: Using simple sender_invoice_no: ${senderInvoiceNo} (original order.id: ${order.id})`);
-            console.log(`Creating QPAY invoice with sender_invoice_no: ${senderInvoiceNo} (type: ${typeof senderInvoiceNo}, length: ${senderInvoiceNo.length})`);
+            console.log(`[QPAY] Creating invoice with sender_invoice_no: ${senderInvoiceNo} (type: ${typeof senderInvoiceNo}, length: ${senderInvoiceNo.length})`);
 
             const invoicePayload = {
                 invoice_code: this.invoiceCode,
@@ -211,7 +268,12 @@ class QPayService {
                 invoicePayload.lines = invoiceData.lines;
             }
 
-            const response = await this.retryWithBackoff(async () => {
+            // ═══════════════════════════════════════════════════════════════════
+            // CRITICAL: Use safe invoice request - NO blind retries on invoice creation!
+            // QPay does NOT support idempotent invoice creation. Retrying can create
+            // duplicate invoices which causes tenant errors during ebarimt.
+            // ═══════════════════════════════════════════════════════════════════
+            const response = await this.safeInvoiceRequest(async () => {
                 return await axios.post(
                     `${this.apiUrl}/invoice`,
                     invoicePayload,
@@ -223,7 +285,7 @@ class QPayService {
                         timeout: 15000
                     }
                 );
-            });
+            }, order.id);
 
             // Log full QPAY response to see what fields are returned
             console.log('QPAY API Response Keys:', Object.keys(response.data));
@@ -231,8 +293,6 @@ class QPayService {
                 invoice_id: response.data.invoice_id,
                 qr_image: response.data.qr_image ? `Present (${response.data.qr_image.length} bytes)` : 'MISSING',
                 qr_code: response.data.qr_code ? `Present (${response.data.qr_code.length} bytes)` : 'MISSING',
-                qr_text: response.data.qr_text ? `Present (${response.data.qr_text.length} chars)` : 'MISSING',
-                urls: response.data.urls ? 'Present' : 'MISSING'
             });
 
             return response.data;
@@ -259,6 +319,18 @@ class QPayService {
      */
     async createEbarimtInvoice(order, invoiceData = {}) {
         try {
+            // ═══════════════════════════════════════════════════════════════════
+            // IDEMPOTENCY CHECK: If order already has an invoice, DO NOT create another
+            // This is the CRITICAL guard against duplicate invoice creation
+            // ═══════════════════════════════════════════════════════════════════
+            const existingInvoiceId = order.qpayInvoiceId || order.qpay_invoice_id;
+            console.log(`[QPAY IDEMPOTENCY] Creating invoice for order ${order.id}, existingInvoiceId: ${existingInvoiceId || 'null'}`);
+
+            if (existingInvoiceId) {
+                console.warn(`[QPAY IDEMPOTENCY] ⚠️ Order ${order.id} ALREADY has invoice ${existingInvoiceId} - ABORTING creation`);
+                throw new Error(`Order ${order.id} already has invoice ${existingInvoiceId}. Cannot create duplicate.`);
+            }
+
             const token = await this.getAccessToken();
             const base = (this.callbackBaseUrl || '').replace(/\/$/, '');
             const callbackUrl = `${base}/orders/${order.id}/payment-callback`;
@@ -271,7 +343,7 @@ class QPayService {
             const receiver = invoiceData.receiverData || {};
             const receiverPhone = (receiver.phone != null ? String(receiver.phone) : '') || (receiver.phoneNumber != null ? String(receiver.phoneNumber) : '');
             const invoiceReceiverCode = receiverPhone || (order.userId != null ? String(order.userId) : '') || `RECV-${senderInvoiceNo}`;
-            console.log(`Creating QPAY ebarimt invoice for order ${order.id}, sender_invoice_no: ${senderInvoiceNo} (type: ${typeof senderInvoiceNo}, length: ${senderInvoiceNo.length}), district: ${districtCode}`);
+            console.log(`[QPAY] Creating ebarimt invoice for order ${order.id}, sender_invoice_no: ${senderInvoiceNo} (type: ${typeof senderInvoiceNo}, length: ${senderInvoiceNo.length}), district: ${districtCode}`);
 
             const branchCode = invoiceData.branchCode != null ? String(invoiceData.branchCode) : 'GERAR_BRANCH';
             const payload = {
@@ -315,7 +387,12 @@ class QPayService {
                 body: payload
             };
 
-            const response = await this.retryWithBackoff(async () => {
+            // ═══════════════════════════════════════════════════════════════════
+            // CRITICAL: Use safe invoice request - NO blind retries on invoice creation!
+            // QPay does NOT support idempotent invoice creation. Retrying can create
+            // duplicate invoices which causes tenant errors during ebarimt.
+            // ═══════════════════════════════════════════════════════════════════
+            const response = await this.safeInvoiceRequest(async () => {
                 return await axios.post(
                     requestUrl,
                     payload,
@@ -327,7 +404,7 @@ class QPayService {
                         timeout: 15000
                     }
                 );
-            });
+            }, order.id);
 
             requestToSave.response = {
                 status: response.status,
@@ -347,8 +424,6 @@ class QPayService {
                 invoice_id: response.data.invoice_id,
                 qr_image: response.data.qr_image ? `Present (${response.data.qr_image.length} bytes)` : 'MISSING',
                 qr_code: response.data.qr_code ? `Present (${response.data.qr_code.length} bytes)` : 'MISSING',
-                qr_text: response.data.qr_text ? `Present (${response.data.qr_text.length} chars)` : 'MISSING',
-                urls: response.data.urls ? 'Present' : 'MISSING'
             });
             // Return token so controller can store on order; ebarimt-from-invoice will reuse same token
             return {

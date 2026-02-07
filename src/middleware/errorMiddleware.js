@@ -5,40 +5,56 @@
 const { formatTimestamp } = require('../utils/response');
 const { getMongoliaTimestampISO } = require('../utils/dateUtils');
 
-const errorHandler = (err, req, res, next) => {
-    // CRITICAL: Log to stderr (Passenger captures stderr)
-    // Use multiple console.error calls to ensure all parts are logged
-    process.stderr.write('\n');
-    process.stderr.write('='.repeat(80) + '\n');
-    process.stderr.write('ERROR HANDLED: ' + getMongoliaTimestampISO() + '\n');
-    process.stderr.write('Error Message: ' + (err.message || 'No message') + '\n');
-    process.stderr.write('Error Code: ' + (err.code || 'No code') + '\n');
-    process.stderr.write('Status Code: ' + (err.statusCode || 500) + '\n');
-    process.stderr.write('Error Name: ' + (err.name || 'Error') + '\n');
-    process.stderr.write('Request URL: ' + (req.originalUrl || 'Unknown') + '\n');
-    process.stderr.write('Request Method: ' + (req.method || 'Unknown') + '\n');
-    if (err.stack) {
-        process.stderr.write('Stack Trace:\n' + err.stack + '\n');
-    }
-    if (err.originalError && err.originalError.stack) {
-        process.stderr.write('Original Error Stack:\n' + err.originalError.stack + '\n');
-    }
-    process.stderr.write('='.repeat(80) + '\n');
-    process.stderr.write('\n');
-    
-    // Also use console.error as backup
-    console.error('ERROR:', err);
-    if (err.stack) {
-        console.error('STACK:', err.stack);
-    }
+// Check if running in production mode
+const isProduction = () => process.env.NODE_ENV === 'production';
 
-    // Default error values - ALWAYS preserve original message unless it's truly generic
+// Error codes that are expected and shouldn't trigger verbose logging
+const EXPECTED_ERRORS = ['ROUTE_NOT_FOUND', 'INVALID_TOKEN', 'TOKEN_EXPIRED', 'UNAUTHENTICATED'];
+
+const errorHandler = (err, req, res, next) => {
     let statusCode = err.statusCode || 500;
     let errorCode = err.code || 'INTERNAL_ERROR';
+    const isExpectedError = EXPECTED_ERRORS.includes(errorCode) || statusCode === 404 || statusCode === 401;
+
+    // In production, only log unexpected errors (5xx or non-common errors)
+    // In development, log everything for debugging
+    const shouldLogVerbose = !isProduction() || (!isExpectedError && statusCode >= 500);
+
+    if (shouldLogVerbose) {
+        // Full verbose logging for unexpected errors or development mode
+        process.stderr.write('\n');
+        process.stderr.write('='.repeat(80) + '\n');
+        process.stderr.write('ERROR HANDLED: ' + getMongoliaTimestampISO() + '\n');
+        process.stderr.write('Error Message: ' + (err.message || 'No message') + '\n');
+        process.stderr.write('Error Code: ' + errorCode + '\n');
+        process.stderr.write('Status Code: ' + statusCode + '\n');
+        process.stderr.write('Error Name: ' + (err.name || 'Error') + '\n');
+        process.stderr.write('Request URL: ' + (req.originalUrl || 'Unknown') + '\n');
+        process.stderr.write('Request Method: ' + (req.method || 'Unknown') + '\n');
+        if (err.stack) {
+            process.stderr.write('Stack Trace:\n' + err.stack + '\n');
+        }
+        if (err.originalError && err.originalError.stack) {
+            process.stderr.write('Original Error Stack:\n' + err.originalError.stack + '\n');
+        }
+        process.stderr.write('='.repeat(80) + '\n');
+        process.stderr.write('\n');
+
+        // Also use console.error as backup
+        console.error('ERROR:', err);
+        if (err.stack) {
+            console.error('STACK:', err.stack);
+        }
+    } else if (isProduction()) {
+        // Compact single-line logging for expected errors in production
+        console.log(`[${getMongoliaTimestampISO()}] ${statusCode} ${errorCode}: ${err.message || 'No message'} - ${req.method} ${req.originalUrl}`);
+    }
+
+    // message needs to be mutable for Prisma error handling below
     let message = err.message || 'Internal Server Error';
 
     // Handle specific error types
-    
+
     // Prisma errors
     if (err.code && err.code.startsWith('P')) {
         // Don't override statusCode if it's already set (e.g., 409, 429, etc.)
@@ -46,7 +62,7 @@ const errorHandler = (err, req, res, next) => {
             statusCode = 400;
         }
         errorCode = err.code || 'DATABASE_ERROR';
-        
+
         // Handle specific Prisma errors
         if (err.code === 'P2002') {
             statusCode = err.statusCode || 409;
@@ -72,12 +88,12 @@ const errorHandler = (err, req, res, next) => {
             }
         } else {
             // Preserve ALL specific error messages - only replace truly generic ones
-            if (!err.message || 
-                (err.message.toLowerCase().includes('prisma') && 
-                 !err.message.includes('Data too long') && 
-                 !err.message.includes('value too long') &&
-                 !err.message.includes('constraint') &&
-                 err.message.length < 50)) {
+            if (!err.message ||
+                (err.message.toLowerCase().includes('prisma') &&
+                    !err.message.includes('Data too long') &&
+                    !err.message.includes('value too long') &&
+                    !err.message.includes('constraint') &&
+                    err.message.length < 50)) {
                 // Only replace very short generic messages
                 message = 'Database operation failed';
             } else {

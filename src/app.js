@@ -19,8 +19,10 @@ const paymentController = require('./controllers/paymentController');
 const adminRoutes = require('./routes/admin');
 const { notFoundHandler } = require('./middleware/errorMiddleware');
 
-// Load environment variables
-dotenv.config();
+// Load environment variables (suppress tips in production)
+dotenv.config({
+    quiet: process.env.NODE_ENV === 'production'
+});
 
 const app = express();
 
@@ -43,12 +45,12 @@ app.use('/uploads', express.static(path.join(__dirname, '../public/uploads')));
 // Configure CORS to support multiple origins including localhost
 const getAllowedOrigins = () => {
     const corsOrigin = process.env.CORS_ORIGIN;
-    
+
     // If wildcard is explicitly set, allow all origins
     if (corsOrigin === '*') {
         return '*';
     }
-    
+
     // Default allowed origins including localhost and production domains
     const defaultOrigins = [
         'http://localhost:3000',
@@ -73,15 +75,15 @@ const getAllowedOrigins = () => {
         'https://gerar.mn',
         'http://gerar.mn'
     ];
-    
+
     // Parse comma-separated origins from environment variable
-    const envOrigins = corsOrigin 
+    const envOrigins = corsOrigin
         ? corsOrigin.split(',').map(origin => origin.trim()).filter(Boolean)
         : [];
-    
+
     // Combine environment origins with default localhost origins
     const allowedOrigins = [...new Set([...defaultOrigins, ...envOrigins])];
-    
+
     return allowedOrigins;
 };
 
@@ -95,45 +97,45 @@ app.use((req, res, next) => {
         res.header('Access-Control-Allow-Credentials', 'true');
         res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, HEAD');
         res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin, x-session-token');
-        
+
         // Handle preflight requests
         if (req.method === 'OPTIONS') {
             return res.sendStatus(204);
         }
-        
+
         return next();
     }
-    
+
     cors({
         origin: (origin, callback) => {
             const allowedOrigins = getAllowedOrigins();
-            
+
             // Allow requests with no origin (like mobile apps or Postman)
             if (!origin) {
                 return callback(null, true);
             }
-            
+
             // If wildcard is allowed
             if (allowedOrigins === '*') {
                 return callback(null, true);
             }
-            
+
             // Explicitly check for admin.gerar.mn (both http and https)
             if (origin === 'https://admin.gerar.mn' || origin === 'http://admin.gerar.mn') {
                 return callback(null, true);
             }
-            
+
             // Check if origin is in allowed list
             if (allowedOrigins.includes(origin)) {
                 return callback(null, true);
             }
-            
+
             // For localhost with any port, allow it if any localhost is in the list
             const isLocalhost = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
             if (isLocalhost && allowedOrigins.some(o => o.includes('localhost') || o.includes('127.0.0.1'))) {
                 return callback(null, true);
             }
-            
+
             // Allow local network IPs (192.168.x.x, 10.x.x.x, 172.16-31.x.x) in development
             // This allows mobile devices on the same network to access the API
             if (process.env.NODE_ENV === 'development') {
@@ -142,14 +144,14 @@ app.use((req, res, next) => {
                     return callback(null, true);
                 }
             }
-            
+
             // Allow subdomains of gerar.mn (admin.gerar.mn, api.gerar.mn, etc.)
             // Also allow root domain gerar.mn
             const isGerarDomain = /^https?:\/\/([a-zA-Z0-9-]+\.)?gerar\.mn(?::\d+)?$/.test(origin);
             if (isGerarDomain) {
                 return callback(null, true);
             }
-            
+
             // Log rejected origin for debugging
             console.warn(`[CORS] Rejected origin: ${origin}`);
             console.warn(`[CORS] Allowed origins:`, allowedOrigins);
@@ -261,7 +263,7 @@ app.use((req, res, next) => {
         // Extract the intended status code from the path
         const statusMatch = req.path.match(/(\d{3})\.shtml/);
         const statusCode = statusMatch ? parseInt(statusMatch[1], 10) : 403;
-        
+
         // Log for debugging - check what might have triggered this
         console.error('Server-level error page requested:', {
             path: req.path,
@@ -271,25 +273,25 @@ app.use((req, res, next) => {
             userAgent: req.get('user-agent'),
             ip: req.ip || req.connection.remoteAddress
         });
-        
+
         // Build helpful error message
         let errorMessage = 'Access forbidden. This may be due to server-level restrictions.';
         if (statusCode === 403) {
             errorMessage += ' Common causes: mod_security rules blocking the request, .htaccess restrictions, or file permissions.';
             errorMessage += ' Check mod_security settings in cPanel if requests are being blocked.';
         }
-        
+
         return res.status(statusCode).json({
             success: false,
             message: `Server error: ${statusCode}`,
             error: {
                 code: 'SERVER_ERROR',
                 message: errorMessage,
-                hint: statusCode === 403 
+                hint: statusCode === 403
                     ? 'Check mod_security logs in cPanel. The original request was likely blocked by Apache/mod_security before reaching the Node.js application.'
                     : statusCode === 404
-                    ? 'Resource not found'
-                    : 'Internal server error'
+                        ? 'Resource not found'
+                        : 'Internal server error'
             },
             timestamp: getMongoliaTimestampISO()
         });
