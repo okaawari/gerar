@@ -1344,13 +1344,9 @@ try {
 
 ---
 
-## Deployment (Linux / sharp)
+## Deployment (images)
 
-The app uses **sharp** for image resizing.
-
-- **Normal Linux server**: Run `npm install` or `npm ci` **on the server** so sharp installs the correct native binaries. Do not deploy a `node_modules` folder that was installed on Windows.
-- **Shared hosting / old CPU (x86_64 v1)**: If you see *"Unsupported CPU: Prebuilt binaries for linux-x64 require v2 microarchitecture"*, the server CPU is too old for sharp’s native build. Use the WASM build instead: on the server run **`npm install --cpu=wasm32`** (or reinstall: `npm remove sharp && npm install sharp --cpu=wasm32`). No code changes needed; same `require('sharp')` works. Slightly slower but runs everywhere.
-- If sharp is unavailable, the API still starts; image upload endpoints return `503` with instructions to fix sharp on the server.
+The app uses **Jimp** for image resizing (resize to max 300×300, save as JPEG). Jimp is pure JavaScript with no native dependencies, so it runs on any platform (including shared hosting and old CPUs). No special install steps needed.
 
 ---
 

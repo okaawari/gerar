@@ -16,14 +16,14 @@
     "migrate:reset": "prisma migrate reset --force",
     "migrate:deploy": "prisma migrate deploy",
     "migrate:fresh": "prisma migrate reset --force && npm run seed",
-    "migrate:status": "prisma migrate status",
-    "install:server": "npm install --cpu=wasm32"
+    "migrate:status": "prisma migrate status"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@jimp/wasm-webp": "^1.6.0",
     "@prisma/adapter-mariadb": "^7.2.0",
     "@prisma/client": "^7.2.0",
     "axios": "^1.13.2",
@@ -31,13 +31,13 @@
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
+    "jimp": "^1.6.0",
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.0.2",
     "mysql2": "^3.16.0",
     "nodemailer": "^7.0.12",
     "prisma": "^7.2.0",
-    "qrcode": "^1.5.4",
-    "sharp": "^0.34.5"
+    "qrcode": "^1.5.4"
   },
   "devDependencies": {
     "fast-check": "^4.5.3",

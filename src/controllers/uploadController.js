@@ -1,20 +1,19 @@
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const { createJimp } = require('@jimp/core');
+const { defaultFormats, defaultPlugins } = require('jimp');
 
-// Lazy-load sharp so app can start even if image processing is unavailable.
-// On shared hosting with old CPU (x86_64 v1): run "npm install --cpu=wasm32" on the server
-// so sharp uses the WASM build (no native libvips required).
-let sharp;
-function getSharp() {
-    if (sharp !== undefined) return sharp;
-    try {
-        sharp = require('sharp');
-        return sharp;
-    } catch (err) {
-        sharp = null;
-        return null;
-    }
+// Lazy Jimp with WebP support (@jimp/wasm-webp is ESM, so we dynamic import)
+let JimpWithWebp = null;
+async function getJimp() {
+    if (JimpWithWebp) return JimpWithWebp;
+    const webp = (await import('@jimp/wasm-webp')).default;
+    JimpWithWebp = createJimp({
+        formats: [...defaultFormats, webp],
+        plugins: defaultPlugins
+    });
+    return JimpWithWebp;
 }
 
 // Ensure uploads directory exists
@@ -56,30 +55,23 @@ const upload = multer({
 });
 
 /**
- * Process uploaded image(s): resize to max 300x300 and convert to .webp.
- * Writes to disk and sets filename on req.file / req.files for URL response.
+ * Process uploaded image(s): resize to max 300x300 (fit inside, no enlargement) and save as WebP.
+ * Uses Jimp + @jimp/wasm-webp (pure JS/WASM, no native deps) so it runs on any host including old shared hosting.
  */
 const processImageToWebp = async (req, res, next) => {
     try {
-        const sharpLib = getSharp();
-        if (!sharpLib) {
-            const err = new Error(
-                'Image processing unavailable. On the server, run: npm install --cpu=wasm32 (use WASM build on old CPUs / shared hosting).'
-            );
-            err.statusCode = 503;
-            return next(err);
-        }
+        const Jimp = await getJimp();
         const processOne = async (file) => {
             if (!file.buffer) return;
             const filename = generateProductImageFilename();
             const filePath = path.join(uploadsDir, filename);
-            await sharpLib(file.buffer)
-                .resize(PRODUCT_IMAGE_MAX_DIMENSION, PRODUCT_IMAGE_MAX_DIMENSION, {
-                    fit: 'inside',
-                    withoutEnlargement: true
-                })
-                .webp({ quality: 85 })
-                .toFile(filePath);
+            const image = await Jimp.read(file.buffer);
+            const w = image.getWidth();
+            const h = image.getHeight();
+            if (w > PRODUCT_IMAGE_MAX_DIMENSION || h > PRODUCT_IMAGE_MAX_DIMENSION) {
+                image.scaleToFit(PRODUCT_IMAGE_MAX_DIMENSION, PRODUCT_IMAGE_MAX_DIMENSION);
+            }
+            await image.quality(85).writeAsync(filePath);
             file.filename = filename;
             file.path = filePath;
             file.mimetype = 'image/webp';
