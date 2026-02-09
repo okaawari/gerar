@@ -71,7 +71,7 @@ const processImageToWebp = async (req, res, next) => {
             if (w > PRODUCT_IMAGE_MAX_DIMENSION || h > PRODUCT_IMAGE_MAX_DIMENSION) {
                 image.scaleToFit({ w: PRODUCT_IMAGE_MAX_DIMENSION, h: PRODUCT_IMAGE_MAX_DIMENSION });
             }
-            await image.quality(85).writeAsync(filePath);
+            await image.writeAsync(filePath, { quality: 85 });
             file.filename = filename;
             file.path = filePath;
             file.mimetype = 'image/webp';
