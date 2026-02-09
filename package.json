@@ -16,7 +16,8 @@
     "migrate:reset": "prisma migrate reset --force",
     "migrate:deploy": "prisma migrate deploy",
     "migrate:fresh": "prisma migrate reset --force && npm run seed",
-    "migrate:status": "prisma migrate status"
+    "migrate:status": "prisma migrate status",
+    "install:server": "npm install --cpu=wasm32"
   },
   "keywords": [],
   "author": "",

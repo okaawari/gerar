@@ -1346,11 +1346,11 @@ try {
 
 ## Deployment (Linux / sharp)
 
-The app uses **sharp** for image resizing. Sharp uses native binaries that depend on the OS and Node version.
+The app uses **sharp** for image resizing.
 
-- **On the server (Linux)**: Run `npm install` or `npm ci` **on the server** (or in a Linux build step) so sharp installs the correct Linux binaries. Do not deploy a `node_modules` folder that was installed on Windows.
-- If the app was already deployed with wrong binaries: on the server run `npm rebuild sharp`, then restart the app.
-- If sharp still fails (e.g. missing system libs), the API will start anyway; image upload endpoints will return `503` with a message to fix sharp on the server.
+- **Normal Linux server**: Run `npm install` or `npm ci` **on the server** so sharp installs the correct native binaries. Do not deploy a `node_modules` folder that was installed on Windows.
+- **Shared hosting / old CPU (x86_64 v1)**: If you see *"Unsupported CPU: Prebuilt binaries for linux-x64 require v2 microarchitecture"*, the server CPU is too old for sharp’s native build. Use the WASM build instead: on the server run **`npm install --cpu=wasm32`** (or reinstall: `npm remove sharp && npm install sharp --cpu=wasm32`). No code changes needed; same `require('sharp')` works. Slightly slower but runs everywhere.
+- If sharp is unavailable, the API still starts; image upload endpoints return `503` with instructions to fix sharp on the server.
 
 ---
 

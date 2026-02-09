@@ -2,8 +2,9 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 
-// Lazy-load sharp so app can start even if native binary fails (e.g. wrong platform).
-// On Linux server, run: npm install (or npm rebuild sharp) on the server so correct binaries are installed.
+// Lazy-load sharp so app can start even if image processing is unavailable.
+// On shared hosting with old CPU (x86_64 v1): run "npm install --cpu=wasm32" on the server
+// so sharp uses the WASM build (no native libvips required).
 let sharp;
 function getSharp() {
     if (sharp !== undefined) return sharp;
@@ -63,7 +64,7 @@ const processImageToWebp = async (req, res, next) => {
         const sharpLib = getSharp();
         if (!sharpLib) {
             const err = new Error(
-                'Image processing unavailable. On the server, run: npm install or npm rebuild sharp (install on the target platform, not on Windows).'
+                'Image processing unavailable. On the server, run: npm install --cpu=wasm32 (use WASM build on old CPUs / shared hosting).'
             );
             err.statusCode = 503;
             return next(err);
