@@ -31,7 +31,8 @@ class ProductController {
                 sortOrder,
                 page,
                 limit,
-                onSale
+                onSale,
+                randomSeed
             } = req.query;
 
             const filters = {};
@@ -96,6 +97,10 @@ class ProductController {
 
             if (sortBy) {
                 filters.sortBy = sortBy;
+            }
+
+            if (randomSeed !== undefined) {
+                filters.randomSeed = randomSeed;
             }
 
             if (sortOrder) {

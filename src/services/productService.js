@@ -1,5 +1,25 @@
 const prisma = require('../lib/prisma');
 
+/** Seeded PRNG (mulberry32) - same seed yields same sequence, for stable random order across pages */
+function seededRandom(seed) {
+    return function next() {
+        let t = (seed += 0x6d2b79f5);
+        t = Math.imul(t ^ (t >>> 15), t | 1);
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+}
+
+/** Shuffle array in place with a seed so order is deterministic for pagination */
+function seededShuffle(arr, seed) {
+    const rng = seededRandom(Number(seed) || 0);
+    for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(rng() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+}
+
 class ProductService {
     /**
      * Normalize image URLs - replace localhost with network IP if API_BASE_URL is set
@@ -369,14 +389,14 @@ class ProductService {
             };
         } else {
             const sortBy = filters.sortBy || 'createdAt';
-            const validSortFields = ['name', 'price', 'stock', 'createdAt', 'updatedAt'];
-            const sortField = validSortFields.includes(sortBy) ? sortBy : 'createdAt';
-
-            const sortOrder = (filters.sortOrder === 'asc' || filters.sortOrder === 'ASC') ? 'asc' : 'desc';
-
-            orderBy = {
-                [sortField]: sortOrder
-            };
+            if (sortBy === 'random') {
+                orderBy = null; // Handled in random branch; need validPage/validLimit first
+            } else {
+                const validSortFields = ['name', 'price', 'stock', 'createdAt', 'updatedAt'];
+                const sortField = validSortFields.includes(sortBy) ? sortBy : 'createdAt';
+                const sortOrder = (filters.sortOrder === 'asc' || filters.sortOrder === 'ASC') ? 'asc' : 'desc';
+                orderBy = { [sortField]: sortOrder };
+            }
         }
 
         // Pagination
@@ -390,6 +410,7 @@ class ProductService {
 
         // Get total count and products
         let total, products, totalPages;
+        let randomSeedForResponse = null; // When sortBy=random, return seed so client can request same order on next page
 
         // OPTIMIZATION: If sorting by category order (single category view), query productcategory directly
         // This avoids fetching ALL products in a category to sort them in memory
@@ -465,6 +486,52 @@ class ProductService {
             });
 
             products = productCategories.map(pc => pc.product);
+        } else if (filters.sortBy === 'random') {
+            // Random order: load only IDs, shuffle with seed, then fetch one page of full products (avoids loading all rows)
+            total = await prisma.product.count({ where });
+            let randomSeed = filters.randomSeed != null ? Number(filters.randomSeed) : null;
+            if (randomSeed == null || isNaN(randomSeed)) {
+                randomSeed = Math.floor(Math.random() * 1e9) + Date.now();
+            }
+            randomSeedForResponse = randomSeed;
+
+            const idRows = await prisma.product.findMany({ where, select: { id: true } });
+            const allIds = idRows.map((r) => r.id);
+            seededShuffle(allIds, randomSeed);
+
+            const pageIds = allIds.slice((validPage - 1) * validLimit, validPage * validLimit);
+            if (pageIds.length === 0) {
+                products = [];
+            } else {
+                products = await prisma.product.findMany({
+                    where: { id: { in: pageIds } },
+                    include: {
+                        categories: {
+                            include: {
+                                category: {
+                                    select: { id: true, name: true, description: true }
+                                }
+                            }
+                        },
+                        features: {
+                            include: {
+                                feature: {
+                                    select: { id: true, name: true, description: true }
+                                }
+                            }
+                        },
+                        creator: {
+                            select: { id: true, name: true, phoneNumber: true, email: true }
+                        },
+                        updater: {
+                            select: { id: true, name: true, phoneNumber: true, email: true }
+                        }
+                    }
+                });
+                const orderMap = new Map(pageIds.map((id, i) => [id, i]));
+                products.sort((a, b) => orderMap.get(a.id) - orderMap.get(b.id));
+            }
+            totalPages = Math.ceil(total / validLimit);
         } else {
             // Standard query for other cases
             total = await prisma.product.count({ where });
@@ -565,7 +632,8 @@ class ProductService {
                 total,
                 page: validPage,
                 limit: validLimit,
-                totalPages
+                totalPages,
+                ...(randomSeedForResponse != null && { randomSeed: randomSeedForResponse })
             }
         };
     }
