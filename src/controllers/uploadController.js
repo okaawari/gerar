@@ -66,10 +66,10 @@ const processImageToWebp = async (req, res, next) => {
             const filename = generateProductImageFilename();
             const filePath = path.join(uploadsDir, filename);
             const image = await Jimp.read(file.buffer);
-            const w = image.getWidth();
-            const h = image.getHeight();
+            const w = image.bitmap.width;
+            const h = image.bitmap.height;
             if (w > PRODUCT_IMAGE_MAX_DIMENSION || h > PRODUCT_IMAGE_MAX_DIMENSION) {
-                image.scaleToFit(PRODUCT_IMAGE_MAX_DIMENSION, PRODUCT_IMAGE_MAX_DIMENSION);
+                image.scaleToFit({ w: PRODUCT_IMAGE_MAX_DIMENSION, h: PRODUCT_IMAGE_MAX_DIMENSION });
             }
             await image.quality(85).writeAsync(filePath);
             file.filename = filename;
