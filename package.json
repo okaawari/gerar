@@ -23,7 +23,6 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
-    "@jimp/wasm-webp": "^1.6.0",
     "@prisma/adapter-mariadb": "^7.2.0",
     "@prisma/client": "^7.2.0",
     "axios": "^1.13.2",

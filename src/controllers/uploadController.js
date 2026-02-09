@@ -1,20 +1,7 @@
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
-const { createJimp } = require('@jimp/core');
-const { defaultFormats, defaultPlugins } = require('jimp');
-
-// Lazy Jimp with WebP support (@jimp/wasm-webp is ESM, so we dynamic import)
-let JimpWithWebp = null;
-async function getJimp() {
-    if (JimpWithWebp) return JimpWithWebp;
-    const webp = (await import('@jimp/wasm-webp')).default;
-    JimpWithWebp = createJimp({
-        formats: [...defaultFormats, webp],
-        plugins: defaultPlugins
-    });
-    return JimpWithWebp;
-}
+const { Jimp } = require('jimp');
 
 // Ensure uploads directory exists
 const uploadsDir = path.join(__dirname, '../../public/uploads');
@@ -25,10 +12,10 @@ if (!fs.existsSync(uploadsDir)) {
 // Max dimension for product images (width and height)
 const PRODUCT_IMAGE_MAX_DIMENSION = 300;
 
-/** Generate a short, recognizable filename for product images: img-<id>.webp */
+/** Generate a short, recognizable filename for product images: img-<id>.jpg */
 function generateProductImageFilename() {
     const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-    return `img-${id}.webp`;
+    return `img-${id}.jpg`;
 }
 
 // Use memory storage so we can process images (resize + webp) before writing
@@ -55,12 +42,11 @@ const upload = multer({
 });
 
 /**
- * Process uploaded image(s): resize to max 300x300 (fit inside, no enlargement) and save as WebP.
- * Uses Jimp + @jimp/wasm-webp (pure JS/WASM, no native deps) so it runs on any host including old shared hosting.
+ * Process uploaded image(s): resize to max 300x300 (fit inside, no enlargement) and save as JPEG.
+ * Uses default Jimp (pure JS, no WASM/fetch) so it runs in Node on any host including old shared hosting.
  */
 const processImageToWebp = async (req, res, next) => {
     try {
-        const Jimp = await getJimp();
         const processOne = async (file) => {
             if (!file.buffer) return;
             const filename = generateProductImageFilename();
@@ -74,7 +60,7 @@ const processImageToWebp = async (req, res, next) => {
             await image.write(filePath, { quality: 85 });
             file.filename = filename;
             file.path = filePath;
-            file.mimetype = 'image/webp';
+            file.mimetype = 'image/jpeg';
         };
 
         if (req.file) {
