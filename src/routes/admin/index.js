@@ -6,6 +6,8 @@ const userRoutes = require('./userRoutes');
 const uploadRoutes = require('./uploadRoutes');
 const constantsRoutes = require('./constantsRoutes');
 const analyticsRoutes = require('./analyticsRoutes');
+const bannerRoutes = require('./bannerRoutes');
+const featureRoutes = require('./featureRoutes');
 
 const router = express.Router();
 
@@ -17,5 +19,7 @@ router.use('/users', userRoutes);
 router.use('/upload', uploadRoutes);
 router.use('/constants', constantsRoutes);
 router.use('/analytics', analyticsRoutes);
+router.use('/banners', bannerRoutes);
+router.use('/features', featureRoutes);
 
 module.exports = router;

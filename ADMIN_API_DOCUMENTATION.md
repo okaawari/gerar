@@ -9,6 +9,8 @@ This document provides comprehensive API documentation for admin endpoints to bu
 - [Admin API Endpoints](#admin-api-endpoints)
   - [Categories](#categories-endpoints)
   - [Products](#products-endpoints)
+  - [Banners](#banners-endpoints)
+  - [Features](#features-endpoints)
   - [File Upload](#file-upload-endpoints)
   - [Constants](#constants-endpoints)
   - [Orders](#orders-endpoints)
@@ -447,6 +449,9 @@ Create a new product.
   "categoryIds": [1, 2, 5],           // Required, array of integers - at least one category ID (must exist)
   // OR for backward compatibility:
   // "categoryId": 1,                  // Single category ID (will be converted to array)
+  "featureIds": [1, 2],               // Optional, array of feature IDs – assign product to features
+  // OR "featureId": 1,                // Single feature ID (backward compatible)
+  "featureOrders": { "1": 0, "2": 1 }, // Optional, featureId -> order (lower = shows first in feature)
   "categoryOrders": {                 // Optional, object mapping categoryId to order number
     "1": 0,                           // Product order in category 1 (lower = shows first, default: 0)
     "2": 1,                           // Product order in category 2
@@ -523,6 +528,7 @@ Create a new product.
   - If a category in `categoryIds` doesn't have an order specified, it defaults to `0`
 - The first image in the array will be available as `firstImage` in the response for easy access in listings
 - Products can belong to multiple categories - use `categoryIds` array to assign multiple categories
+- Products can be assigned to features - use `featureIds` (optional) and optionally `featureOrders` (object or array). Products in a feature are ordered by `featureOrders` (lower = first).
 - When products are filtered by a single category, they are automatically sorted by order (ascending), then by creation date (descending)
 
 **Errors:**
@@ -530,11 +536,13 @@ Create a new product.
 - `401` - Authentication required
 - `403` - Admin privileges required
 - `404` - One or more categories not found
+- `404` - One or more features not found (if featureIds provided)
 - `400` - At least one category ID is required
 - `400` - Invalid price (must be positive) or stock (must be >= 0)
 - `400` - Original price must be greater than or equal to current price
 - `400` - Images must be an array of non-empty string URLs
 - `400` - Category IDs must be an array
+- `400` - Feature IDs must be an array (if featureIds provided)
 
 ---
 
@@ -564,6 +572,9 @@ Update an existing product.
   "categoryIds": [1, 3],              // Optional, array of integers - replaces all existing categories
   // OR for backward compatibility:
   // "categoryId": 1,                  // Single category ID (will replace all categories)
+  "featureIds": [1, 2],               // Optional, array of feature IDs – replaces product’s features
+  // OR "featureId": 1,                // Single feature ID (backward compatible)
+  "featureOrders": { "1": 0, "2": 1 }, // Optional, featureId -> order (or update orders only)
   "categoryOrders": {                 // Optional, object mapping categoryId to order number
     "1": 0,                           // Product order in category 1 (lower = shows first, default: 0)
     "3": 1                            // Product order in category 3
@@ -640,6 +651,7 @@ Update an existing product.
 - If `originalPrice` is provided and greater than `price`, discount will be automatically calculated
 - To remove discount, set `originalPrice` to `null`
 - To update categories, provide `categoryIds` array with all desired category IDs (existing ones will be removed)
+- To update features, provide `featureIds` array (or `featureId`); omit to leave features unchanged. Use `featureOrders` with or without `featureIds` to set/update order within features.
 - When products are filtered by a single category, they are automatically sorted by order (ascending), then by creation date (descending)
 
 **Errors:**
@@ -648,8 +660,10 @@ Update an existing product.
 - `403` - Admin privileges required
 - `404` - Product not found
 - `404` - One or more categories not found (if categoryIds provided)
+- `404` - One or more features not found (if featureIds provided)
 - `400` - At least one category ID is required (if categoryIds provided)
 - `400` - Category IDs must be an array (if categoryIds provided)
+- `400` - Feature IDs must be an array (if featureIds provided)
 - `400` - Invalid price or stock values
 - `400` - Original price must be greater than or equal to current price
 
@@ -698,13 +712,228 @@ Delete a product.
 
 ---
 
+## Banners Endpoints
+
+All banner management endpoints are under `/api/admin/banners`. Banners support two images per banner: **imageDesktop** (shown on desktop) and **imageMobile** (smaller version for mobile). Use the upload endpoint with `imageType=banner-desktop` or `imageType=banner-mobile` to get correctly sized images.
+
+### Get All Banners
+
+**Endpoint:** `GET /api/admin/banners`
+
+**Authentication:** Required (Admin only)
+
+**Response:** `200 OK`
+```json
+{
+  "success": true,
+  "message": "Banners retrieved successfully",
+  "data": [
+    {
+      "id": 1,
+      "title": "Summer Sale",
+      "description": "Up to 50% off",
+      "imageDesktop": "https://example.com/uploads/banner-desktop-1.jpg",
+      "imageMobile": "https://example.com/uploads/banner-mobile-1.jpg",
+      "linkUrl": "/categories/1",
+      "order": 0,
+      "isActive": true,
+      "startDate": null,
+      "endDate": null,
+      "createdBy": 1,
+      "updatedBy": 1,
+      "createdAt": "2024-01-15T10:30:00.000Z",
+      "updatedAt": "2024-01-15T10:30:00.000Z"
+    }
+  ]
+}
+```
+
+**Errors:** `401`, `403`
+
+---
+
+### Create Banner
+
+**Endpoint:** `POST /api/admin/banners`
+
+**Authentication:** Required (Admin only)
+
+**Request Body:**
+```json
+{
+  "title": "Summer Sale",
+  "description": "Up to 50% off",
+  "imageDesktop": "https://.../desktop.jpg",
+  "imageMobile": "https://.../mobile.jpg",
+  "linkUrl": "/categories/1",
+  "order": 0,
+  "isActive": true,
+  "startDate": null,
+  "endDate": null
+}
+```
+
+**Response:** `201 Created` — Same shape as a single banner in Get All Banners.
+
+**Errors:** `400` (validation, missing imageDesktop/imageMobile), `401`, `403`
+
+---
+
+### Get Banner by ID
+
+**Endpoint:** `GET /api/admin/banners/:id`
+
+**Authentication:** Required (Admin only)
+
+**Parameters:** `id` (path) – Banner ID
+
+**Response:** `200 OK` — Single banner object.
+
+**Errors:** `401`, `403`, `404`
+
+---
+
+### Update Banner
+
+**Endpoint:** `POST /api/admin/banners/:id/update`
+
+**Authentication:** Required (Admin only)
+
+**Parameters:** `id` (path) – Banner ID
+
+**Request Body:** Same fields as Create Banner; all optional (only include fields to update).
+
+**Response:** `200 OK` — Updated banner object.
+
+**Errors:** `400`, `401`, `403`, `404`
+
+---
+
+### Delete Banner
+
+**Endpoint:** `POST /api/admin/banners/:id/delete`
+
+**Authentication:** Required (Admin only)
+
+**Parameters:** `id` (path) – Banner ID
+
+**Response:** `200 OK` — Deleted banner object.
+
+**Errors:** `401`, `403`, `404`
+
+---
+
+## Features Endpoints
+
+All feature management endpoints are under `/api/admin/features`. Features have a name and description; products are assigned to features on the product create/update form (via `featureIds` / `featureOrders`).
+
+### Get All Features
+
+**Endpoint:** `GET /api/admin/features`
+
+**Authentication:** Required (Admin only)
+
+**Response:** `200 OK`
+```json
+{
+  "success": true,
+  "message": "Features retrieved successfully",
+  "data": [
+    {
+      "id": 1,
+      "name": "Best Sellers",
+      "description": "Our most popular products",
+      "order": 0,
+      "createdAt": "2024-01-15T10:30:00.000Z",
+      "updatedAt": "2024-01-15T10:30:00.000Z"
+    }
+  ]
+}
+```
+
+**Errors:** `401`, `403`
+
+---
+
+### Create Feature
+
+**Endpoint:** `POST /api/admin/features`
+
+**Authentication:** Required (Admin only)
+
+**Request Body:**
+```json
+{
+  "name": "Best Sellers",
+  "description": "Our most popular products",
+  "order": 0
+}
+```
+
+**Response:** `201 Created` — Created feature object.
+
+**Errors:** `400` (validation), `401`, `403`, `409` (feature name already exists)
+
+---
+
+### Get Feature by ID
+
+**Endpoint:** `GET /api/admin/features/:id`
+
+**Authentication:** Required (Admin only)
+
+**Parameters:** `id` (path) – Feature ID
+
+**Response:** `200 OK` — Feature object; when fetched by admin, may include products (including hidden/deleted for admin view).
+
+**Errors:** `401`, `403`, `404`
+
+---
+
+### Update Feature
+
+**Endpoint:** `POST /api/admin/features/:id/update`
+
+**Authentication:** Required (Admin only)
+
+**Parameters:** `id` (path) – Feature ID
+
+**Request Body:**
+```json
+{
+  "name": "Updated Name",
+  "description": "Updated description",
+  "order": 1
+}
+```
+
+**Response:** `200 OK` — Updated feature object.
+
+**Errors:** `400`, `401`, `403`, `404`, `409` (duplicate name)
+
+---
+
+### Delete Feature
+
+**Endpoint:** `POST /api/admin/features/:id/delete`
+
+**Authentication:** Required (Admin only)
+
+**Parameters:** `id` (path) – Feature ID
+
+**Response:** `200 OK` — Deleted feature object.
+
+**Errors:** `401`, `403`, `404`, `409` (cannot delete feature that has products – remove products from feature first)
+
+---
+
 ## File Upload Endpoints
 
 All file upload endpoints are under `/api/admin/upload`.
 
 ### Upload Single Image
 
-Upload a single product image file.
+Upload a single image file. By default images are resized for product use (max 300×300). For banners, send `imageType` in the form body to get appropriate dimensions.
 
 **Endpoint:** `POST /api/admin/upload`
 
@@ -715,6 +944,10 @@ Upload a single product image file.
 - Field name: `file` or `image` (both are accepted)
 - File types: JPEG, PNG, GIF, WebP
 - Maximum file size: 10MB
+- **Optional form field:** `imageType` (string) – Controls resize dimensions:
+  - `product` (default) – max 300×300 (fit inside, no enlargement)
+  - `banner-desktop` – max 1920×600
+  - `banner-mobile` – max 768×400
 
 **Response:** `200 OK`
 ```json
@@ -2123,6 +2356,8 @@ interface Product {
   categories: Category[];    // Array of categories this product belongs to
   categoryId: number | null; // First category ID (for backward compatibility)
   category?: Category;       // First category object (for backward compatibility)
+  features?: Feature[];     // Array of features this product is in (when returned)
+  featureOrders?: Record<number, number>; // featureId -> order (lower = first in feature)
   createdAt: string;         // ISO 8601 date string
   updatedAt: string;         // ISO 8601 date string
 }
@@ -2191,6 +2426,43 @@ interface ProductCategory {
 ```
 
 **Important:** The `ProductCategory` model is a junction table that links products to categories with an ordering field. The `order` field controls the display order of products within each category. Lower order numbers appear first when viewing products in a category.
+
+### Banner
+```typescript
+interface Banner {
+  id: number;
+  title: string | null;
+  description: string | null;
+  imageDesktop: string;   // URL – use on desktop
+  imageMobile: string;    // URL – use on mobile
+  linkUrl: string | null; // Optional click-through URL
+  order: number;          // Display order (lower = first)
+  isActive: boolean;
+  startDate: string | null;  // ISO 8601 or null
+  endDate: string | null;    // ISO 8601 or null
+  createdBy: number | null;
+  updatedBy: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+```
+
+### Feature
+```typescript
+interface Feature {
+  id: number;
+  name: string;           // Unique
+  description: string | null;
+  order: number;          // Display order (lower = first)
+  createdBy: number | null;
+  updatedBy: number | null;
+  createdAt: string;
+  updatedAt: string;
+  products?: Product[];   // When included (e.g. GET by ID or includeProducts=true)
+}
+```
+
+Products are linked to features via the product create/update payload (`featureIds`, `featureOrders`). Product responses include `features` and `featureOrders`.
 
 ### User
 ```typescript
@@ -2571,6 +2843,9 @@ While not admin-specific, admins can also use these public endpoints for viewing
 - `GET /api/categories/:id` - Get category by ID (includes subcategories in `children` field)
 - `GET /api/products` - Get all products (with filters)
 - `GET /api/products/:id` - Get product by ID
+- `GET /api/banners` - Get active banners (desktop + mobile image URLs)
+- `GET /api/features` - Get all features (optional `includeProducts=true`)
+- `GET /api/features/:id` - Get feature by ID (with products)
 - `GET /api/orders/:id` - Get order by ID (admins can view any order)
 
 **Note:** The public `GET /api/categories` endpoint returns categories with subcategories nested in a `children` array. Subcategories are not shown as separate top-level items - they appear only inside their parent category's `children` array.
@@ -2610,9 +2885,24 @@ While not admin-specific, admins can also use these public endpoints for viewing
 - `POST /api/admin/users/:id/reset-password/execute` - Reset user password
 
 ### Product Endpoints
+- `GET /api/admin/products` - Get all products (advanced search)
 - `POST /api/admin/products` - Create product
 - `POST /api/admin/products/:id/update` - Update product
 - `POST /api/admin/products/:id/delete` - Delete product
+
+### Banner Endpoints
+- `GET /api/admin/banners` - Get all banners
+- `POST /api/admin/banners` - Create banner
+- `GET /api/admin/banners/:id` - Get banner by ID
+- `POST /api/admin/banners/:id/update` - Update banner
+- `POST /api/admin/banners/:id/delete` - Delete banner
+
+### Feature Endpoints
+- `GET /api/admin/features` - Get all features
+- `POST /api/admin/features` - Create feature
+- `GET /api/admin/features/:id` - Get feature by ID
+- `POST /api/admin/features/:id/update` - Update feature
+- `POST /api/admin/features/:id/delete` - Delete feature
 
 ### Order Endpoints
 - `GET /api/admin/orders/all` - Get orders (no params = all orders; with params = filtered search + pagination)

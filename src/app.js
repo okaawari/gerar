@@ -10,6 +10,8 @@ const authRoutes = require('./routes/authRoutes');
 const otpRoutes = require('./routes/otpRoutes');
 const categoryRoutes = require('./routes/categoryRoutes');
 const productRoutes = require('./routes/productRoutes');
+const bannerRoutes = require('./routes/bannerRoutes');
+const featureRoutes = require('./routes/featureRoutes');
 const cartRoutes = require('./routes/cartRoutes');
 const orderRoutes = require('./routes/orderRoutes');
 const addressRoutes = require('./routes/addressRoutes');
@@ -227,6 +229,8 @@ app.get('/api', (req, res) => {
             otp: '/api/otp',
             categories: '/api/categories',
             products: '/api/products',
+            banners: '/api/banners',
+            features: '/api/features',
             cart: '/api/cart',
             orders: '/api/orders',
             addresses: '/api/addresses',
@@ -243,6 +247,8 @@ app.use('/api/auth', authRoutes);
 app.use('/api/otp', otpRoutes);
 app.use('/api/categories', categoryRoutes);
 app.use('/api/products', productRoutes);
+app.use('/api/banners', bannerRoutes);
+app.use('/api/features', featureRoutes);
 app.use('/api/cart', cartRoutes);
 // Payment routes must be before order routes to avoid route conflicts
 app.use('/api', paymentRoutes); // Payment routes (includes /api/orders/:id/payment-*)

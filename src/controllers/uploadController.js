@@ -5,12 +5,22 @@ const { Jimp } = require('jimp');
 
 // Ensure uploads directory exists
 const uploadsDir = path.join(__dirname, '../../public/uploads');
+const bannersSubdir = 'banners'; // Banner images go under uploads/banners/
 if (!fs.existsSync(uploadsDir)) {
     fs.mkdirSync(uploadsDir, { recursive: true });
 }
+// Ensure banners subfolder exists for banner-desktop / banner-mobile uploads
+const bannersDir = path.join(uploadsDir, bannersSubdir);
+if (!fs.existsSync(bannersDir)) {
+    fs.mkdirSync(bannersDir, { recursive: true });
+}
 
-// Max dimension for product images (width and height)
-const PRODUCT_IMAGE_MAX_DIMENSION = 300;
+// Max dimension presets for image types (width and height)
+const IMAGE_DIMENSIONS = {
+    product: { w: 300, h: 300 },
+    'banner-desktop': { w: 1920, h: 600 },
+    'banner-mobile': { w: 768, h: 400 }
+};
 
 /** Generate a short, recognizable filename for product images: img-<id>.jpg */
 function generateProductImageFilename() {
@@ -47,18 +57,23 @@ const upload = multer({
  */
 const processImageToWebp = async (req, res, next) => {
     try {
+        const imageType = (req.body && req.body.imageType) ? String(req.body.imageType) : 'product';
+        const dimensions = IMAGE_DIMENSIONS[imageType] || IMAGE_DIMENSIONS.product;
+        const isBanner = imageType === 'banner-desktop' || imageType === 'banner-mobile';
+        const targetDir = isBanner ? bannersDir : uploadsDir;
         const processOne = async (file) => {
             if (!file.buffer) return;
-            const filename = generateProductImageFilename();
-            const filePath = path.join(uploadsDir, filename);
+            const baseFilename = generateProductImageFilename();
+            const filePath = path.join(targetDir, baseFilename);
             const image = await Jimp.read(file.buffer);
             const w = image.bitmap.width;
             const h = image.bitmap.height;
-            if (w > PRODUCT_IMAGE_MAX_DIMENSION || h > PRODUCT_IMAGE_MAX_DIMENSION) {
-                image.scaleToFit({ w: PRODUCT_IMAGE_MAX_DIMENSION, h: PRODUCT_IMAGE_MAX_DIMENSION });
+            if (w > dimensions.w || h > dimensions.h) {
+                image.scaleToFit({ w: dimensions.w, h: dimensions.h });
             }
             await image.write(filePath, { quality: 85 });
-            file.filename = filename;
+            // Response URL uses /uploads/<filename>; for banners use subpath so file is in uploads/banners/
+            file.filename = isBanner ? path.join(bannersSubdir, baseFilename).split(path.sep).join('/') : baseFilename;
             file.path = filePath;
             file.mimetype = 'image/jpeg';
         };
@@ -231,29 +246,36 @@ const deleteImage = async (req, res, next) => {
             throw error;
         }
 
-        // Extract filename from URL or path
-        let filename;
+        // Extract relative path under uploads (e.g. "image.jpg" or "banners/image.jpg")
+        let relativePath;
         if (imagePath) {
-            // Extract filename from path (e.g., "/uploads/image.jpg" -> "image.jpg")
-            filename = path.basename(imagePath);
+            relativePath = imagePath.replace(/^\/uploads\/?/, '').replace(/\\/g, '/').trim() || path.basename(imagePath);
         } else if (imageUrl) {
-            // Extract filename from URL (e.g., "https://api.gerar.mn/uploads/image.jpg" -> "image.jpg")
-            // Handle both absolute URLs and relative paths
-            const urlPath = imageUrl.includes('/uploads/') 
-                ? imageUrl.split('/uploads/')[1] 
-                : imageUrl;
-            filename = path.basename(urlPath);
+            const suffix = imageUrl.includes('/uploads/') ? imageUrl.split('/uploads/')[1] : imageUrl;
+            relativePath = (suffix || '').replace(/\\/g, '/').trim() || path.basename(imageUrl);
         }
-
-        // Validate filename (security: prevent directory traversal)
-        if (!filename || filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
-            const error = new Error('Invalid filename');
+        if (!relativePath) {
+            const error = new Error('Could not determine file path');
             error.statusCode = 400;
             throw error;
         }
+        // Security: no directory traversal; allow only filenames or "banners/" subfolder
+        const normalized = path.normalize(relativePath).replace(/\\/g, '/');
+        if (normalized.includes('..') || normalized.startsWith('/') || /[\0]/.test(normalized)) {
+            const error = new Error('Invalid filename or path');
+            error.statusCode = 400;
+            throw error;
+        }
+        // Only allow one optional "banners/" prefix and a simple filename
+        if (!/^(?:banners\/)?[a-zA-Z0-9_.-]+$/.test(normalized)) {
+            const error = new Error('Invalid filename or path');
+            error.statusCode = 400;
+            throw error;
+        }
+        const filename = path.basename(relativePath);
 
-        // Construct full file path
-        const filePath = path.join(uploadsDir, filename);
+        // Construct full file path (supports uploads/ and uploads/banners/)
+        const filePath = path.join(uploadsDir, normalized);
 
         // Security check: ensure the file is within the uploads directory
         const resolvedPath = path.resolve(filePath);

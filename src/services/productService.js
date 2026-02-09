@@ -133,6 +133,25 @@ class ProductService {
             // But we'll check this in the create/update methods
         }
 
+        // Validate featureIds (array) - optional
+        if (data.featureIds !== undefined && data.featureIds !== null) {
+            if (!Array.isArray(data.featureIds)) {
+                errors.push('Feature IDs must be an array');
+            } else {
+                data.featureIds.forEach((featureId, index) => {
+                    const id = parseInt(featureId);
+                    if (isNaN(id) || id <= 0) {
+                        errors.push(`Feature ID at index ${index} must be a valid positive integer`);
+                    }
+                });
+            }
+        } else if (data.featureId !== undefined && data.featureId !== null) {
+            const featureId = parseInt(data.featureId);
+            if (isNaN(featureId) || featureId <= 0) {
+                errors.push('Feature ID must be a valid positive integer');
+            }
+        }
+
         return {
             isValid: errors.length === 0,
             errors
@@ -407,6 +426,17 @@ class ProductService {
                                     }
                                 }
                             },
+                            features: {
+                                include: {
+                                    feature: {
+                                        select: {
+                                            id: true,
+                                            name: true,
+                                            description: true
+                                        }
+                                    }
+                                }
+                            },
                             creator: {
                                 select: {
                                     id: true,
@@ -445,6 +475,17 @@ class ProductService {
                     categories: {
                         include: {
                             category: {
+                                select: {
+                                    id: true,
+                                    name: true,
+                                    description: true
+                                }
+                            }
+                        }
+                    },
+                    features: {
+                        include: {
+                            feature: {
                                 select: {
                                     id: true,
                                     name: true,
@@ -501,6 +542,17 @@ class ProductService {
                     formatted.categoryOrders[pc.categoryId] = pc.order;
                 });
             }
+            // Extract features from ProductFeature junction table
+            formatted.features = product.features
+                ? product.features.map(pf => pf.feature)
+                : [];
+            // Include featureOrders mapping (featureId -> order)
+            formatted.featureOrders = {};
+            if (product.features) {
+                product.features.forEach(pf => {
+                    formatted.featureOrders[pf.featureId] = pf.order;
+                });
+            }
             // For backward compatibility, keep categoryId as first category if exists
             formatted.categoryId = formatted.categories.length > 0 ? formatted.categories[0].id : null;
             formatted.category = formatted.categories.length > 0 ? formatted.categories[0] : null;
@@ -540,6 +592,17 @@ class ProductService {
                 categories: {
                     include: {
                         category: {
+                            select: {
+                                id: true,
+                                name: true,
+                                description: true
+                            }
+                        }
+                    }
+                },
+                features: {
+                    include: {
+                        feature: {
                             select: {
                                 id: true,
                                 name: true,
@@ -607,6 +670,17 @@ class ProductService {
                 formatted.categoryOrders[pc.categoryId] = pc.order;
             });
         }
+        // Extract features from ProductFeature junction table
+        formatted.features = product.features
+            ? product.features.map(pf => pf.feature)
+            : [];
+        // Include featureOrders mapping (featureId -> order)
+        formatted.featureOrders = {};
+        if (product.features) {
+            product.features.forEach(pf => {
+                formatted.featureOrders[pf.featureId] = pf.order;
+            });
+        }
         // For backward compatibility, keep categoryId as first category if exists
         formatted.categoryId = formatted.categories.length > 0 ? formatted.categories[0].id : null;
         formatted.category = formatted.categories.length > 0 ? formatted.categories[0] : null;
@@ -636,6 +710,14 @@ class ProductService {
             categoryIds = [parseInt(data.categoryId)];
         }
 
+        // Get feature IDs - support both featureIds array and single featureId (optional)
+        let featureIds = [];
+        if (data.featureIds && Array.isArray(data.featureIds)) {
+            featureIds = data.featureIds.map(id => parseInt(id)).filter(id => !isNaN(id) && id > 0);
+        } else if (data.featureId) {
+            featureIds = [parseInt(data.featureId)];
+        }
+
         if (categoryIds.length === 0) {
             const error = new Error('At least one category ID is required');
             error.statusCode = 400;
@@ -657,6 +739,23 @@ class ProductService {
             throw error;
         }
 
+        // Verify all features exist if provided
+        if (featureIds.length > 0) {
+            const features = await prisma.feature.findMany({
+                where: {
+                    id: {
+                        in: featureIds
+                    }
+                }
+            });
+
+            if (features.length !== featureIds.length) {
+                const error = new Error('One or more features not found');
+                error.statusCode = 404;
+                throw error;
+            }
+        }
+
         // Handle category orders - accept array [{categoryId, order}] or object {categoryId: order}
         const categoryOrders = data.categoryOrders || {};
         const getOrderForCategory = (categoryId) => {
@@ -665,6 +764,18 @@ class ProductService {
                 return entry ? parseInt(entry.order) || 0 : 0;
             } else if (typeof categoryOrders === 'object' && categoryOrders !== null) {
                 return parseInt(categoryOrders[categoryId]) || 0;
+            }
+            return 0;
+        };
+
+        // Handle feature orders - accept array [{featureId, order}] or object {featureId: order}
+        const featureOrders = data.featureOrders || {};
+        const getOrderForFeature = (featureId) => {
+            if (Array.isArray(featureOrders)) {
+                const entry = featureOrders.find(fo => parseInt(fo.featureId) === parseInt(featureId));
+                return entry ? parseInt(entry.order) || 0 : 0;
+            } else if (typeof featureOrders === 'object' && featureOrders !== null) {
+                return parseInt(featureOrders[featureId]) || 0;
             }
             return 0;
         };
@@ -717,6 +828,17 @@ class ProductService {
             }))
         });
 
+        // Create ProductFeature junction records (optional)
+        if (featureIds.length > 0) {
+            await prisma.productfeature.createMany({
+                data: featureIds.map(featureId => ({
+                    productId: product.id,
+                    featureId: featureId,
+                    order: getOrderForFeature(featureId)
+                }))
+            });
+        }
+
         // Fetch product with categories
         const productWithCategories = await prisma.product.findUnique({
             where: { id: product.id },
@@ -724,6 +846,17 @@ class ProductService {
                 categories: {
                     include: {
                         category: {
+                            select: {
+                                id: true,
+                                name: true,
+                                description: true
+                            }
+                        }
+                    }
+                },
+                features: {
+                    include: {
+                        feature: {
                             select: {
                                 id: true,
                                 name: true,
@@ -752,16 +885,27 @@ class ProductService {
         });
 
         // Format product with discount information
-        const formatted = this.formatProductWithDiscount(product);
+        const formatted = this.formatProductWithDiscount(productWithCategories);
         // Extract categories from ProductCategory junction table
-        formatted.categories = product.categories
-            ? product.categories.map(pc => pc.category)
+        formatted.categories = productWithCategories.categories
+            ? productWithCategories.categories.map(pc => pc.category)
             : [];
         // Include categoryOrders mapping (categoryId -> order)
         formatted.categoryOrders = {};
-        if (product.categories) {
-            product.categories.forEach(pc => {
+        if (productWithCategories.categories) {
+            productWithCategories.categories.forEach(pc => {
                 formatted.categoryOrders[pc.categoryId] = pc.order;
+            });
+        }
+        // Extract features from ProductFeature junction table
+        formatted.features = productWithCategories.features
+            ? productWithCategories.features.map(pf => pf.feature)
+            : [];
+        // Include featureOrders mapping (featureId -> order)
+        formatted.featureOrders = {};
+        if (productWithCategories.features) {
+            productWithCategories.features.forEach(pf => {
+                formatted.featureOrders[pf.featureId] = pf.order;
             });
         }
         formatted.categoryId = formatted.categories.length > 0 ? formatted.categories[0].id : null;
@@ -817,6 +961,20 @@ class ProductService {
             categoryIds = [parseInt(data.categoryId)];
         }
 
+        // Handle feature updates (optional)
+        let featureIds = null;
+        if (data.featureIds !== undefined && data.featureIds !== null) {
+            if (Array.isArray(data.featureIds)) {
+                featureIds = data.featureIds.map(id => parseInt(id)).filter(id => !isNaN(id) && id > 0);
+            } else {
+                const error = new Error('Feature IDs must be an array');
+                error.statusCode = 400;
+                throw error;
+            }
+        } else if (data.featureId !== undefined && data.featureId !== null) {
+            featureIds = [parseInt(data.featureId)];
+        }
+
         // Verify all categories exist if updating
         if (categoryIds !== null) {
             if (categoryIds.length === 0) {
@@ -835,6 +993,23 @@ class ProductService {
 
             if (categories.length !== categoryIds.length) {
                 const error = new Error('One or more categories not found');
+                error.statusCode = 404;
+                throw error;
+            }
+        }
+
+        // Verify all features exist if updating
+        if (featureIds !== null && featureIds.length > 0) {
+            const features = await prisma.feature.findMany({
+                where: {
+                    id: {
+                        in: featureIds
+                    }
+                }
+            });
+
+            if (features.length !== featureIds.length) {
+                const error = new Error('One or more features not found');
                 error.statusCode = 404;
                 throw error;
             }
@@ -959,6 +1134,69 @@ class ProductService {
             categoryOrdersData = { orderUpdates };
         }
 
+        // Handle feature updates - delete existing and create new
+        let featureUpdateNeeded = false;
+        let featureOrdersData = {};
+        let featureIdsForUpdate = [];
+        let featureOrdersOnly = false;
+
+        const featureOrders = data.featureOrders;
+        const getOrderForFeature = (featureId) => {
+            if (!featureOrders) return null;
+            if (Array.isArray(featureOrders)) {
+                const entry = featureOrders.find(fo => parseInt(fo.featureId) === parseInt(featureId));
+                return entry ? parseInt(entry.order) : null;
+            } else if (typeof featureOrders === 'object' && featureOrders !== null) {
+                const value = featureOrders[featureId] !== undefined
+                    ? featureOrders[featureId]
+                    : featureOrders[String(featureId)];
+                return value !== undefined ? parseInt(value) : null;
+            }
+            return null;
+        };
+
+        if (featureIds !== null) {
+            featureUpdateNeeded = true;
+            featureIdsForUpdate = featureIds;
+
+            featureOrdersData = featureIdsForUpdate.reduce((acc, featureId) => {
+                const order = getOrderForFeature(featureId);
+                acc[featureId] = order !== null ? order : 0;
+                return acc;
+            }, {});
+        } else if (featureOrders !== undefined && featureOrders !== null) {
+            featureOrdersOnly = true;
+
+            const existingFeatures = await prisma.productfeature.findMany({
+                where: { productId: parseInt(id) },
+                select: { featureId: true }
+            });
+
+            if (existingFeatures.length === 0) {
+                const error = new Error('Product has no features. Please provide featureIds when setting featureOrders.');
+                error.statusCode = 400;
+                throw error;
+            }
+
+            const orderUpdates = [];
+            for (const pf of existingFeatures) {
+                const order = getOrderForFeature(pf.featureId);
+                if (order !== null) {
+                    orderUpdates.push({
+                        productId: parseInt(id),
+                        featureId: pf.featureId,
+                        order: order
+                    });
+                }
+            }
+
+            if (orderUpdates.length === 0) {
+                featureOrdersOnly = false;
+            }
+
+            featureOrdersData = { orderUpdates };
+        }
+
         // Update product (without categories)
         const product = await prisma.product.update({
             where: { id: parseInt(id) },
@@ -997,6 +1235,37 @@ class ProductService {
             );
         }
 
+        // Handle feature updates separately using ProductFeature table directly
+        if (featureUpdateNeeded) {
+            await prisma.productfeature.deleteMany({
+                where: { productId: parseInt(id) }
+            });
+
+            if (featureIdsForUpdate.length > 0) {
+                await prisma.productfeature.createMany({
+                    data: featureIdsForUpdate.map(featureId => ({
+                        productId: parseInt(id),
+                        featureId: featureId,
+                        order: featureOrdersData[featureId] || 0
+                    }))
+                });
+            }
+        } else if (featureOrdersOnly && featureOrdersData.orderUpdates) {
+            await Promise.all(
+                featureOrdersData.orderUpdates.map(({ productId, featureId, order }) =>
+                    prisma.productfeature.update({
+                        where: {
+                            productId_featureId: {
+                                productId: productId,
+                                featureId: featureId
+                            }
+                        },
+                        data: { order: order }
+                    })
+                )
+            );
+        }
+
         // Fetch product with categories
         const productWithCategories = await prisma.product.findUnique({
             where: { id: parseInt(id) },
@@ -1004,6 +1273,17 @@ class ProductService {
                 categories: {
                     include: {
                         category: {
+                            select: {
+                                id: true,
+                                name: true,
+                                description: true
+                            }
+                        }
+                    }
+                },
+                features: {
+                    include: {
+                        feature: {
                             select: {
                                 id: true,
                                 name: true,
@@ -1037,6 +1317,17 @@ class ProductService {
         formatted.categories = productWithCategories.categories
             ? productWithCategories.categories.map(pc => pc.category)
             : [];
+        // Extract features from ProductFeature junction table
+        formatted.features = productWithCategories.features
+            ? productWithCategories.features.map(pf => pf.feature)
+            : [];
+        // Include featureOrders mapping (featureId -> order)
+        formatted.featureOrders = {};
+        if (productWithCategories.features) {
+            productWithCategories.features.forEach(pf => {
+                formatted.featureOrders[pf.featureId] = pf.order;
+            });
+        }
         formatted.categoryId = formatted.categories.length > 0 ? formatted.categories[0].id : null;
         formatted.category = formatted.categories.length > 0 ? formatted.categories[0] : null;
         return formatted;

@@ -22,6 +22,8 @@ This document provides comprehensive API documentation for frontend developers t
   - [OTP](#otp-endpoints)
   - [Categories](#categories-endpoints)
   - [Products](#products-endpoints)
+  - [Banners](#banners-endpoints)
+  - [Features](#features-endpoints)
   - [Cart](#cart-endpoints)
   - [Orders](#orders-endpoints)
   - [Order Create Page – Inputs Reference](./docs/ORDER_CREATE_INPUTS_REFERENCE.md)
@@ -789,6 +791,10 @@ GET /api/products?category=1&page=1&limit=20&sortBy=price&sortOrder=asc
           "order": 1
         }
       ],
+      "features": [
+        { "id": 1, "name": "Best Sellers", "description": "Our most popular products" }
+      ],
+      "featureOrders": { "1": 0 },
       "isFavorite": false // Only included if user is authenticated
     }
   ]
@@ -859,6 +865,144 @@ GET /api/products/1
 
 **Error Responses**:
 - `404` - Product not found
+
+**Note:** Product responses also include `features` (array of feature objects with `id`, `name`, `description`) and `featureOrders` (object mapping `featureId` to display order) when the product is assigned to features.
+
+---
+
+## Banners Endpoints
+
+Banners are homepage/slider images. Each banner has a **desktop image** and a **mobile image** so the frontend can show the appropriate size per device.
+
+### Get Active Banners
+
+**Method**: `GET` (retrieves active banners for display - **NO request body**)
+
+**Endpoint**: `GET /api/banners`
+
+**Authentication**: Not required (public endpoint)
+
+**Response**: `200 OK`
+```json
+{
+  "success": true,
+  "message": "Active banners retrieved successfully",
+  "data": [
+    {
+      "id": 1,
+      "title": "Summer Sale",
+      "description": "Up to 50% off",
+      "imageDesktop": "https://example.com/uploads/banner-desktop-1.jpg",
+      "imageMobile": "https://example.com/uploads/banner-mobile-1.jpg",
+      "linkUrl": "/categories/1",
+      "order": 0,
+      "isActive": true,
+      "startDate": null,
+      "endDate": null,
+      "createdAt": "2024-01-15T10:30:00.000Z",
+      "updatedAt": "2024-01-15T10:30:00.000Z"
+    }
+  ]
+}
+```
+
+**Response Fields**:
+- `imageDesktop` – Full-size image URL (use on desktop)
+- `imageMobile` – Smaller image URL (use on mobile)
+- `linkUrl` – Optional URL to navigate when banner is clicked (e.g. category or product page)
+- `order` – Display order (lower = first). Sort by this for carousel order.
+- Only banners with `isActive: true` and within `startDate`/`endDate` (if set) are returned.
+
+---
+
+## Features Endpoints
+
+Features are curated sections (e.g. "Best Sellers", "New Arrivals"). Each feature has a name, description, and a list of products. Use these endpoints to display feature sections on the front.
+
+### Get All Features
+
+**Method**: `GET` (retrieves all features - **NO request body**)
+
+**Endpoint**: `GET /api/features`
+
+**Authentication**: Optional (if authenticated as admin, can include hidden/deleted products in feature product lists)
+
+**Query Parameters** (optional):
+- `includeProducts` (boolean): Set to `true` to include products in each feature. Default: `false` (features only, no products).
+
+**Example Request**:
+```
+GET /api/features
+GET /api/features?includeProducts=true
+```
+
+**Response**: `200 OK`
+```json
+{
+  "success": true,
+  "message": "Features retrieved successfully",
+  "data": [
+    {
+      "id": 1,
+      "name": "Best Sellers",
+      "description": "Our most popular products",
+      "order": 0,
+      "createdAt": "2024-01-15T10:30:00.000Z",
+      "updatedAt": "2024-01-15T10:30:00.000Z"
+    }
+  ]
+}
+```
+
+When `includeProducts=true`, each feature in `data` includes a `products` array (product objects with discount info; hidden/deleted products are excluded for non-admin users).
+
+---
+
+### Get Feature by ID
+
+**Method**: `GET` (retrieves single feature with products - **NO request body**)
+
+**Endpoint**: `GET /api/features/:id`
+
+**Authentication**: Optional (same as Get All Features for product visibility)
+
+**Path Parameters**:
+- `id` (number): Feature ID
+
+**Example Request**:
+```
+GET /api/features/1
+```
+
+**Response**: `200 OK`
+```json
+{
+  "success": true,
+  "message": "Feature retrieved successfully",
+  "data": {
+    "id": 1,
+    "name": "Best Sellers",
+    "description": "Our most popular products",
+    "order": 0,
+    "products": [
+      {
+        "id": 1,
+        "name": "iPhone 15",
+        "price": "999.99",
+        "firstImage": "https://example.com/uploads/img-abc.jpg",
+        "hasDiscount": true,
+        "discountPercentage": 10,
+        "categories": [{ "id": 1, "name": "Electronics" }]
+      }
+    ],
+    "createdAt": "2024-01-15T10:30:00.000Z",
+    "updatedAt": "2024-01-15T10:30:00.000Z"
+  }
+}
+```
+
+**Error Responses**:
+- `404` - Feature not found
 
 ---
 

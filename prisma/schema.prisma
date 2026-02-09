@@ -36,6 +36,10 @@ model user {
   updatedCategories category[] @relation("CategoryUpdatedBy")
   createdProducts   product[]  @relation("ProductCreatedBy")
   updatedProducts   product[]  @relation("ProductUpdatedBy")
+  createdFeatures   feature[]  @relation("FeatureCreatedBy")
+  updatedFeatures   feature[]  @relation("FeatureUpdatedBy")
+  createdBanners    banner[]   @relation("BannerCreatedBy")
+  updatedBanners    banner[]   @relation("BannerUpdatedBy")
   performedOrderActivities orderactivity[]
 
   @@map("user")
@@ -84,6 +88,7 @@ model product {
   updatedAt          DateTime @updatedAt
 
   categories  productcategory[]
+  features    productfeature[]
   cartItems   cartitem[]
   orderItems  orderitem[]
   favorites   favorite[]
@@ -95,6 +100,27 @@ model product {
   @@index([updatedBy])
   @@index([deletedAt]) // Index for efficient filtering of non-deleted products
   @@map("product")
+}
+
+model feature {
+  id          Int      @id @default(autoincrement())
+  name        String
+  description String?  @db.Text
+  order       Int      @default(0) // Display order (lower = shows first)
+  createdBy   Int? // Admin user ID who created this feature
+  updatedBy   Int? // Admin user ID who last updated this feature
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  products productfeature[]
+  creator  user?             @relation("FeatureCreatedBy", fields: [createdBy], references: [id], onDelete: SetNull)
+  updater  user?             @relation("FeatureUpdatedBy", fields: [updatedBy], references: [id], onDelete: SetNull)
+
+  @@unique([name])
+  @@index([order])
+  @@index([createdBy])
+  @@index([updatedBy])
+  @@map("feature")
 }
 
 model cartitem {
@@ -256,6 +282,48 @@ model productcategory {
   @@index([categoryId])
   @@index([categoryId, order]) // Index for efficient sorting by category and order
   @@map("productcategory")
+}
+
+model productfeature {
+  id        Int      @id @default(autoincrement())
+  productId Int
+  featureId Int
+  order     Int      @default(0) // Order/position of product within this feature (lower = shows first)
+  createdAt DateTime @default(now())
+
+  product product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  feature feature @relation(fields: [featureId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, featureId])
+  @@index([productId])
+  @@index([featureId])
+  @@index([featureId, order])
+  @@map("productfeature")
+}
+
+model banner {
+  id           Int      @id @default(autoincrement())
+  title        String?  @db.VarChar(255)
+  description  String?  @db.Text
+  imageDesktop String
+  imageMobile  String
+  linkUrl      String?  @db.VarChar(1024)
+  order        Int      @default(0) // Display order (lower = shows first)
+  isActive     Boolean  @default(true)
+  startDate    DateTime?
+  endDate      DateTime?
+  createdBy    Int? // Admin user ID who created this banner
+  updatedBy    Int? // Admin user ID who last updated this banner
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  creator user? @relation("BannerCreatedBy", fields: [createdBy], references: [id], onDelete: SetNull)
+  updater user? @relation("BannerUpdatedBy", fields: [updatedBy], references: [id], onDelete: SetNull)
+
+  @@index([isActive, order])
+  @@index([createdBy])
+  @@index([updatedBy])
+  @@map("banner")
 }
 
 model draftorder {
