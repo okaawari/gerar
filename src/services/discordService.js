@@ -3,6 +3,7 @@
  */
 
 const axios = require('axios');
+const { formatDeliveryTimeSlot } = require('../constants/deliveryTimeSlots');
 
 const webhookUrl = process.env.DISCORD_WEBHOOK_URL;
 
@@ -83,6 +84,11 @@ async function sendPaymentNotification(order, paymentInfo = {}) {
               {
                 name: '⏰ Төлсөн огноо',
                 value: `<t:${Math.floor(new Date(paidAt).getTime() / 1000)}:F>`,
+                inline: true
+              },
+              {
+                name: '🚚 Хүргэлтийн цаг',
+                value: order.deliveryTimeSlot ? formatDeliveryTimeSlot(order.deliveryTimeSlot) : '—',
                 inline: true
               },
               {
