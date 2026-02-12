@@ -77,11 +77,17 @@ class PaymentController {
      * @returns {Object} - { orderNumber, totalAmount, items, deliveryDate?, deliveryAddress? }
      */
     _buildOrderDataForReceipt(order) {
-        const items = (order.items || []).map(item => ({
-            name: item.product?.name || 'Product',
-            quantity: item.quantity,
-            price: item.price != null ? String(item.price) : '0'
-        }));
+        const items = (order.items || []).map(item => {
+            const qty = item.quantity != null ? Number(item.quantity) : 0;
+            const unitPrice = item.price != null ? Number(item.price) : 0;
+            const lineTotal = unitPrice * qty;
+            return {
+                name: item.product?.name || 'Product',
+                quantity: qty,
+                unitPrice: isFinite(unitPrice) ? unitPrice.toFixed(2) : '0.00',
+                amount: isFinite(lineTotal) ? lineTotal.toFixed(2) : '0.00'
+            };
+        });
         let deliveryAddress = null;
         if (order.address) {
             const a = order.address;
@@ -804,7 +810,16 @@ class PaymentController {
                                     where: { id: String(id) },
                                     data: {
                                         ebarimtId: ebarimtResponse.ebarimt_id,
-                                        ebarimtReceiptUrl: ebarimtResponse.receipt_url ?? null
+                                        ebarimtReceiptUrl: ebarimtResponse.receipt_url ?? null,
+                                        // Persist "first response" fields so they don't get lost later
+                                        // (QPay/GERAR may return qr_data/lottery only on create)
+                                        ebarimtReceiptId: ebarimtResponse.ebarimt_receipt_id ?? undefined,
+                                        ebarimtQrData: ebarimtResponse.ebarimt_qr_data ?? undefined,
+                                        ebarimtLottery: ebarimtResponse.ebarimt_lottery ?? undefined,
+                                        ebarimtStatus: ebarimtResponse.ebarimt_status ?? ebarimtResponse.barimt_status ?? undefined,
+                                        ebarimtAmount: ebarimtResponse.amount != null ? String(ebarimtResponse.amount) : undefined,
+                                        ebarimtVatAmount: ebarimtResponse.vat_amount != null ? String(ebarimtResponse.vat_amount) : undefined,
+                                        ebarimtCityTaxAmount: ebarimtResponse.city_tax_amount != null ? String(ebarimtResponse.city_tax_amount) : undefined
                                     }
                                 });
                             }
@@ -1077,7 +1092,14 @@ class PaymentController {
                                     where: { id: String(id) },
                                     data: {
                                         ebarimtId: ebarimtResponse.ebarimt_id,
-                                        ebarimtReceiptUrl: ebarimtResponse.receipt_url ?? null
+                                        ebarimtReceiptUrl: ebarimtResponse.receipt_url ?? null,
+                                        ebarimtReceiptId: ebarimtResponse.ebarimt_receipt_id ?? undefined,
+                                        ebarimtQrData: ebarimtResponse.ebarimt_qr_data ?? undefined,
+                                        ebarimtLottery: ebarimtResponse.ebarimt_lottery ?? undefined,
+                                        ebarimtStatus: ebarimtResponse.ebarimt_status ?? ebarimtResponse.barimt_status ?? undefined,
+                                        ebarimtAmount: ebarimtResponse.amount != null ? String(ebarimtResponse.amount) : undefined,
+                                        ebarimtVatAmount: ebarimtResponse.vat_amount != null ? String(ebarimtResponse.vat_amount) : undefined,
+                                        ebarimtCityTaxAmount: ebarimtResponse.city_tax_amount != null ? String(ebarimtResponse.city_tax_amount) : undefined
                                     }
                                 });
                             }

@@ -1796,12 +1796,22 @@ class OrderService {
     /**
      * Get ebarimt (receipt) info for an order – for admin print.
      * @param {string} orderId - Order ID
-     * @returns {Promise<{ ebarimtId: string|null, receiptUrl: string|null }>}
+     * @returns {Promise<{ ebarimtId: string|null, receiptUrl: string|null, ebarimtAmount: string|null, ebarimtVatAmount: string|null, ebarimtCityTaxAmount: string|null, ... }>}
      */
     async getOrderEbarimtForPrint(orderId) {
         const order = await prisma.order.findUnique({
             where: { id: String(orderId) },
-            select: { ebarimtId: true, ebarimtReceiptUrl: true }
+            select: {
+                ebarimtId: true,
+                ebarimtReceiptUrl: true,
+                ebarimtReceiptId: true,
+                ebarimtQrData: true,
+                ebarimtLottery: true,
+                ebarimtStatus: true,
+                ebarimtAmount: true,
+                ebarimtVatAmount: true,
+                ebarimtCityTaxAmount: true
+            }
         });
         if (!order) {
             const error = new Error('Order not found');
@@ -1810,7 +1820,14 @@ class OrderService {
         }
         return {
             ebarimtId: order.ebarimtId ?? null,
-            receiptUrl: order.ebarimtReceiptUrl ?? null
+            receiptUrl: order.ebarimtReceiptUrl ?? null,
+            ebarimtReceiptId: order.ebarimtReceiptId ?? null,
+            ebarimtQrData: order.ebarimtQrData ?? null,
+            ebarimtLottery: order.ebarimtLottery ?? null,
+            ebarimtStatus: order.ebarimtStatus ?? null,
+            ebarimtAmount: order.ebarimtAmount ?? null,
+            ebarimtVatAmount: order.ebarimtVatAmount ?? null,
+            ebarimtCityTaxAmount: order.ebarimtCityTaxAmount ?? null
         };
     }
 }

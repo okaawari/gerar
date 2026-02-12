@@ -13,6 +13,7 @@
     "seed": "node prisma/seed.js",
     "export-data": "node prisma/export-data.js",
     "test:ebarimt-v3": "node scripts/test-ebarimt-v3.js",
+    "send-mail": "node scripts/send-test-payment-email.js",
     "migrate:reset": "prisma migrate reset --force",
     "migrate:deploy": "prisma migrate deploy",
     "migrate:fresh": "prisma migrate reset --force && npm run seed",

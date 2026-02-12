@@ -107,18 +107,30 @@ class QPayService {
     /**
      * Get access token with timestamp-based caching
      * CRITICAL: Only fetch one token per timestamp as per QPAY requirements
+     * @param {Object} [options] - Options
+     * @param {boolean} [options.forceRefresh] - If true, fetch a new token from API (skip cache and QPAY_PERMANENT_TOKEN). Use after 401 to recover with username/password.
      * @returns {Promise<string>} Access token
      */
-    async getAccessToken() {
-        // Use permanent token if available
-        if (process.env.QPAY_PERMANENT_TOKEN) {
-            return process.env.QPAY_PERMANENT_TOKEN;
+    async getAccessToken(options = {}) {
+        const forceRefresh = options.forceRefresh === true;
+
+        // Use permanent token if available (unless force refresh after 401)
+        if (process.env.QPAY_PERMANENT_TOKEN && !forceRefresh) {
+            const rawPermanentToken = String(process.env.QPAY_PERMANENT_TOKEN).trim();
+            // Be tolerant of common .env mistake:
+            // QPAY_PERMANENT_TOKEN=QPAY_PERMANENT_TOKEN=<token>
+            const cleanedPermanentToken = rawPermanentToken.replace(/^QPAY_PERMANENT_TOKEN=/, '').trim();
+            if (!cleanedPermanentToken) {
+                throw new Error('QPAY_PERMANENT_TOKEN is set but empty after parsing.');
+            }
+            return cleanedPermanentToken;
         }
 
         const currentTimestamp = Math.floor(Date.now() / 1000);
 
         // Check if we have a valid cached token (use it if not expired, regardless of timestamp)
-        if (this.tokenCache.token &&
+        if (!forceRefresh &&
+            this.tokenCache.token &&
             this.tokenCache.expiresAt &&
             Date.now() < this.tokenCache.expiresAt) {
             // Token is still valid, use cached token
@@ -127,14 +139,9 @@ class QPayService {
 
         // If we have a token but it's from a different timestamp and expired, we need a new one
         // CRITICAL: Only fetch one token per timestamp as per QPAY requirements
-        // If timestamp changed, we must fetch a new token even if old one hasn't expired yet
-        if (this.tokenCache.timestamp && this.tokenCache.timestamp !== currentTimestamp) {
-            // Timestamp changed, need new token (QPAY requirement)
-            this.tokenCache = {
-                token: null,
-                timestamp: null,
-                expiresAt: null
-            };
+        // If timestamp changed or force refresh, clear cache and fetch new token
+        if (forceRefresh || (this.tokenCache.timestamp && this.tokenCache.timestamp !== currentTimestamp)) {
+            this.tokenCache = { token: null, timestamp: null, expiresAt: null };
         }
 
         try {
@@ -318,130 +325,142 @@ class QPayService {
      * @returns {Promise<Object>} Invoice response (invoice_id, qr_text, qr_image, qPay_shortUrl, urls)
      */
     async createEbarimtInvoice(order, invoiceData = {}) {
-        try {
-            // ═══════════════════════════════════════════════════════════════════
-            // IDEMPOTENCY CHECK: If order already has an invoice, DO NOT create another
-            // This is the CRITICAL guard against duplicate invoice creation
-            // ═══════════════════════════════════════════════════════════════════
-            const existingInvoiceId = order.qpayInvoiceId || order.qpay_invoice_id;
-            console.log(`[QPAY IDEMPOTENCY] Creating invoice for order ${order.id}, existingInvoiceId: ${existingInvoiceId || 'null'}`);
+        // ═══════════════════════════════════════════════════════════════════
+        // IDEMPOTENCY CHECK: If order already has an invoice, DO NOT create another
+        // This is the CRITICAL guard against duplicate invoice creation
+        // ═══════════════════════════════════════════════════════════════════
+        const existingInvoiceId = order.qpayInvoiceId || order.qpay_invoice_id;
+        console.log(`[QPAY IDEMPOTENCY] Creating invoice for order ${order.id}, existingInvoiceId: ${existingInvoiceId || 'null'}`);
 
-            if (existingInvoiceId) {
-                console.warn(`[QPAY IDEMPOTENCY] ⚠️ Order ${order.id} ALREADY has invoice ${existingInvoiceId} - ABORTING creation`);
-                throw new Error(`Order ${order.id} already has invoice ${existingInvoiceId}. Cannot create duplicate.`);
-            }
-
-            const token = await this.getAccessToken();
-            const base = (this.callbackBaseUrl || '').replace(/\/$/, '');
-            const callbackUrl = `${base}/orders/${order.id}/payment-callback`;
-            console.log(`📞 Callback URL for QPAY: ${callbackUrl}`);
-            console.log(`🌐 QPAY API URL: ${this.apiUrl}/invoice`);
-
-            const senderInvoiceNo = String(order.id).replace(/[^\w\-]/g, '');
-            const districtCode = invoiceData.districtCode || this.districtCode;
-            const taxType = invoiceData.taxType || '1';
-            const receiver = invoiceData.receiverData || {};
-            const receiverPhone = (receiver.phone != null ? String(receiver.phone) : '') || (receiver.phoneNumber != null ? String(receiver.phoneNumber) : '');
-            const invoiceReceiverCode = receiverPhone || (order.userId != null ? String(order.userId) : '') || `RECV-${senderInvoiceNo}`;
-            console.log(`[QPAY] Creating ebarimt invoice for order ${order.id}, sender_invoice_no: ${senderInvoiceNo} (type: ${typeof senderInvoiceNo}, length: ${senderInvoiceNo.length}), district: ${districtCode}`);
-
-            const branchCode = invoiceData.branchCode != null ? String(invoiceData.branchCode) : 'GERAR_BRANCH';
-            const payload = {
-                invoice_code: this.ebarimtInvoiceCode,
-                sender_invoice_no: senderInvoiceNo,
-                invoice_receiver_code: invoiceReceiverCode,
-                invoice_description: (invoiceData.description || `Order #${order.id}`).substring(0, 255),
-                tax_type: taxType,
-                district_code: districtCode,
-                callback_url: callbackUrl,
-                sender_branch_code: branchCode,
-                lines: invoiceData.lines || []
-            };
-
-            if (invoiceData.staffCode != null) payload.sender_staff_code = invoiceData.staffCode;
-
-            payload.invoice_receiver_data = {
-                register: receiver.register != null ? String(receiver.register) : '',
-                name: receiver.name != null ? String(receiver.name) : 'Customer',
-                email: receiver.email != null ? String(receiver.email) : '',
-                phone: receiver.phone != null ? String(receiver.phone) : (receiver.phoneNumber != null ? String(receiver.phoneNumber) : '')
-            };
-
-            if (!payload.lines.length) {
-                throw new Error('Ebarimt invoice requires at least one line item');
-            }
-
-            // Save exact request and response to file (for debugging)
-            const requestUrl = `${this.apiUrl}/invoice`;
-            const outPath = path.join(__dirname, '..', '..', 'ebarimt_invoice_request_sent.json');
-            const requestToSave = {
-                _comment: 'Exact request and response when creating QPAY ebarimt invoice. Saved on each create.',
-                savedAt: new Date().toISOString(),
-                orderId: order.id,
-                method: 'POST',
-                url: requestUrl,
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: payload
-            };
-
-            // ═══════════════════════════════════════════════════════════════════
-            // CRITICAL: Use safe invoice request - NO blind retries on invoice creation!
-            // QPay does NOT support idempotent invoice creation. Retrying can create
-            // duplicate invoices which causes tenant errors during ebarimt.
-            // ═══════════════════════════════════════════════════════════════════
-            const response = await this.safeInvoiceRequest(async () => {
-                return await axios.post(
-                    requestUrl,
-                    payload,
-                    {
-                        headers: {
-                            'Authorization': `Bearer ${token}`,
-                            'Content-Type': 'application/json'
-                        },
-                        timeout: 15000
-                    }
-                );
-            }, order.id);
-
-            requestToSave.response = {
-                status: response.status,
-                statusText: response.statusText,
-                data: response.data
-            };
-            try {
-                fs.writeFileSync(outPath, JSON.stringify(requestToSave, null, 2), 'utf8');
-                console.log('[QPAY] Ebarimt invoice request and response saved to', outPath);
-            } catch (writeErr) {
-                console.warn('[QPAY] Could not save request/response to file:', writeErr.message);
-            }
-
-            // Log full QPAY response to see what fields are returned
-            console.log('QPAY Ebarimt Invoice Response Keys:', Object.keys(response.data));
-            console.log('QPAY Ebarimt Invoice Response Sample:', {
-                invoice_id: response.data.invoice_id,
-                qr_image: response.data.qr_image ? `Present (${response.data.qr_image.length} bytes)` : 'MISSING',
-                qr_code: response.data.qr_code ? `Present (${response.data.qr_code.length} bytes)` : 'MISSING',
-            });
-            // Return token so controller can store on order; ebarimt-from-invoice will reuse same token
-            return {
-                ...response.data,
-                _token: token,
-                _tokenExpiresAt: this.tokenCache.expiresAt
-            };
-        } catch (error) {
-            console.error('QPAY Create Ebarimt Invoice Error:', {
-                message: error.message,
-                status: error.response?.status,
-                data: error.response?.data,
-                orderId: order.id,
-                timestamp: new Date().toISOString()
-            });
-            const errorMessage = error.response?.data?.message || error.message;
-            throw new Error(`Failed to create QPAY ebarimt invoice: ${errorMessage}`);
+        if (existingInvoiceId) {
+            console.warn(`[QPAY IDEMPOTENCY] ⚠️ Order ${order.id} ALREADY has invoice ${existingInvoiceId} - ABORTING creation`);
+            throw new Error(`Order ${order.id} already has invoice ${existingInvoiceId}. Cannot create duplicate.`);
         }
+
+        const base = (this.callbackBaseUrl || '').replace(/\/$/, '');
+        const callbackUrl = `${base}/orders/${order.id}/payment-callback`;
+        console.log(`📞 Callback URL for QPAY: ${callbackUrl}`);
+        console.log(`🌐 QPAY API URL: ${this.apiUrl}/invoice`);
+
+        const senderInvoiceNo = String(order.id).replace(/[^\w\-]/g, '');
+        const districtCode = invoiceData.districtCode || this.districtCode;
+        const taxType = invoiceData.taxType || '1';
+        const receiver = invoiceData.receiverData || {};
+        const receiverPhone = (receiver.phone != null ? String(receiver.phone) : '') || (receiver.phoneNumber != null ? String(receiver.phoneNumber) : '');
+        const invoiceReceiverCode = receiverPhone || (order.userId != null ? String(order.userId) : '') || `RECV-${senderInvoiceNo}`;
+        console.log(`[QPAY] Creating ebarimt invoice for order ${order.id}, sender_invoice_no: ${senderInvoiceNo} (type: ${typeof senderInvoiceNo}, length: ${senderInvoiceNo.length}), district: ${districtCode}`);
+
+        const branchCode = invoiceData.branchCode != null ? String(invoiceData.branchCode) : 'GERAR_BRANCH';
+        const payload = {
+            invoice_code: this.ebarimtInvoiceCode,
+            sender_invoice_no: senderInvoiceNo,
+            invoice_receiver_code: invoiceReceiverCode,
+            invoice_description: (invoiceData.description || `Order #${order.id}`).substring(0, 255),
+            tax_type: taxType,
+            district_code: districtCode,
+            callback_url: callbackUrl,
+            sender_branch_code: branchCode,
+            lines: invoiceData.lines || []
+        };
+
+        if (invoiceData.staffCode != null) payload.sender_staff_code = invoiceData.staffCode;
+
+        payload.invoice_receiver_data = {
+            register: receiver.register != null ? String(receiver.register) : '',
+            name: receiver.name != null ? String(receiver.name) : 'Customer',
+            email: receiver.email != null ? String(receiver.email) : '',
+            phone: receiver.phone != null ? String(receiver.phone) : (receiver.phoneNumber != null ? String(receiver.phoneNumber) : '')
+        };
+
+        if (!payload.lines.length) {
+            throw new Error('Ebarimt invoice requires at least one line item');
+        }
+
+        const requestUrl = `${this.apiUrl}/invoice`;
+        const outPath = path.join(__dirname, '..', '..', 'ebarimt_invoice_request_sent.json');
+        let lastError;
+
+        for (let attempt = 0; attempt < 2; attempt++) {
+            try {
+                // On retry after 401, force a new token (bypasses QPAY_PERMANENT_TOKEN and cache)
+                const token = await this.getAccessToken(attempt > 0 ? { forceRefresh: true } : {});
+                const requestToSave = {
+                    _comment: 'Exact request and response when creating QPAY ebarimt invoice. Saved on each create.',
+                    savedAt: new Date().toISOString(),
+                    orderId: order.id,
+                    method: 'POST',
+                    url: requestUrl,
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: payload
+                };
+
+                // ═══════════════════════════════════════════════════════════════════
+                // CRITICAL: Use safe invoice request - NO blind retries on invoice creation!
+                // QPay does NOT support idempotent invoice creation. Retrying can create
+                // duplicate invoices which causes tenant errors during ebarimt.
+                // ═══════════════════════════════════════════════════════════════════
+                const response = await this.safeInvoiceRequest(async () => {
+                    return await axios.post(
+                        requestUrl,
+                        payload,
+                        {
+                            headers: {
+                                'Authorization': `Bearer ${token}`,
+                                'Content-Type': 'application/json'
+                            },
+                            timeout: 15000
+                        }
+                    );
+                }, order.id);
+
+                requestToSave.response = {
+                    status: response.status,
+                    statusText: response.statusText,
+                    data: response.data
+                };
+                try {
+                    fs.writeFileSync(outPath, JSON.stringify(requestToSave, null, 2), 'utf8');
+                    console.log('[QPAY] Ebarimt invoice request and response saved to', outPath);
+                } catch (writeErr) {
+                    console.warn('[QPAY] Could not save request/response to file:', writeErr.message);
+                }
+
+                console.log('QPAY Ebarimt Invoice Response Keys:', Object.keys(response.data));
+                console.log('QPAY Ebarimt Invoice Response Sample:', {
+                    invoice_id: response.data.invoice_id,
+                    qr_image: response.data.qr_image ? `Present (${response.data.qr_image.length} bytes)` : 'MISSING',
+                    qr_code: response.data.qr_code ? `Present (${response.data.qr_code.length} bytes)` : 'MISSING',
+                });
+                return {
+                    ...response.data,
+                    _token: token,
+                    _tokenExpiresAt: this.tokenCache.expiresAt
+                };
+            } catch (error) {
+                lastError = error;
+                const is401 = error.response?.status === 401 || error.response?.data?.error === 'NO_CREDENTIALS';
+                if (is401 && attempt === 0) {
+                    this.clearTokenCache();
+                    console.log('QPAY: 401/NO_CREDENTIALS - cleared token cache, fetching new access token and retrying...');
+                    continue;
+                }
+                console.error('QPAY Create Ebarimt Invoice Error:', {
+                    message: error.message,
+                    status: error.response?.status,
+                    data: error.response?.data,
+                    orderId: order.id,
+                    timestamp: new Date().toISOString()
+                });
+                const errorMessage = error.response?.data?.message || error.message;
+                throw new Error(`Failed to create QPAY ebarimt invoice: ${errorMessage}`);
+            }
+        }
+
+        const errorMessage = lastError?.response?.data?.message || lastError?.message || 'Unknown error';
+        throw new Error(`Failed to create QPAY ebarimt invoice: ${errorMessage}`);
     }
 
     /**
@@ -451,28 +470,44 @@ class QPayService {
      */
     async checkPayment(invoiceId) {
         try {
-            const token = await this.getAccessToken();
+            const requestBody = {
+                object_type: 'INVOICE',
+                object_id: invoiceId,
+                offset: {
+                    page_number: 1,
+                    page_limit: 100
+                }
+            };
 
-            const response = await this.retryWithBackoff(async () => {
-                return await axios.post(
-                    `${this.apiUrl}/payment/check`,
-                    {
-                        object_type: 'INVOICE',
-                        object_id: invoiceId,
-                        offset: {
-                            page_number: 1,
-                            page_limit: 100
-                        }
-                    },
-                    {
-                        headers: {
-                            'Authorization': `Bearer ${token}`,
-                            'Content-Type': 'application/json'
-                        },
-                        timeout: 10000
+            let response;
+            for (let attempt = 0; attempt < 2; attempt++) {
+                try {
+                    // On retry after 401, force a fresh token and bypass permanent token/cache.
+                    const token = await this.getAccessToken(attempt > 0 ? { forceRefresh: true } : {});
+                    response = await this.retryWithBackoff(async () => {
+                        return await axios.post(
+                            `${this.apiUrl}/payment/check`,
+                            requestBody,
+                            {
+                                headers: {
+                                    'Authorization': `Bearer ${token}`,
+                                    'Content-Type': 'application/json'
+                                },
+                                timeout: 10000
+                            }
+                        );
+                    });
+                    break;
+                } catch (attemptError) {
+                    const is401 = attemptError.response?.status === 401 || attemptError.response?.data?.error === 'NO_CREDENTIALS';
+                    if (is401 && attempt === 0) {
+                        this.clearTokenCache();
+                        console.log('QPAY: payment/check returned 401/NO_CREDENTIALS - clearing token cache and retrying with fresh token...');
+                        continue;
                     }
-                );
-            });
+                    throw attemptError;
+                }
+            }
 
             return response.data;
         } catch (error) {

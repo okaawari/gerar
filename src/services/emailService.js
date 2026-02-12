@@ -135,76 +135,237 @@ class EmailService {
      * @param {Object} orderData - Order information
      * @returns {Promise<Object>} - { success: boolean, messageId?: string, error?: string }
      */
-    async sendOrderConfirmation(to, orderData) {
-        const { orderNumber, totalAmount, items, deliveryDate, deliveryAddress } = orderData;
-
-        const subject = `Order Confirmation - #${orderNumber}`;
+    /**
+ * Send order receipt email (NO ebarimt, Mongolian)
+ * @param {string} to
+ * @param {Object} orderData
+ */
+    async sendOrderReceipt(to, orderData) {
+        const {
+            orderNumber,
+            orderDate,
+            totalAmount,
+            items,
+            deliveryDate,
+            deliveryTime,
+            deliveryAddress
+        } = orderData;
+    
+        const primaryColor = '#0a714e';
+        const brandLogoUrl = process.env.BRAND_LOGO_URL || process.env.EMAIL_LOGO_URL || '';
+        const brandInitial = (this.fromName || 'E').trim().charAt(0).toUpperCase();
+        const safeItems = Array.isArray(items) ? items : [];
+        const subject = `Таны захиалга хүлээн авлаа — №${orderNumber}`;
+    
         const text = `
-Dear Customer,
-
-Thank you for your order!
-
-Order Number: ${orderNumber}
-Total Amount: ${totalAmount} MNT
-Delivery Date: ${deliveryDate || 'TBD'}
-${deliveryAddress ? `Delivery Address: ${deliveryAddress}` : ''}
-
-Items:
-${items.map(item => `- ${item.name} x${item.quantity} - ${item.price} MNT`).join('\n')}
-
-We will process your order shortly.
-
-Best regards,
-${this.fromName}
+    Сайн байна уу,
+    
+    Таны захиалгыг амжилттай хүлээн авлаа.
+    
+    Захиалгын дугаар: ${orderNumber}
+    Захиалсан огноо: ${orderDate || ''}
+    Нийт дүн: ${totalAmount}
+    
+    Бараанууд:
+    ${safeItems.length
+        ? safeItems.map(i => `- ${i.name} x${i.quantity} — ${i.price}`).join('\n')
+        : '- Барааны мэдээлэл байхгүй байна.'}
+    
+    Хүргэлтийн мэдээлэл:
+    Огноо: ${deliveryDate || 'Тодорхойгүй'}
+    ${deliveryTime ? `Цаг: ${deliveryTime}` : ''}
+    ${deliveryAddress ? `Хаяг: ${deliveryAddress}` : ''}
+    
+    Бид таны захиалгыг бэлтгээд хүргэлтэд гаргахаас өмнө танд дахин мэдэгдэнэ.
+    
+    Хүндэтгэсэн,
+    ${this.fromName}
         `.trim();
-
+    
         const html = `
-<!DOCTYPE html>
-<html>
-<head>
+    <!DOCTYPE html>
+    <html lang="mn">
+    <head>
     <meta charset="UTF-8">
-    <style>
-        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-        .header { background-color: #4CAF50; color: white; padding: 20px; text-align: center; }
-        .content { padding: 20px; background-color: #f9f9f9; }
-        .order-info { background-color: white; padding: 15px; margin: 15px 0; border-radius: 5px; }
-        .footer { text-align: center; padding: 20px; color: #666; font-size: 12px; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>Order Confirmation</h1>
-        </div>
-        <div class="content">
-            <p>Dear Customer,</p>
-            <p>Thank you for your order!</p>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Захиалга хүлээн авлаа</title>
+    </head>
+    <body style="margin:0;padding:0;background-color:#f5f5f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f5f5f5;">
+        <tr>
+          <td align="center" style="padding:20px 10px;">
             
-            <div class="order-info">
-                <p><strong>Order Number:</strong> #${orderNumber}</p>
-                <p><strong>Total Amount:</strong> ${totalAmount} MNT</p>
-                ${deliveryDate ? `<p><strong>Delivery Date:</strong> ${deliveryDate}</p>` : ''}
-                ${deliveryAddress ? `<p><strong>Delivery Address:</strong> ${deliveryAddress}</p>` : ''}
-            </div>
-
-            <h3>Items:</h3>
-            <ul>
-                ${items.map(item => `<li>${item.name} x${item.quantity} - ${item.price} MNT</li>`).join('')}
-            </ul>
-
-            <p>We will process your order shortly.</p>
-        </div>
-        <div class="footer">
-            <p>Best regards,<br>${this.fromName}</p>
-        </div>
-    </div>
-</body>
-</html>
+            <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;width:100%;background-color:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+              
+              <!-- Header Section -->
+              <tr>
+                <td style="background:linear-gradient(135deg, ${primaryColor} 0%, #064d37 100%);padding:32px 24px;text-align:center;">
+                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                    <tr>
+                      <td align="center">
+                        ${brandLogoUrl
+                            ? `<img src="${brandLogoUrl}" alt="${this.fromName}" width="56" height="56" style="border-radius:50%;border:3px solid rgba(255,255,255,0.3);display:block;margin:0 auto 16px;">`
+                            : `<div style="width:56px;height:56px;border-radius:50%;background-color:#ffffff;color:${primaryColor};font-size:24px;font-weight:700;line-height:56px;text-align:center;margin:0 auto 16px;border:3px solid rgba(255,255,255,0.3);">${brandInitial}</div>`}
+                        <h1 style="margin:0 0 8px;color:#ffffff;font-size:28px;font-weight:700;line-height:1.2;">Баярлалаа!</h1>
+                        <p style="margin:0;color:rgba(255,255,255,0.95);font-size:16px;line-height:1.5;">Таны захиалгыг амжилттай хүлээн авлаа</p>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+    
+              <!-- Order Number Badge -->
+              <tr>
+                <td align="center" style="padding:24px 24px 0;">
+                  <div style="display:inline-block;background-color:#f0fdf4;border:2px solid ${primaryColor};border-radius:24px;padding:8px 20px;">
+                    <span style="color:${primaryColor};font-size:14px;font-weight:700;">Захиалга №${orderNumber}</span>
+                  </div>
+                </td>
+              </tr>
+    
+              <!-- Order Details -->
+              <tr>
+                <td style="padding:24px;">
+                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f9fafb;border-radius:8px;overflow:hidden;">
+                    <tr>
+                      <td style="padding:16px 20px;">
+                        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                          <tr>
+                            <td style="padding:8px 0;color:#6b7280;font-size:14px;">Захиалгын дугаар</td>
+                            <td align="right" style="padding:8px 0;color:#111827;font-size:14px;font-weight:600;">№${orderNumber}</td>
+                          </tr>
+                          ${orderDate ? `
+                          <tr>
+                            <td style="padding:8px 0;border-top:1px solid #e5e7eb;color:#6b7280;font-size:14px;">Захиалсан огноо</td>
+                            <td align="right" style="padding:8px 0;border-top:1px solid #e5e7eb;color:#111827;font-size:14px;font-weight:600;">${orderDate}</td>
+                          </tr>
+                          ` : ''}
+                          <tr>
+                            <td style="padding:8px 0;border-top:1px solid #e5e7eb;color:#6b7280;font-size:14px;">Төлөв</td>
+                            <td align="right" style="padding:8px 0;border-top:1px solid #e5e7eb;">
+                              <span style="background-color:#dcfce7;color:#166534;padding:4px 12px;border-radius:12px;font-size:13px;font-weight:600;">Бүртгэгдсэн</span>
+                            </td>
+                          </tr>
+                        </table>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+    
+              <!-- Items Section -->
+              <tr>
+                <td style="padding:0 24px 24px;">
+                  <h2 style="margin:0 0 16px;color:#111827;font-size:18px;font-weight:700;">Захиалсан бараа</h2>
+                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;">
+                    <thead>
+                      <tr style="background-color:#f9fafb;">
+                        <th align="left" style="padding:12px 16px;color:#374151;font-size:13px;font-weight:600;border-bottom:1px solid #e5e7eb;">Бараа</th>
+                        <th align="center" style="padding:12px 16px;color:#374151;font-size:13px;font-weight:600;border-bottom:1px solid #e5e7eb;">Тоо</th>
+                        <th align="right" style="padding:12px 16px;color:#374151;font-size:13px;font-weight:600;border-bottom:1px solid #e5e7eb;">Үнэ</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${safeItems.length
+                        ? safeItems.map((i, idx) => `
+                      <tr${idx < safeItems.length - 1 ? ' style="border-bottom:1px solid #f3f4f6;"' : ''}>
+                        <td style="padding:14px 16px;color:#111827;font-size:14px;">${i.name}</td>
+                        <td align="center" style="padding:14px 16px;color:#6b7280;font-size:14px;">${i.quantity}</td>
+                        <td align="right" style="padding:14px 16px;color:#111827;font-size:14px;font-weight:600;">${i.price}</td>
+                      </tr>
+                      `).join('')
+                        : `
+                      <tr>
+                        <td colspan="3" align="center" style="padding:20px;color:#9ca3af;font-size:14px;">Барааны мэдээлэл байхгүй байна</td>
+                      </tr>
+                      `}
+                    </tbody>
+                  </table>
+                </td>
+              </tr>
+    
+              <!-- Total -->
+              <tr>
+                <td style="padding:0 24px 24px;">
+                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);border-radius:8px;border:2px solid ${primaryColor};">
+                    <tr>
+                      <td style="padding:16px 20px;">
+                        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                          <tr>
+                            <td style="color:#166534;font-size:16px;font-weight:700;">Нийт дүн</td>
+                            <td align="right" style="color:${primaryColor};font-size:22px;font-weight:700;">${totalAmount}</td>
+                          </tr>
+                        </table>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+    
+              <!-- Delivery Info -->
+              <tr>
+                <td style="padding:0 24px 24px;">
+                  <h2 style="margin:0 0 16px;color:#111827;font-size:18px;font-weight:700;">Хүргэлтийн мэдээлэл</h2>
+                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#fffbeb;border:1px solid #fcd34d;border-radius:8px;">
+                    <tr>
+                      <td style="padding:16px 20px;">
+                        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                          <tr>
+                            <td style="padding:6px 0;color:#92400e;font-size:14px;">📅 Огноо</td>
+                            <td align="right" style="padding:6px 0;color:#78350f;font-size:14px;font-weight:600;">${deliveryDate || 'Тодорхойгүй'}</td>
+                          </tr>
+                          ${deliveryTime ? `
+                          <tr>
+                            <td style="padding:6px 0;color:#92400e;font-size:14px;">🕐 Цаг</td>
+                            <td align="right" style="padding:6px 0;color:#78350f;font-size:14px;font-weight:600;">${deliveryTime}</td>
+                          </tr>
+                          ` : ''}
+                          ${deliveryAddress ? `
+                          <tr>
+                            <td colspan="2" style="padding:6px 0;color:#92400e;font-size:14px;">📍 Хаяг</td>
+                          </tr>
+                          <tr>
+                            <td colspan="2" style="padding:0 0 6px;color:#78350f;font-size:14px;font-weight:600;">${deliveryAddress}</td>
+                          </tr>
+                          ` : ''}
+                        </table>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+    
+              <!-- Helper Message -->
+              <tr>
+                <td style="padding:0 24px 32px;">
+                  <div style="background-color:#f0f9ff;border-left:4px solid #0284c7;padding:16px 20px;border-radius:4px;">
+                    <p style="margin:0;color:#0c4a6e;font-size:14px;line-height:1.6;">
+                      💡 Бид таны захиалгыг бэлтгэж дуусмагц хүргэлтийн мэдээллийг танд дахин илгээнэ.
+                    </p>
+                  </div>
+                </td>
+              </tr>
+    
+              <!-- Footer -->
+              <tr>
+                <td style="background-color:#f9fafb;padding:24px;text-align:center;border-top:1px solid #e5e7eb;">
+                  <p style="margin:0 0 8px;color:#6b7280;font-size:13px;">Хүндэтгэсэн,</p>
+                  <p style="margin:0;color:#111827;font-size:14px;font-weight:600;">${this.fromName}</p>
+                </td>
+              </tr>
+    
+            </table>
+    
+          </td>
+        </tr>
+      </table>
+    </body>
+    </html>
         `.trim();
-
+    
         return this.sendEmail(to, subject, text, html);
     }
+
 
     /**
      * Send password reset email
@@ -410,9 +571,14 @@ const html = `
     async sendEbarimtReceipt(to, orderData, ebarimtData) {
         const { orderNumber, totalAmount, items, deliveryDate, deliveryAddress } = orderData;
         const ebarimtId = ebarimtData.ebarimt_id || ebarimtData.ebarimtId || null;
+        const ebarimtReceiptId = ebarimtData.ebarimt_receipt_id || ebarimtData.ebarimtReceiptId || null;
+        const ebarimtLottery = ebarimtData.ebarimt_lottery || ebarimtData.ebarimtLottery || null;
+        const ebarimtAmountRaw = ebarimtData.amount ?? totalAmount ?? null;
+        const ebarimtAmount = (ebarimtAmountRaw != null && ebarimtAmountRaw !== '') ? String(ebarimtAmountRaw) : null;
         const receiptUrl = ebarimtData.receipt_url || ebarimtData.url || null;
         const qrImage = ebarimtData.qr_image || ebarimtData.ebarimt_qr_image || null;
         const rawResponseText = this._formatEbarimtResponseForEmail(ebarimtData);
+        const safeItems = Array.isArray(items) ? items : [];
 
         const subject = `Төлбөрийн баримт (И-Баримт) – Захиалга #${orderNumber}`;
         const text = `
@@ -426,9 +592,21 @@ ${deliveryDate ? `Хүргэлтийн огноо: ${deliveryDate}` : ''}
 ${deliveryAddress ? `Хүргэлтийн хаяг: ${deliveryAddress}` : ''}
 
 Бараанууд:
-${items.map(item => `- ${item.name} x${item.quantity} — ${item.price}₮`).join('\n')}
+- ${safeItems.length
+            ? safeItems.map(item => {
+                const qty = item.quantity != null ? String(item.quantity) : '';
+                const unitPrice = item.unitPrice ?? item.price ?? '';
+                const amount = item.amount ?? '';
+                const unitPart = unitPrice !== '' ? ` (нэгж: ${unitPrice}₮)` : '';
+                const amountPart = amount !== '' ? ` — ${amount}₮` : '';
+                return `- ${item.name} x${qty}${unitPart}${amountPart}`;
+            }).join('\n')
+            : 'Барааны мэдээлэл байхгүй байна.'}
 
 И-Баримтын дугаар: ${ebarimtId || 'Байхгүй'}
+И-Баримтын баримтын дугаар: ${ebarimtReceiptId || 'Байхгүй'}
+Сугалааны дугаар: ${ebarimtLottery || 'Байхгүй'}
+Баримтын дүн: ${ebarimtAmount ? `${ebarimtAmount}₮` : 'Байхгүй'}
 ${receiptUrl ? `Баримт харах: ${receiptUrl}` : ''}
 ${qrImage ? 'И-Баримтын QR кодыг имэйлийн HTML хувилбар дээр харна уу.' : ''}
 
@@ -556,13 +734,40 @@ ${this.fromName}
 
                 <div class="section">
                 <strong>Бараанууд:</strong>
-                <ul>
-                    ${items.map(item => `<li>${item.name} x${item.quantity} — ${item.price}₮</li>`).join('')}
-                </ul>
+                ${safeItems.length ? `
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;margin-top:10px;">
+                  <thead>
+                    <tr style="background-color:#f9fafb;">
+                      <th align="left" style="padding:10px 12px;color:#374151;font-size:13px;font-weight:600;border-bottom:1px solid #e5e7eb;">Бараа</th>
+                      <th align="center" style="padding:10px 12px;color:#374151;font-size:13px;font-weight:600;border-bottom:1px solid #e5e7eb;">Тоо</th>
+                      <th align="right" style="padding:10px 12px;color:#374151;font-size:13px;font-weight:600;border-bottom:1px solid #e5e7eb;">Нэгж үнэ</th>
+                      <th align="right" style="padding:10px 12px;color:#374151;font-size:13px;font-weight:600;border-bottom:1px solid #e5e7eb;">Дүн</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${safeItems.map((item, idx) => {
+                        const qty = item.quantity != null ? String(item.quantity) : '';
+                        const unitPrice = item.unitPrice ?? item.price ?? '';
+                        const amount = item.amount ?? '';
+                        const border = idx < safeItems.length - 1 ? 'border-bottom:1px solid #f3f4f6;' : '';
+                        return `
+                    <tr style="${border}">
+                      <td style="padding:10px 12px;color:#111827;font-size:14px;">${item.name}</td>
+                      <td align="center" style="padding:10px 12px;color:#6b7280;font-size:14px;">${qty}</td>
+                      <td align="right" style="padding:10px 12px;color:#111827;font-size:14px;">${unitPrice}${unitPrice !== '' ? '₮' : ''}</td>
+                      <td align="right" style="padding:10px 12px;color:#111827;font-size:14px;font-weight:600;">${amount}${amount !== '' ? '₮' : ''}</td>
+                    </tr>`;
+                    }).join('')}
+                  </tbody>
+                </table>
+                ` : `<p style="margin:8px 0;color:#6b7280;">Барааны мэдээлэл байхгүй байна.</p>`}
                 </div>
 
                 <div class="section receipt">
                 <p><strong>И-Баримтын дугаар:</strong> ${ebarimtId || 'Байхгүй'}</p>
+                <p><strong>И-Баримтын баримтын дугаар:</strong> ${ebarimtReceiptId || 'Байхгүй'}</p>
+                <p><strong>Сугалааны дугаар:</strong> ${ebarimtLottery || 'Байхгүй'}</p>
+                <p><strong>Баримтын дүн:</strong> ${ebarimtAmount ? `${ebarimtAmount}₮` : 'Байхгүй'}</p>
                 ${receiptUrl ? `<p><a href="${receiptUrl}" target="_blank">Баримт харах</a></p>` : ''}
                 ${qrImage ? `<p style="margin-top:12px;"><strong>И-Баримтын QR код:</strong></p><p><img src="${qrImage}" alt="И-Баримт QR" width="200" height="200" style="display:block;border:1px solid #ddd;border-radius:8px;" /></p>` : ''}
                 </div>

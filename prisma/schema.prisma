@@ -169,6 +169,14 @@ model order {
   paidAt        DateTime?
   ebarimtId     String?   @db.VarChar(255)
   ebarimtReceiptUrl String? @db.VarChar(1024) // QPay receipt URL for printing
+  // Persist first ebarimt response fields (QPay often returns these only on create)
+  ebarimtReceiptId String? @db.VarChar(255) // ebarimt_receipt_id / bill id
+  ebarimtQrData    String? @db.LongText // ebarimt_qr_data (can be long numeric string)
+  ebarimtLottery   String? @db.VarChar(50) // ebarimt_lottery (e.g. "RA 31372032")
+  ebarimtStatus    String? @db.VarChar(50) // ebarimt_status / barimt_status
+  ebarimtAmount    String? @db.VarChar(50) // Total amount from QPay ebarimt response
+  ebarimtVatAmount String? @db.VarChar(50) // VAT amount from QPay ebarimt response
+  ebarimtCityTaxAmount String? @db.VarChar(50) // City tax from QPay ebarimt response
 
   // Guest orders: session token to allow GET /orders/:id with X-Session-Token
   sessionToken String?   @db.VarChar(255)
