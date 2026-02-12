@@ -155,7 +155,7 @@ class EmailService {
         const brandLogoUrl = process.env.BRAND_LOGO_URL || process.env.EMAIL_LOGO_URL || '';
         const brandInitial = (this.fromName || 'E').trim().charAt(0).toUpperCase();
         const safeItems = Array.isArray(items) ? items : [];
-        const subject = `Таны захиалга хүлээн авлаа — №${orderNumber}`;
+        const subject = `Таны захиалгыг амжилттай хүлээн авлаа — №${orderNumber}`;
     
         const text = `
     Сайн байна уу,
