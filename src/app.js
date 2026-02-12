@@ -21,8 +21,9 @@ const paymentController = require('./controllers/paymentController');
 const adminRoutes = require('./routes/admin');
 const { notFoundHandler } = require('./middleware/errorMiddleware');
 
-// Load environment variables (suppress tips in production)
+// Load environment variables from project root (so it works when cwd differs, e.g. under Passenger)
 dotenv.config({
+    path: path.join(__dirname, '..', '.env'),
     quiet: process.env.NODE_ENV === 'production'
 });
 
