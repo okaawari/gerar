@@ -1195,9 +1195,11 @@ class OrderService {
         if (paymentData.ebarimtId !== undefined) {
             updateData.ebarimtId = paymentData.ebarimtId;
         }
-        // Update order status if payment is completed
+        // Update order status if payment is completed; clear QR code/text to save DB space
         if (paymentData.paymentStatus === 'PAID') {
             updateData.status = 'PAID';
+            updateData.qpayQrCode = null;
+            updateData.qpayQrText = null;
             if (!updateData.paidAt) {
                 updateData.paidAt = new Date();
             }

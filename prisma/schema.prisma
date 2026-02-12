@@ -167,6 +167,7 @@ model order {
   paymentStatus String    @default("PENDING") @db.VarChar(50)
   paymentMethod String?   @db.VarChar(50)
   paidAt        DateTime?
+  discordPaymentNotifiedAt DateTime? // Set when Discord payment notification sent (prevents duplicate notifications)
   ebarimtId     String?   @db.VarChar(255)
   ebarimtReceiptUrl String? @db.VarChar(1024) // QPay receipt URL for printing
   // Persist first ebarimt response fields (QPay often returns these only on create)

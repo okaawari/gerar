@@ -781,7 +781,7 @@ class PaymentController {
                     // Payment confirmed - update order (support snake_case and camelCase from QPAY)
                     const paymentId = successfulPayment.payment_id ?? successfulPayment.paymentId ?? successfulPayment.id;
 
-                    // Update order status to PAID
+                    // Update order status to PAID; clear QR code/text to save DB space (no longer needed after payment)
                     const updatedOrder = await prisma.order.update({
                         where: { id: String(id) },
                         data: {
@@ -789,7 +789,9 @@ class PaymentController {
                             paymentStatus: 'PAID',
                             status: 'PAID',
                             paidAt: new Date(),
-                            paymentMethod: successfulPayment.payment_type ?? successfulPayment.paymentType ?? 'QPAY'
+                            paymentMethod: successfulPayment.payment_type ?? successfulPayment.paymentType ?? 'QPAY',
+                            qpayQrCode: null,
+                            qpayQrText: null
                         }
                     });
 
@@ -864,12 +866,18 @@ class PaymentController {
                         console.warn('[QPAY] No contact/user email for order', id, '– skipping payment confirmation email');
                     }
 
-                    // Notify admins via Discord (fire-and-forget; must not block or break callback)
-                    discordService.sendPaymentNotification(order, {
-                        paymentId,
-                        paymentMethod: successfulPayment.payment_type ?? successfulPayment.paymentType ?? 'QPAY',
-                        paidAt: new Date()
-                    }).catch(err => console.error('Discord payment notification failed:', err.message));
+                    // Notify admins via Discord only once (atomic claim prevents duplicate when callback and poll both run)
+                    const discordClaim = await prisma.order.updateMany({
+                        where: { id: String(id), discordPaymentNotifiedAt: null },
+                        data: { discordPaymentNotifiedAt: new Date() }
+                    });
+                    if (discordClaim.count === 1) {
+                        discordService.sendPaymentNotification(order, {
+                            paymentId,
+                            paymentMethod: successfulPayment.payment_type ?? successfulPayment.paymentType ?? 'QPAY',
+                            paidAt: new Date()
+                        }).catch(err => console.error('Discord payment notification failed:', err.message));
+                    }
 
                     // Clear payment status cache so next status check reflects paid status
                     this.paymentStatusCache.delete(String(id));
@@ -1047,7 +1055,7 @@ class PaymentController {
                     statusOfGps(latestPayment) === 'PAID' || statusOfGps(latestPayment) === 'SUCCESS' || statusOfGps(latestPayment) === 'COMPLETED'
                 );
 
-                // If payment is confirmed, update order status
+                // If payment is confirmed, update order status; clear QR code/text to save DB space
                 if (isPaid && order.paymentStatus !== 'PAID') {
                     const paymentId = latestPayment.payment_id ?? latestPayment.paymentId ?? latestPayment.id;
                     await prisma.order.update({
@@ -1057,7 +1065,9 @@ class PaymentController {
                             paymentStatus: 'PAID',
                             status: 'PAID',
                             paidAt: new Date(latestPayment.paid_date || latestPayment.created_date || new Date()),
-                            paymentMethod: latestPayment.payment_type ?? latestPayment.paymentType ?? 'QPAY'
+                            paymentMethod: latestPayment.payment_type ?? latestPayment.paymentType ?? 'QPAY',
+                            qpayQrCode: null,
+                            qpayQrText: null
                         }
                     });
 
@@ -1128,12 +1138,18 @@ class PaymentController {
                         console.warn('[QPAY] No contact/user email for order', id, '(poll) – skipping payment confirmation email');
                     }
 
-                    // Notify admins via Discord (fire-and-forget; must not block or break flow)
-                    discordService.sendPaymentNotification(order, {
-                        paymentId,
-                        paymentMethod: latestPayment.payment_type ?? latestPayment.paymentType ?? 'QPAY',
-                        paidAt: latestPayment.paid_date || latestPayment.created_date || new Date()
-                    }).catch(err => console.error('Discord payment notification failed:', err.message));
+                    // Notify admins via Discord only once (atomic claim prevents duplicate when callback and poll both run)
+                    const discordClaimPoll = await prisma.order.updateMany({
+                        where: { id: String(id), discordPaymentNotifiedAt: null },
+                        data: { discordPaymentNotifiedAt: new Date() }
+                    });
+                    if (discordClaimPoll.count === 1) {
+                        discordService.sendPaymentNotification(order, {
+                            paymentId,
+                            paymentMethod: latestPayment.payment_type ?? latestPayment.paymentType ?? 'QPAY',
+                            paidAt: latestPayment.paid_date || latestPayment.created_date || new Date()
+                        }).catch(err => console.error('Discord payment notification failed:', err.message));
+                    }
 
                     // Clear cache so subsequent requests get fresh paid status
                     this.paymentStatusCache.delete(String(id));
