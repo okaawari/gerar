@@ -2,7 +2,12 @@ const nodemailer = require('nodemailer');
 
 class EmailService {
     constructor() {
-        // Google SMTP configuration
+        // Mail relay (optional): when set, all emails are sent via HTTP POST to this URL instead of SMTP
+        this.relayUrl = process.env.EMAIL_RELAY_URL || null;
+        this.relayToken = process.env.EMAIL_RELAY_TOKEN || null;
+        this.useRelay = !!(this.relayUrl && this.relayToken);
+
+        // Google SMTP configuration (used when relay is not configured)
         this.smtpHost = process.env.SMTP_HOST || 'smtp.gmail.com';
         this.smtpPort = parseInt(process.env.SMTP_PORT || '587');
         this.smtpSecure = process.env.SMTP_SECURE === 'true'; // true for 465, false for other ports
@@ -11,9 +16,11 @@ class EmailService {
         this.fromEmail = process.env.SMTP_FROM_EMAIL || this.smtpUser;
         this.fromName = process.env.SMTP_FROM_NAME || 'Ecommerce';
 
-        // Create transporter
+        // Create transporter (only when not using relay)
         this.transporter = null;
-        this.initializeTransporter();
+        if (!this.useRelay) {
+            this.initializeTransporter();
+        }
     }
 
     /**
@@ -39,15 +46,21 @@ class EmailService {
     }
 
     /**
-     * Verify SMTP connection
+     * Verify SMTP connection or relay availability
      * @returns {Promise<Object>} - { success: boolean, message?: string, error?: string }
      */
     async verifyConnection() {
+        if (this.useRelay) {
+            return {
+                success: true,
+                message: 'Email relay configured: ' + this.relayUrl
+            };
+        }
         if (!this.transporter) {
             return {
                 success: false,
                 error: 'EMAIL_NOT_CONFIGURED',
-                message: 'Email service is not configured. Please set SMTP_USER and SMTP_PASSWORD environment variables.'
+                message: 'Email service is not configured. Set SMTP_USER and SMTP_PASSWORD, or EMAIL_RELAY_URL and EMAIL_RELAY_TOKEN.'
             };
         }
 
@@ -88,17 +101,47 @@ class EmailService {
                 throw new Error('Invalid recipient email format');
             }
 
-            if (!this.transporter) {
-                throw new Error('Email service is not configured. Please set SMTP_USER and SMTP_PASSWORD environment variables.');
+            const htmlBody = html || text.replace(/\n/g, '<br>');
+
+            // Send via HTTP relay when configured (e.g. when hosting blocks SMTP ports)
+            if (this.useRelay) {
+                if (attachments.length > 0) {
+                    throw new Error('Email relay does not support attachments. Disable EMAIL_RELAY_URL to use SMTP with attachments.');
+                }
+                const res = await fetch(this.relayUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Relay-Token': this.relayToken
+                    },
+                    body: JSON.stringify({
+                        to,
+                        subject,
+                        html: htmlBody
+                    })
+                });
+                if (!res.ok) {
+                    const errText = await res.text();
+                    throw new Error(`Relay returned ${res.status}: ${errText || res.statusText}`);
+                }
+                return {
+                    success: true,
+                    messageId: `relay-${Date.now()}`,
+                    message: 'Email sent successfully via relay'
+                };
             }
 
-            // Prepare email options
+            if (!this.transporter) {
+                throw new Error('Email service is not configured. Please set SMTP_USER and SMTP_PASSWORD, or EMAIL_RELAY_URL and EMAIL_RELAY_TOKEN.');
+            }
+
+            // Prepare email options (SMTP)
             const mailOptions = {
                 from: `"${this.fromName}" <${this.fromEmail}>`,
                 to: to,
                 subject: subject,
                 text: text,
-                html: html || text.replace(/\n/g, '<br>'), // Convert newlines to <br> if no HTML provided
+                html: htmlBody,
                 attachments: attachments
             };
 
