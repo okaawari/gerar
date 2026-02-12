@@ -81,11 +81,13 @@ class PaymentController {
             const qty = item.quantity != null ? Number(item.quantity) : 0;
             const unitPrice = item.price != null ? Number(item.price) : 0;
             const lineTotal = unitPrice * qty;
+            const amountStr = isFinite(lineTotal) ? lineTotal.toFixed(2) : '0.00';
             return {
                 name: item.product?.name || 'Product',
                 quantity: qty,
                 unitPrice: isFinite(unitPrice) ? unitPrice.toFixed(2) : '0.00',
-                amount: isFinite(lineTotal) ? lineTotal.toFixed(2) : '0.00'
+                amount: amountStr,
+                price: amountStr
             };
         });
         let deliveryAddress = null;
@@ -97,12 +99,20 @@ class PaymentController {
         const deliveryDate = order.deliveryDate
             ? new Date(order.deliveryDate).toLocaleDateString('en-CA', { year: 'numeric', month: 'short', day: 'numeric' })
             : null;
+        const orderDate = order.createdAt
+            ? new Date(order.createdAt).toLocaleDateString('en-CA', { year: 'numeric', month: 'short', day: 'numeric' })
+            : null;
+        const deliveryTime = order.deliveryTimeSlot
+            ? order.deliveryTimeSlot.replace('-', ':00 - ').replace(/(\d+)$/, '$1:00')
+            : null;
         return {
             orderNumber: order.id,
             totalAmount: order.totalAmount != null ? String(order.totalAmount) : '0',
             items,
             deliveryDate,
-            deliveryAddress
+            deliveryTime,
+            deliveryAddress,
+            orderDate
         };
     }
 
@@ -834,28 +844,12 @@ class PaymentController {
                         console.log('[QPAY] Skipping ebarimt for order', id, '(invoice was simple amount-only; ebarimt only works for ebarimt-type invoices)');
                     }
 
-                    // Always send payment confirmation email when we have contact/user email (with or without ebarimt)
+                    // Always send payment confirmation email when we have contact/user email
                     const receiptEmail = (order.contactEmail || order.user?.email || '').trim() || null;
                     if (receiptEmail) {
                         try {
                             const orderData = this._buildOrderDataForReceipt(order);
-                            let ebarimtForEmail = ebarimtResponse
-                                ? { ...ebarimtResponse }
-                                : { ebarimt_id: null, receipt_url: null, ebarimt_error: ebarimtErrorInfo };
-                            // Generate QR image from ebarimt_qr_data for receipt email
-                            if (ebarimtForEmail.ebarimt_qr_data) {
-                                try {
-                                    ebarimtForEmail.qr_image = await QRCode.toDataURL(ebarimtForEmail.ebarimt_qr_data, {
-                                        type: 'image/png',
-                                        margin: 2,
-                                        width: 200,
-                                        errorCorrectionLevel: 'M'
-                                    });
-                                } catch (qrErr) {
-                                    console.warn('[QPAY] Ebarimt QR code generation failed:', qrErr.message);
-                                }
-                            }
-                            await emailService.sendEbarimtReceipt(receiptEmail, orderData, ebarimtForEmail);
+                            await emailService.sendOrderReceipt(receiptEmail, orderData);
                             console.log('[QPAY] Payment confirmation email sent to', receiptEmail);
                             await orderService.recordOrderActivity(id, {
                                 type: 'MESSAGE_SENT',
@@ -1114,27 +1108,12 @@ class PaymentController {
                         console.log('[QPAY] Skipping ebarimt for order', id, '(poll path – invoice was simple amount-only)');
                     }
 
-                    // Always send payment confirmation email when we have contact/user email (with or without ebarimt)
+                    // Always send payment confirmation email when we have contact/user email
                     const receiptEmailPoll = (order.contactEmail || order.user?.email || '').trim() || null;
                     if (receiptEmailPoll) {
                         try {
                             const orderData = this._buildOrderDataForReceipt(order);
-                            let ebarimtForEmail = ebarimtResponse
-                                ? { ...ebarimtResponse }
-                                : { ebarimt_id: null, receipt_url: null, ebarimt_error: ebarimtErrorInfo };
-                            if (ebarimtForEmail.ebarimt_qr_data) {
-                                try {
-                                    ebarimtForEmail.qr_image = await QRCode.toDataURL(ebarimtForEmail.ebarimt_qr_data, {
-                                        type: 'image/png',
-                                        margin: 2,
-                                        width: 200,
-                                        errorCorrectionLevel: 'M'
-                                    });
-                                } catch (qrErr) {
-                                    console.warn('[QPAY] Ebarimt QR code generation failed (poll):', qrErr.message);
-                                }
-                            }
-                            await emailService.sendEbarimtReceipt(receiptEmailPoll, orderData, ebarimtForEmail);
+                            await emailService.sendOrderReceipt(receiptEmailPoll, orderData);
                             console.log('[QPAY] Payment confirmation email sent (poll) to', receiptEmailPoll);
                             await orderService.recordOrderActivity(id, {
                                 type: 'MESSAGE_SENT',
