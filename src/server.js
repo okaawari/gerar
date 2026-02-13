@@ -3,6 +3,7 @@ require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 const app = require('./app');
 const { connectDatabase, disconnectDatabase } = require('./config/database');
 const orderService = require('./services/orderService');
+const constantsService = require('./services/constantsService');
 
 const PORT = process.env.PORT || 3000;
 const NODE_ENV = process.env.NODE_ENV || 'development';
@@ -17,6 +18,9 @@ const startServer = async () => {
     try {
         // Connect to database first
         await connectDatabase();
+
+        // Load app constants (delivery slots, districts, off-delivery config) from DB into cache
+        await constantsService.loadConstants();
 
         // Start the server - listen on all network interfaces (0.0.0.0) to allow access from other devices
         server = app.listen(PORT, '0.0.0.0', () => {

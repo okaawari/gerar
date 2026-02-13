@@ -366,3 +366,31 @@ model otp {
   @@index([expiresAt]) // For cleanup of expired OTPs
   @@map("otp")
 }
+
+// App constants (delivery slots, districts, off-delivery config) - editable via admin
+model deliverytimeslot {
+  id        Int     @id @default(autoincrement())
+  key       String  @unique @db.VarChar(50)   // e.g. MORNING, AFTERNOON
+  value     String  @db.VarChar(10)           // e.g. 10-14
+  sortOrder Int     @default(0) @map("sort_order")
+
+  @@map("deliverytimeslot")
+}
+
+model district {
+  id           Int    @id @default(autoincrement())
+  name         String @unique @db.VarChar(255)
+  khorooCount  Int    @map("khoroo_count")   // Number of khoroo options (1 to khorooCount)
+
+  @@map("district")
+}
+
+model offdeliveryconfig {
+  id                  Int   @id @default(autoincrement())
+  offWeekdays         Json  @map("off_weekdays")   // [0, 6] = Sunday, Saturday
+  offDates            Json  @map("off_dates")      // ["2025-01-01", ...]
+  offTimeSlots        Json  @map("off_time_slots") // ["10-14"] = globally disabled slots
+  offTimeSlotsByDate  Json  @map("off_time_slots_by_date") // {"2025-12-25": ["10-14", "18-21"], ...}
+
+  @@map("offdeliveryconfig")
+}

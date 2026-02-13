@@ -5,6 +5,7 @@ const addressService = require('./addressService');
 const otpService = require('./otpService');
 const smsService = require('./smsService');
 const { isValidDeliveryTimeSlot } = require('../constants/deliveryTimeSlots');
+const constantsService = require('./constantsService');
 const { getMongoliaDateParts } = require('../utils/dateUtils');
 
 /** Status value that triggers "delivery started" SMS to user */
@@ -82,13 +83,19 @@ class OrderService {
     }
 
     /**
-     * Validate delivery time slot
+     * Validate delivery time slot (optionally for a specific date; checks global and date-specific off slots).
      * @param {string} timeSlot - Delivery time slot
+     * @param {string|Date|null} [deliveryDate] - Delivery date (YYYY-MM-DD string or Date) for date-specific off slots
      * @returns {boolean} - True if valid
      */
-    validateDeliveryTimeSlot(timeSlot) {
+    validateDeliveryTimeSlot(timeSlot, deliveryDate = null) {
         if (!timeSlot) return true; // Optional field
-        return isValidDeliveryTimeSlot(timeSlot);
+        if (!isValidDeliveryTimeSlot(timeSlot)) return false;
+        const dateStr = deliveryDate
+            ? (typeof deliveryDate === 'string' ? deliveryDate : deliveryDate.toISOString().slice(0, 10))
+            : null;
+        if (constantsService.isDeliveryTimeSlotOffForDate(dateStr, timeSlot)) return false;
+        return true;
     }
 
     /**
@@ -151,9 +158,9 @@ class OrderService {
             throw error;
         }
 
-        // Validate delivery time slot if provided
-        if (deliveryTimeSlot && !this.validateDeliveryTimeSlot(deliveryTimeSlot)) {
-            const error = new Error('Invalid delivery time slot. Must be one of: "10-14", "14-18", "18-21", "21-00"');
+        // Validate delivery time slot if provided (checks global and date-specific off slots)
+        if (deliveryTimeSlot && !this.validateDeliveryTimeSlot(deliveryTimeSlot, deliveryDate)) {
+            const error = new Error('Invalid or unavailable delivery time slot for the selected date.');
             error.statusCode = 400;
             throw error;
         }
@@ -426,9 +433,9 @@ class OrderService {
             throw error;
         }
 
-        // Validate delivery time slot if provided
-        if (deliveryTimeSlot && !this.validateDeliveryTimeSlot(deliveryTimeSlot)) {
-            const error = new Error('Invalid delivery time slot. Must be one of: "10-14", "14-18", "18-21", "21-00"');
+        // Validate delivery time slot if provided (checks global and date-specific off slots)
+        if (deliveryTimeSlot && !this.validateDeliveryTimeSlot(deliveryTimeSlot, deliveryDate)) {
+            const error = new Error('Invalid or unavailable delivery time slot for the selected date.');
             error.statusCode = 400;
             throw error;
         }
@@ -634,9 +641,9 @@ class OrderService {
             }
         }
 
-        // Validate delivery time slot if provided
-        if (deliveryTimeSlot && !this.validateDeliveryTimeSlot(deliveryTimeSlot)) {
-            const error = new Error('Invalid delivery time slot. Must be one of: "10-14", "14-18", "18-21", "21-00"');
+        // Validate delivery time slot if provided (checks global and date-specific off slots)
+        if (deliveryTimeSlot && !this.validateDeliveryTimeSlot(deliveryTimeSlot, deliveryDate)) {
+            const error = new Error('Invalid or unavailable delivery time slot for the selected date.');
             error.statusCode = 400;
             throw error;
         }

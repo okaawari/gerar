@@ -801,9 +801,102 @@ async function seedDefault() {
     console.log('\n');
 }
 
+// Default app constants (same as original deliveryTimeSlots.js and districts.js)
+const DEFAULT_DELIVERY_TIME_SLOTS = {
+    MORNING: '10-14',
+    AFTERNOON: '14-18',
+    EVENING: '18-21',
+    NIGHT: '21-00'
+};
+
+const DEFAULT_DISTRICTS = {
+    'Багануур дүүрэг': 5,
+    'Баганхангай дүүрэг': 2,
+    'Баянгол дүүрэг': 25,
+    'Баянзүрх дүүрэг': 25,
+    'Налайх дүүрэг': 7,
+    'Сонгинохайрхан дүүрэг': 43,
+    'Сүхбаатар дүүрэг': 20,
+    'Хан-Уул дүүрэг': 21,
+    'Чингэлтэй дүүрэг': 19
+};
+
+const DEFAULT_OFF_DELIVERY = { offWeekdays: [0], offDates: [], offTimeSlots: [], offTimeSlotsByDate: {} };
+
+async function seedConstants() {
+    console.log('⚙️  Seeding app constants (delivery slots, districts, off-delivery config)...');
+
+    let slotsToSeed = DEFAULT_DELIVERY_TIME_SLOTS;
+    let districtsToSeed = DEFAULT_DISTRICTS;
+    let offDeliveryToSeed = DEFAULT_OFF_DELIVERY;
+
+    // Optionally migrate off-delivery config from existing JSON file
+    const offPath = path.join(__dirname, '../src/config/offDeliveryDates.json');
+        if (fs.existsSync(offPath)) {
+            try {
+                const raw = JSON.parse(fs.readFileSync(offPath, 'utf8'));
+                if (Array.isArray(raw.offWeekdays) && Array.isArray(raw.offDates)) {
+                    offDeliveryToSeed = {
+                        offWeekdays: raw.offWeekdays,
+                        offDates: raw.offDates,
+                        offTimeSlots: Array.isArray(raw.offTimeSlots) ? raw.offTimeSlots : [],
+                        offTimeSlotsByDate: raw.offTimeSlotsByDate && typeof raw.offTimeSlotsByDate === 'object' && !Array.isArray(raw.offTimeSlotsByDate)
+                            ? raw.offTimeSlotsByDate
+                            : {}
+                    };
+                }
+            } catch (e) {
+                // use defaults
+            }
+        }
+
+    // Delivery time slots
+    const slotEntries = Object.entries(slotsToSeed);
+    for (let i = 0; i < slotEntries.length; i++) {
+        const [key, value] = slotEntries[i];
+        await prisma.deliverytimeslot.upsert({
+            where: { key },
+            update: { value, sortOrder: i },
+            create: { key, value, sortOrder: i }
+        });
+    }
+    console.log('  ✅ Delivery time slots:', slotEntries.length);
+
+    // Districts
+    for (const [name, khorooCount] of Object.entries(districtsToSeed)) {
+        await prisma.district.upsert({
+            where: { name },
+            update: { khorooCount },
+            create: { name, khorooCount }
+        });
+    }
+    console.log('  ✅ Districts:', Object.keys(districtsToSeed).length);
+
+    // Off-delivery config (single row)
+    const offTimeSlots = Array.isArray(offDeliveryToSeed.offTimeSlots) ? offDeliveryToSeed.offTimeSlots : [];
+    const offTimeSlotsByDate = offDeliveryToSeed.offTimeSlotsByDate && typeof offDeliveryToSeed.offTimeSlotsByDate === 'object' && !Array.isArray(offDeliveryToSeed.offTimeSlotsByDate)
+        ? offDeliveryToSeed.offTimeSlotsByDate
+        : {};
+    const existingOff = await prisma.offdeliveryconfig.findFirst();
+    if (existingOff) {
+        await prisma.offdeliveryconfig.update({
+            where: { id: existingOff.id },
+            data: { offWeekdays: offDeliveryToSeed.offWeekdays, offDates: offDeliveryToSeed.offDates, offTimeSlots, offTimeSlotsByDate }
+        });
+    } else {
+        await prisma.offdeliveryconfig.create({
+            data: { offWeekdays: offDeliveryToSeed.offWeekdays, offDates: offDeliveryToSeed.offDates, offTimeSlots, offTimeSlotsByDate }
+        });
+    }
+    console.log('  ✅ Off-delivery config');
+    console.log('');
+}
+
 async function main() {
     const seedDataPath = path.join(__dirname, 'seed-data.json');
-    
+
+    await seedConstants();
+
     if (fs.existsSync(seedDataPath)) {
         console.log('📂 Found seed-data.json file, loading exported data...\n');
         const seedData = JSON.parse(fs.readFileSync(seedDataPath, 'utf8'));

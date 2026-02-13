@@ -148,12 +148,18 @@ class AddressController {
      */
     async getOffDeliveryDates(req, res, next) {
         try {
-            const { offWeekdays, offDates } = getOffDeliveryDatesConfig();
+            const { offWeekdays, offDates, offTimeSlots, offTimeSlotsByDate } = getOffDeliveryDatesConfig();
+            const byDate = offTimeSlotsByDate && typeof offTimeSlotsByDate === 'object' ? offTimeSlotsByDate : {};
 
             res.status(200).json({
                 success: true,
                 message: 'Off-delivery dates retrieved successfully',
-                data: { offWeekdays, offDates }
+                data: {
+                    offWeekdays,
+                    offDates,
+                    offTimeSlots: offTimeSlots || [],
+                    offTimeSlotsByDate: byDate
+                }
             });
         } catch (error) {
             next(error);
