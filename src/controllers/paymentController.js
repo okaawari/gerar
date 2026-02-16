@@ -2,6 +2,7 @@ const prisma = require('../lib/prisma');
 const qpayService = require('../services/qpayService');
 const orderService = require('../services/orderService');
 const emailService = require('../services/emailService');
+const smsService = require('../services/smsService');
 const ebarimtTestService = require('../services/ebarimtTestService');
 const discordService = require('../services/discordService');
 const QRCode = require('qrcode');
@@ -732,7 +733,7 @@ class PaymentController {
 
         try {
 
-            // Get order (include user and address for ebarimt receipt email)
+            // Get order (include user and address for ebarimt receipt email and SMS)
             const order = await prisma.order.findUnique({
                 where: { id: String(id) },
                 include: {
@@ -742,7 +743,7 @@ class PaymentController {
                         }
                     },
                     user: {
-                        select: { email: true, name: true }
+                        select: { email: true, name: true, phoneNumber: true }
                     },
                     address: true
                 }
@@ -864,6 +865,36 @@ class PaymentController {
                         }
                     } else {
                         console.warn('[QPAY] No contact/user email for order', id, '– skipping payment confirmation email');
+                    }
+
+                    // Send payment confirmation SMS to user's phone number (only once; atomic claim prevents duplicate when callback and poll both run)
+                    const receiptPhone = (order.contactPhoneNumber || order.address?.phoneNumber || order.user?.phoneNumber || '').trim().replace(/\D/g, '');
+                    if (receiptPhone && receiptPhone.length === 8) {
+                        const smsClaim = await prisma.order.updateMany({
+                            where: { id: String(id), smsPaymentNotifiedAt: null },
+                            data: { smsPaymentNotifiedAt: new Date() }
+                        });
+                        if (smsClaim.count === 1) {
+                            try {
+                                const smsMessage = `Таны #${order.id} захиалгын төлбөр төлөгдөж баталгаажлаа. Баярлалаа.`;
+                                const smsResult = await smsService.sendSMS(receiptPhone, smsMessage);
+                                if (smsResult.success) {
+                                    console.log('[QPAY] Payment confirmation SMS sent to', receiptPhone);
+                                    await orderService.recordOrderActivity(id, {
+                                        type: 'MESSAGE_SENT',
+                                        title: 'Payment confirmation SMS sent',
+                                        channel: 'sms',
+                                        toValue: receiptPhone
+                                    });
+                                } else {
+                                    console.error('[QPAY] Payment confirmation SMS failed:', smsResult.error);
+                                }
+                            } catch (smsError) {
+                                console.error('[QPAY] Payment confirmation SMS error:', smsError.message);
+                            }
+                        }
+                    } else {
+                        console.warn('[QPAY] No valid contact/user phone for order', id, '– skipping payment confirmation SMS');
                     }
 
                     // Notify admins via Discord only once (atomic claim prevents duplicate when callback and poll both run)
@@ -1136,6 +1167,36 @@ class PaymentController {
                         }
                     } else {
                         console.warn('[QPAY] No contact/user email for order', id, '(poll) – skipping payment confirmation email');
+                    }
+
+                    // Send payment confirmation SMS to user's phone number (poll path; only once via atomic claim)
+                    const receiptPhonePoll = (order.contactPhoneNumber || order.address?.phoneNumber || order.user?.phoneNumber || '').trim().replace(/\D/g, '');
+                    if (receiptPhonePoll && receiptPhonePoll.length === 8) {
+                        const smsClaimPoll = await prisma.order.updateMany({
+                            where: { id: String(id), smsPaymentNotifiedAt: null },
+                            data: { smsPaymentNotifiedAt: new Date() }
+                        });
+                        if (smsClaimPoll.count === 1) {
+                            try {
+                                const smsMessagePoll = `Таны #${order.id} захиалгын төлбөр төлөгдөж баталгаажлаа. Баярлалаа.`;
+                                const smsResultPoll = await smsService.sendSMS(receiptPhonePoll, smsMessagePoll);
+                                if (smsResultPoll.success) {
+                                    console.log('[QPAY] Payment confirmation SMS sent (poll) to', receiptPhonePoll);
+                                    await orderService.recordOrderActivity(id, {
+                                        type: 'MESSAGE_SENT',
+                                        title: 'Payment confirmation SMS sent',
+                                        channel: 'sms',
+                                        toValue: receiptPhonePoll
+                                    });
+                                } else {
+                                    console.error('[QPAY] Payment confirmation SMS failed (poll):', smsResultPoll.error);
+                                }
+                            } catch (smsErrorPoll) {
+                                console.error('[QPAY] Payment confirmation SMS error (poll):', smsErrorPoll.message);
+                            }
+                        }
+                    } else {
+                        console.warn('[QPAY] No valid contact/user phone for order', id, '(poll) – skipping payment confirmation SMS');
                     }
 
                     // Notify admins via Discord only once (atomic claim prevents duplicate when callback and poll both run)
