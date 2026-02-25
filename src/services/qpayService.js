@@ -416,10 +416,15 @@ class QPayService {
                     );
                 }, order.id);
 
+                const data = response.data || {};
                 requestToSave.response = {
                     status: response.status,
                     statusText: response.statusText,
-                    data: response.data
+                    data: {
+                        ...data,
+                        qr_image: data.qr_image ? `<base64 ${data.qr_image.length} chars>` : undefined,
+                        qr_code: data.qr_code ? `<base64 ${data.qr_code.length} chars>` : undefined
+                    }
                 };
                 try {
                     fs.writeFileSync(outPath, JSON.stringify(requestToSave, null, 2), 'utf8');
@@ -446,6 +451,26 @@ class QPayService {
                     this.clearTokenCache();
                     console.log('QPAY: 401/NO_CREDENTIALS - cleared token cache, fetching new access token and retrying...');
                     continue;
+                }
+                try {
+                    const failedOutPath = path.join(__dirname, '..', '..', 'ebarimt_invoice_request_failed.json');
+                    const failedPayload = {
+                        _comment: 'Failed QPAY ebarimt invoice request/response snapshot for debugging.',
+                        savedAt: new Date().toISOString(),
+                        orderId: order.id,
+                        method: 'POST',
+                        url: requestUrl,
+                        body: payload,
+                        error: {
+                            message: error.message,
+                            status: error.response?.status,
+                            data: error.response?.data
+                        }
+                    };
+                    fs.writeFileSync(failedOutPath, JSON.stringify(failedPayload, null, 2), 'utf8');
+                    console.log('[QPAY] Failed ebarimt invoice request snapshot saved to', failedOutPath);
+                } catch (writeErr) {
+                    console.warn('[QPAY] Could not save failed ebarimt request snapshot:', writeErr.message);
                 }
                 console.error('QPAY Create Ebarimt Invoice Error:', {
                     message: error.message,
