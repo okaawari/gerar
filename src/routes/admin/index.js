@@ -8,10 +8,12 @@ const constantsRoutes = require('./constantsRoutes');
 const analyticsRoutes = require('./analyticsRoutes');
 const bannerRoutes = require('./bannerRoutes');
 const featureRoutes = require('./featureRoutes');
+const profileRoutes = require('./profileRoutes');
 
 const router = express.Router();
 
 // Mount admin sub-routes
+router.use('/profile', profileRoutes);
 router.use('/categories', categoryRoutes);
 router.use('/products', productRoutes);
 router.use('/orders', orderRoutes);
