@@ -1,0 +1,68 @@
+{
+  "_comment": "Failed QPAY ebarimt invoice request/response snapshot for debugging.",
+  "savedAt": "2026-02-25T09:44:20.924Z",
+  "orderId": "260225515",
+  "method": "POST",
+  "url": "https://merchant.qpay.mn/v2/invoice",
+  "body": {
+    "invoice_code": "EB_GERAR_INVOICE",
+    "sender_invoice_no": "260225515",
+    "invoice_receiver_code": "80650025",
+    "invoice_description": "GERAR.MN - Захиалга #260225515",
+    "tax_type": "1",
+    "district_code": "0101",
+    "callback_url": "https://unthievishly-postpuberty-ned.ngrok-free.dev/orders/260225515/payment-callback",
+    "sender_branch_code": "GERAR_BRANCH",
+    "lines": [
+      {
+        "tax_product_code": "",
+        "line_description": "LED чийдэн",
+        "barcode": "",
+        "line_quantity": "1.00",
+        "line_unit_price": "8000.00",
+        "note": "Эрчим хүч хэмнэдэг LED чийдэн",
+        "classification_code": "6224400",
+        "taxes": [
+          {
+            "tax_code": "VAT",
+            "description": "НӨАТ",
+            "amount": 727.27,
+            "note": "НӨАТ"
+          }
+        ]
+      },
+      {
+        "tax_product_code": "",
+        "line_description": "Хүргэлтийн төлбөр",
+        "barcode": "",
+        "line_quantity": "1.00",
+        "line_unit_price": "5000.00",
+        "note": "",
+        "classification_code": "6224400",
+        "taxes": [
+          {
+            "tax_code": "VAT",
+            "description": "НӨАТ",
+            "amount": 454.55,
+            "note": "НӨАТ"
+          }
+        ]
+      }
+    ],
+    "sender_staff_code": "online",
+    "invoice_receiver_data": {
+      "register": "",
+      "name": "Purweeshees",
+      "email": "purweeshees@gmail.com",
+      "phone": "80650025"
+    }
+  },
+  "error": {
+    "message": "Request failed with status code 400",
+    "status": 400,
+    "data": {
+      "error": "VAT_AMOUNT_INVALID",
+      "message": "НӨАТын дүн буруу байна"
+    }
+  }
+}

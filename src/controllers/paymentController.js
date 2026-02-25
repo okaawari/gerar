@@ -388,15 +388,15 @@ class PaymentController {
 
             const hasItems = order.items && order.items.length > 0;
             if (hasItems) {
-                // QPay ebarimt: Use product classification_code and vat_amount when available; else fallback to calculated VAT (lineTotal/11).
+                // Build product lines for ebarimt invoice
+                // QPay ebarimt expects VAT amounts truncated to 4 decimal places: floor(lineTotal / 11 * 10000) / 10000
+                // Example from QPay docs: 50₮ → VAT 4.5454,  100₮ → VAT 9.0909
                 invoiceData.lines = order.items.map((item) => {
                     const price = Number(item.price) || 0;
                     const qty = Number(item.quantity) || 1;
                     const lineTotal = price * qty;
-                    const productVatAmount = item.product?.vatAmount != null ? parseFloat(item.product.vatAmount) : null;
-                    const lineVatAmount = productVatAmount != null
-                        ? Math.round(productVatAmount * qty * 100) / 100
-                        : Math.round((lineTotal / 11) * 100) / 100;
+                    // QPay formula: VAT = floor(lineTotal / 11, 4 decimals)
+                    const lineVatAmount = Math.floor((lineTotal / 11) * 10000) / 10000;
                     const classificationCode = (item.product?.classificationCode != null && item.product?.classificationCode !== '')
                         ? String(item.product.classificationCode)
                         : '6224400';
@@ -414,39 +414,34 @@ class PaymentController {
                         ]
                     };
                 });
+
+                // Add delivery fee as a line item (VAT-inclusive, same as products)
                 const itemTotal = order.items.reduce((sum, item) => sum + (Number(item.price) || 0) * (Number(item.quantity) || 1), 0);
                 const deliveryFee = getDeliveryFee(itemTotal);
-                // Do NOT add a delivery line to ebarimt: QPay rejects it with "НӨАТын дүн буруу байна".
-                // When deliveryFee > 0 we use standard invoice below (useEbarimtInvoice = false).
-
-                // ═══════════════════════════════════════════════════════════
-                // QPay VAT validation fix: QPay checks that the sum of all
-                // per-line VAT amounts == round(invoiceTotal / 11, 2).
-                // Individually rounded line VATs can drift by a few tögrög.
-                // Adjust the last line's VAT so the sum matches exactly.
-                // ═══════════════════════════════════════════════════════════
-                const invoiceTotal = invoiceData.lines.reduce((sum, l) => {
-                    return sum + parseFloat(l.line_unit_price) * parseFloat(l.line_quantity);
-                }, 0);
-                const expectedTotalVat = Math.round((invoiceTotal / 11) * 100) / 100;
-                const currentTotalVat = invoiceData.lines.reduce((sum, l) => sum + (l.taxes[0]?.amount || 0), 0);
-                const vatDiff = Math.round((expectedTotalVat - currentTotalVat) * 100) / 100;
-                if (vatDiff !== 0 && invoiceData.lines.length > 0) {
-                    const lastLine = invoiceData.lines[invoiceData.lines.length - 1];
-                    lastLine.taxes[0].amount = Math.round((lastLine.taxes[0].amount + vatDiff) * 100) / 100;
-                    console.log(`[QPAY VAT FIX] Adjusted last line VAT by ${vatDiff} to match expected total VAT ${expectedTotalVat} (was ${currentTotalVat})`);
+                if (deliveryFee > 0) {
+                    const deliveryVat = Math.floor((deliveryFee / 11) * 10000) / 10000;
+                    invoiceData.lines.push({
+                        tax_product_code: '',
+                        line_description: 'Хүргэлтийн төлбөр',
+                        barcode: '',
+                        line_quantity: '1.00',
+                        line_unit_price: Number(deliveryFee).toFixed(2),
+                        note: '',
+                        classification_code: '6224400',
+                        taxes: [
+                            { tax_code: 'VAT', description: 'НӨАТ', amount: deliveryVat, note: 'НӨАТ' }
+                        ]
+                    });
                 }
             }
 
+            // Always use ebarimt invoice when we have line items
             let invoiceResponse;
-            const itemTotalForInvoice = hasItems ? order.items.reduce((sum, item) => sum + (Number(item.price) || 0) * (Number(item.quantity) || 1), 0) : 0;
-            const deliveryFeeForInvoice = getDeliveryFee(itemTotalForInvoice);
-            // Use ebarimt (item lines) only when there is no delivery fee; otherwise QPay VAT validation fails.
-            const useEbarimtInvoice = hasItems && invoiceData.lines.length > 0 && deliveryFeeForInvoice === 0;
+            const useEbarimtInvoice = hasItems && invoiceData.lines && invoiceData.lines.length > 0;
             if (useEbarimtInvoice) {
                 // Diagnostic: log the exact lines and VAT breakdown being sent to QPay
                 const diagTotal = invoiceData.lines.reduce((s, l) => s + parseFloat(l.line_unit_price) * parseFloat(l.line_quantity), 0);
-                const diagVatSum = invoiceData.lines.reduce((s, l) => s + (l.taxes[0]?.amount || 0), 0);
+                const diagVatSum = Math.round(invoiceData.lines.reduce((s, l) => s + (l.taxes[0]?.amount || 0), 0) * 100) / 100;
                 console.log(`[QPAY EBARIMT DIAG] order=${orderId} lines=${invoiceData.lines.length} invoiceTotal=${diagTotal} vatSum=${diagVatSum} expectedVat=${Math.round((diagTotal / 11) * 100) / 100}`);
                 invoiceData.lines.forEach((l, i) => {
                     const lt = parseFloat(l.line_unit_price) * parseFloat(l.line_quantity);
@@ -454,35 +449,10 @@ class PaymentController {
                 });
 
                 console.log(`Creating QPAY ebarimt invoice for order ${orderId}...`);
-                try {
-                    invoiceResponse = await qpayService.createEbarimtInvoice(order, invoiceData);
-                } catch (ebarimtError) {
-                    const ebarimtMessage = String(ebarimtError?.message || '');
-                    const isVatMismatch = ebarimtMessage.includes('НӨАТын дүн буруу байна');
-                    if (!isVatMismatch) {
-                        throw ebarimtError;
-                    }
-
-                    // Keep checkout unblocked when QPay rejects invoice-line VAT validation.
-                    // Fall back to a standard QPay invoice using the already computed order total.
-                    console.warn(`QPAY ebarimt invoice VAT mismatch for order ${orderId}; falling back to standard invoice.`);
-                    const fallbackInvoiceData = {
-                        ...invoiceData,
-                        amount: parseFloat(order.totalAmount)
-                    };
-                    delete fallbackInvoiceData.lines;
-                    console.log(`Creating fallback standard QPAY invoice for order ${orderId}...`);
-                    invoiceResponse = await qpayService.createInvoice(order, fallbackInvoiceData);
-                }
+                invoiceResponse = await qpayService.createEbarimtInvoice(order, invoiceData);
             } else {
                 invoiceData.amount = parseFloat(order.totalAmount);
-                invoiceData.receiverCode = invoiceData.receiverCode;
-                if (deliveryFeeForInvoice > 0) {
-                    delete invoiceData.lines;
-                    console.log(`Creating QPAY standard invoice for order ${orderId} (with delivery, no ebarimt lines)...`);
-                } else {
-                    console.log(`Creating QPAY invoice for order ${orderId}...`);
-                }
+                console.log(`Creating QPAY invoice for order ${orderId} (no items)...`);
                 invoiceResponse = await qpayService.createInvoice(order, invoiceData);
             }
 

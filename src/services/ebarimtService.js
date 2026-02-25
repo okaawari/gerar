@@ -36,9 +36,8 @@ function buildPayload(order, config) {
         const itemQuantity = parseFloat(item.quantity) || 1;
         const lineTotal = itemPrice * itemQuantity;
         const productVatAmount = item.product?.vatAmount != null ? parseFloat(item.product.vatAmount) : null;
-        const lineVatAmount = productVatAmount != null
-            ? Math.round(productVatAmount * itemQuantity * 10000) / 10000
-            : Math.round((lineTotal / 11) * 10000) / 10000;
+        // QPay ebarimt expects VAT truncated to 4 decimal places: floor(lineTotal / 11 * 10000) / 10000
+        const lineVatAmount = Math.floor((lineTotal / 11) * 10000) / 10000;
         const classificationCode = (item.product?.classificationCode != null && item.product?.classificationCode !== '')
             ? String(item.product.classificationCode)
             : '6224400';
