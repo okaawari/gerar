@@ -5,6 +5,7 @@ class SMSService {
         this.apiUrl = process.env.SMS_API_URL || 'https://api.messagepro.mn/send';
         this.apiKey = process.env.SMS_API_KEY || '1d30c7804f88de642bf24b931c6c5fcf';
         this.fromNumber = process.env.SMS_FROM_NUMBER || '72227410';
+        this.senderName = process.env.SMS_SENDER_NAME || 'Gerar.mn'; // Shown at front of message: "Gerar.mn: ..."
         this.rateLimitDelay = 200; // 200ms delay between requests (5 requests per second)
         this.lastRequestTime = 0;
     }
@@ -41,7 +42,12 @@ class SMSService {
                 throw new Error('Invalid phone number format. Must be 8 digits.');
             }
 
-            if (text.length > 160) {
+            // Prepend sender name at front: "Gerar.mn: message"
+            const textToSend = this.senderName
+                ? `${this.senderName}: ${text}`.trim()
+                : text;
+
+            if (textToSend.length > 160) {
                 throw new Error('SMS text cannot exceed 160 characters');
             }
 
@@ -52,7 +58,7 @@ class SMSService {
             const params = new URLSearchParams({
                 from: this.fromNumber,
                 to: to,
-                text: text
+                text: textToSend
             });
 
             // Make API request

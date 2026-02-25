@@ -12,6 +12,9 @@ const { getDeliveryFee } = require('../utils/deliveryFee');
 /** Status value that triggers "delivery started" SMS to user */
 const STATUS_DELIVERY_STARTED = 'DELIVERY_STARTED';
 
+/** Status value that triggers "delivered" SMS to user */
+const STATUS_DELIVERED = 'DELIVERED';
+
 /** Status for orders cancelled via admin SMS confirmation (user confirmed with 4-digit code) */
 const STATUS_CANCELLED_BY_ADMIN = 'CANCELLED_BY_ADMIN';
 
@@ -1702,6 +1705,28 @@ class OrderService {
                 }
             } catch (smsError) {
                 console.error('Error sending delivery-started SMS:', smsError.message);
+            }
+        }
+
+        // When status changes to DELIVERED, send SMS to contact/user phone
+        if (newStatus.toUpperCase() === STATUS_DELIVERED && deliveryPhone) {
+            const deliveredMessage = `Таны #${order.id} дугаартай захиалга амжилттай хүргэгдлээ. Үйлчилгээний талаар санал хүсэлт байвал бидэнд мэдэгдээрэй. Баярлалаа.`;
+            try {
+                const smsResult = await smsService.sendSMS(deliveryPhone, deliveredMessage);
+                if (!smsResult.success) {
+                    console.error(`Failed to send delivered SMS to ${deliveryPhone}:`, smsResult.error);
+                } else {
+                    await this.recordOrderActivity(orderId, {
+                        type: 'MESSAGE_SENT',
+                        title: 'Delivered SMS sent',
+                        description: 'User notified that order was delivered',
+                        channel: 'sms',
+                        toValue: deliveryPhone,
+                        performedBy: performedBy != null && performedBy !== '' ? parseInt(performedBy) : null
+                    });
+                }
+            } catch (smsError) {
+                console.error('Error sending delivered SMS:', smsError.message);
             }
         }
 

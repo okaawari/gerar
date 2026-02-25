@@ -905,7 +905,7 @@ class PaymentController {
                         });
                         if (smsClaim.count === 1) {
                             try {
-                                const smsMessage = `Таны #${order.id} захиалгын төлбөр төлөгдөж баталгаажлаа. Баярлалаа.`;
+                                const smsMessage = `Таны #${order.id} захиалгын төлбөр төлөгдөж баталгаажлаа.`;
                                 const smsResult = await smsService.sendSMS(receiptPhone, smsMessage);
                                 if (smsResult.success) {
                                     console.log('[QPAY] Payment confirmation SMS sent to', receiptPhone);
