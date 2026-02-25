@@ -6,6 +6,7 @@ const smsService = require('../services/smsService');
 const ebarimtTestService = require('../services/ebarimtTestService');
 const discordService = require('../services/discordService');
 const QRCode = require('qrcode');
+const { getDeliveryFee } = require('../utils/deliveryFee');
 
 /**
  * Payment Controller
@@ -413,6 +414,23 @@ class PaymentController {
                         ]
                     };
                 });
+                // Add delivery fee line so invoice total = item total + delivery (matches order.totalAmount)
+                const itemTotal = order.items.reduce((sum, item) => sum + (Number(item.price) || 0) * (Number(item.quantity) || 1), 0);
+                const deliveryFee = getDeliveryFee(itemTotal);
+                if (deliveryFee > 0) {
+                    invoiceData.lines.push({
+                        tax_product_code: '',
+                        line_description: 'Хүргэлтийн үнэ',
+                        barcode: '',
+                        line_quantity: '1.00',
+                        line_unit_price: Number(deliveryFee).toFixed(2),
+                        note: '',
+                        classification_code: '6224400',
+                        taxes: [
+                            { tax_code: 'VAT', description: 'НӨАТ', amount: 0, note: 'НӨАТ' }
+                        ]
+                    });
+                }
             }
 
             let invoiceResponse;

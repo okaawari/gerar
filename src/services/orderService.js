@@ -7,6 +7,7 @@ const smsService = require('./smsService');
 const { isValidDeliveryTimeSlot } = require('../constants/deliveryTimeSlots');
 const constantsService = require('./constantsService');
 const { getMongoliaDateParts } = require('../utils/dateUtils');
+const { getDeliveryFee } = require('../utils/deliveryFee');
 
 /** Status value that triggers "delivery started" SMS to user */
 const STATUS_DELIVERY_STARTED = 'DELIVERY_STARTED';
@@ -193,8 +194,10 @@ class OrderService {
             }
         }
 
-        // Calculate total amount
-        const totalAmount = this.calculateOrderTotal(cartItems);
+        // Calculate total amount: item total + delivery fee
+        const itemTotal = this.calculateOrderTotal(cartItems);
+        const deliveryFee = getDeliveryFee(itemTotal);
+        const totalAmount = itemTotal + deliveryFee;
 
         // Handle address for guest orders
         let finalAddressId = addressId;
@@ -450,9 +453,11 @@ class OrderService {
             throw error;
         }
 
-        // Calculate total amount from product price
+        // Calculate total amount: item total + delivery fee
         const price = parseFloat(stockCheck.product.price);
-        const totalAmount = price * qty;
+        const itemTotal = price * qty;
+        const deliveryFee = getDeliveryFee(itemTotal);
+        const totalAmount = itemTotal + deliveryFee;
 
         // Generate custom order ID before transaction
         const orderId = await this.generateOrderId();
