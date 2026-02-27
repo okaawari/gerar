@@ -1835,7 +1835,7 @@ class OrderService {
     /**
      * Get ebarimt (receipt) info for an order – for admin print.
      * @param {string} orderId - Order ID
-     * @returns {Promise<{ ebarimtId: string|null, receiptUrl: string|null, ebarimtAmount: string|null, ebarimtVatAmount: string|null, ebarimtCityTaxAmount: string|null, ... }>}
+     * @returns {Promise<{ ebarimtId: string|null, receiptUrl: string|null, ebarimtAmount: string|null, ebarimtVatAmount: string|null, ebarimtCityTaxAmount: string|null, deliveryFee: number, ... }>}
      */
     async getOrderEbarimtForPrint(orderId) {
         const order = await prisma.order.findUnique({
@@ -1849,7 +1849,10 @@ class OrderService {
                 ebarimtStatus: true,
                 ebarimtAmount: true,
                 ebarimtVatAmount: true,
-                ebarimtCityTaxAmount: true
+                ebarimtCityTaxAmount: true,
+                items: {
+                    select: { price: true, quantity: true }
+                }
             }
         });
         if (!order) {
@@ -1857,6 +1860,11 @@ class OrderService {
             error.statusCode = 404;
             throw error;
         }
+        const itemTotal = (order.items || []).reduce(
+            (sum, item) => sum + (Number(item.price) || 0) * (Number(item.quantity) || 1),
+            0
+        );
+        const deliveryFee = getDeliveryFee(itemTotal);
         return {
             ebarimtId: order.ebarimtId ?? null,
             receiptUrl: order.ebarimtReceiptUrl ?? null,
@@ -1866,7 +1874,8 @@ class OrderService {
             ebarimtStatus: order.ebarimtStatus ?? null,
             ebarimtAmount: order.ebarimtAmount ?? null,
             ebarimtVatAmount: order.ebarimtVatAmount ?? null,
-            ebarimtCityTaxAmount: order.ebarimtCityTaxAmount ?? null
+            ebarimtCityTaxAmount: order.ebarimtCityTaxAmount ?? null,
+            deliveryFee
         };
     }
 }

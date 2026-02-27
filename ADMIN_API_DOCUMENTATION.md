@@ -1406,13 +1406,15 @@ Retrieve ebarimt (tax receipt) information for an order so the admin dashboard c
   "message": "Ebarimt info retrieved successfully",
   "data": {
     "ebarimtId": "abc123",
-    "receiptUrl": "https://..."
+    "receiptUrl": "https://...",
+    "deliveryFee": 5000
   }
 }
 ```
 
 - `ebarimtId` – Ebarimt receipt ID when the order has an ebarimt; `null` otherwise.
 - `receiptUrl` – Official QPay receipt URL to open for printing; `null` if no receipt was stored (e.g. older orders, or ebarimt created before this field was added).
+- `deliveryFee` – Delivery fee in MNT (computed from order items using the same rules as checkout: 0–50,000₮ → 5,000₮, 50,001–90,000₮ → 3,000₮, above 90,000₮ → 0₮). Include this when displaying or printing the ebarimt summary.
 
 **Usage:** When `receiptUrl` is present, open it in a new tab/window so the user can print the receipt. When `receiptUrl` is `null` but `ebarimtId` is set, you may show the ebarimt ID only (no print URL available for that order).
 
