@@ -225,7 +225,7 @@ class ProductService {
     /**
      * Get all products with optional filters (Advanced Search)
      * @param {Object} filters - { 
-     *   categoryId?, categoryIds[], search?, inStock?, 
+     *   categoryId?, categoryIds[], featureId?, featureIds[], search?, inStock?, 
      *   minPrice?, maxPrice?, minStock?, maxStock?,
      *   createdAfter?, createdBefore?,
      *   sortBy?, sortOrder?, page?, limit?,
@@ -276,6 +276,27 @@ class ProductService {
                     categoryId: parseInt(filters.categoryId)
                 }
             };
+        }
+
+        // Filter by feature(s) - products that appear in ANY of the given features
+        if (filters.featureIds && Array.isArray(filters.featureIds)) {
+            const featureIds = filters.featureIds
+                .map(id => parseInt(id))
+                .filter(id => !isNaN(id) && id > 0);
+            if (featureIds.length > 0) {
+                where.features = {
+                    some: {
+                        featureId: { in: featureIds }
+                    }
+                };
+            }
+        } else if (filters.featureId) {
+            const fid = parseInt(filters.featureId);
+            if (!isNaN(fid) && fid > 0) {
+                where.features = {
+                    some: { featureId: fid }
+                };
+            }
         }
 
         // Advanced search: search in name and/or description

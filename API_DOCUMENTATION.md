@@ -756,6 +756,7 @@ GET /api/categories/1/products?includeSubcategories=true&page=1&limit=20
 
 **Query Parameters** (optional, added to URL):
 - `categoryId` / `categoryIds[]`: Filter by category ID(s)
+- `featureId` / `featureIds[]`: Filter by feature ID(s) — only products assigned to the given feature(s) (e.g. "Best Sellers", "New Arrivals")
 - `onSale` (boolean): If `true`, only return products that have a discount (originalPrice set)
 - `page` (number): Page number (default: 1)
 - `limit` (number): Items per page (default: 20)
@@ -768,6 +769,8 @@ GET /api/categories/1/products?includeSubcategories=true&page=1&limit=20
 **Example Request**:
 ```
 GET /api/products?category=1&page=1&limit=20&sortBy=price&sortOrder=asc
+GET /api/products?featureId=1
+GET /api/products?featureIds[]=1&featureIds[]=2
 ```
 
 **Response**: `200 OK`
@@ -811,7 +814,7 @@ GET /api/products?category=1&page=1&limit=20&sortBy=price&sortOrder=asc
 
 **Authentication**: Optional (if authenticated, returns favorite status for each product)
 
-**Query Parameters** (optional): Same as Get All Products (`categoryId`, `categoryIds[]`, `search`, `minPrice`, `maxPrice`, `sortBy`, `sortOrder`, `page`, `limit`). Results are limited to products with `originalPrice` set (on sale).
+**Query Parameters** (optional): Same as Get All Products (`categoryId`, `categoryIds[]`, `featureId`, `featureIds[]`, `search`, `minPrice`, `maxPrice`, `sortBy`, `sortOrder`, `page`, `limit`). Results are limited to products with `originalPrice` set (on sale).
 
 **Example Request**:
 ```

@@ -6,6 +6,7 @@ class ProductController {
      * GET /api/products?
      *   categoryId=1
      *   &categoryIds[]=1&categoryIds[]=2
+     *   &featureId=1&featureIds[]=1&featureIds[]=2
      *   &search=laptop
      *   &inStock=true
      *   &minPrice=100&maxPrice=1000
@@ -19,6 +20,7 @@ class ProductController {
             const { 
                 categoryId, 
                 categoryIds,
+                featureId,
                 search, 
                 inStock,
                 minPrice,
@@ -61,6 +63,21 @@ class ProductController {
             // Only use categoryId if categoryIds is not set
             if (!filters.categoryIds && categoryId) {
                 filters.categoryId = categoryId;
+            }
+
+            // Handle feature filter (featureId or featureIds[])
+            const featureIdsArray = req.query['featureIds[]'] || req.query.featureIds;
+            if (featureIdsArray) {
+                if (Array.isArray(featureIdsArray)) {
+                    const validIds = featureIdsArray.filter(id => id != null && String(id).trim().length > 0);
+                    if (validIds.length > 0) filters.featureIds = validIds;
+                } else if (typeof featureIdsArray === 'string') {
+                    const validIds = featureIdsArray.split(',').map(id => id.trim()).filter(id => id.length > 0);
+                    if (validIds.length > 0) filters.featureIds = validIds;
+                }
+            }
+            if (!filters.featureIds && featureId) {
+                filters.featureId = featureId;
             }
 
             if (search) {
@@ -166,6 +183,17 @@ class ProductController {
                 }
             }
             if (!filters.categoryIds && query.categoryId) filters.categoryId = query.categoryId;
+            const featureIdsArray = req.query['featureIds[]'] || query.featureIds;
+            if (featureIdsArray) {
+                if (Array.isArray(featureIdsArray)) {
+                    const validIds = featureIdsArray.filter(id => id != null && String(id).trim().length > 0);
+                    if (validIds.length > 0) filters.featureIds = validIds;
+                } else if (typeof featureIdsArray === 'string') {
+                    const validIds = featureIdsArray.split(',').map(id => id.trim()).filter(id => id.length > 0);
+                    if (validIds.length > 0) filters.featureIds = validIds;
+                }
+            }
+            if (!filters.featureIds && query.featureId) filters.featureId = query.featureId;
             if (query.search) filters.search = query.search;
             if (query.inStock !== undefined) filters.inStock = query.inStock;
             if (query.minPrice !== undefined) filters.minPrice = query.minPrice;
