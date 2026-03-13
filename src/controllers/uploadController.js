@@ -1,7 +1,7 @@
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
-const { Jimp } = require('jimp');
+const sharp = require('sharp');
 
 // Ensure uploads directory exists
 const uploadsDir = path.join(__dirname, '../../public/uploads');
@@ -28,7 +28,7 @@ function generateProductImageFilename() {
     return `img-${id}.jpg`;
 }
 
-// Use memory storage so we can process images (resize + webp) before writing
+// Use memory storage so we can process images (resize + convert) before writing
 const storage = multer.memoryStorage();
 
 // File filter for images only
@@ -52,8 +52,11 @@ const upload = multer({
 });
 
 /**
- * Process uploaded image(s): resize to max 300x300 (fit inside, no enlargement) and save as JPEG.
- * Uses default Jimp (pure JS, no WASM/fetch) so it runs in Node on any host including old shared hosting.
+ * Process uploaded image(s): resize to fit within max dimensions (no enlargement)
+ * and save as JPEG.
+ * Uses sharp which natively supports WebP, JPEG, PNG, GIF, TIFF, AVIF, etc.
+ * Sharp ships prebuilt binaries for Linux x64/arm64/musl, macOS, Windows –
+ * works on virtually all shared hosting without extra system dependencies.
  */
 const processImageToWebp = async (req, res, next) => {
     try {
@@ -65,13 +68,27 @@ const processImageToWebp = async (req, res, next) => {
             if (!file.buffer) return;
             const baseFilename = generateProductImageFilename();
             const filePath = path.join(targetDir, baseFilename);
-            const image = await Jimp.read(file.buffer);
-            const w = image.bitmap.width;
-            const h = image.bitmap.height;
+
+            // sharp handles WebP, JPEG, PNG, GIF, TIFF, AVIF, etc. automatically
+            let pipeline = sharp(file.buffer);
+
+            // Get metadata to decide if resize is needed
+            const metadata = await pipeline.metadata();
+            const w = metadata.width || 0;
+            const h = metadata.height || 0;
+
             if (w > dimensions.w || h > dimensions.h) {
-                image.scaleToFit({ w: dimensions.w, h: dimensions.h });
+                pipeline = pipeline.resize(dimensions.w, dimensions.h, {
+                    fit: 'inside',           // Fit within max dimensions
+                    withoutEnlargement: true  // Don't upscale small images
+                });
             }
-            await image.write(filePath, { quality: 85 });
+
+            // Convert to JPEG and save
+            await pipeline
+                .jpeg({ quality: 85 })
+                .toFile(filePath);
+
             // Response URL uses /uploads/<filename>; for banners use subpath so file is in uploads/banners/
             file.filename = isBanner ? path.join(bannersSubdir, baseFilename).split(path.sep).join('/') : baseFilename;
             file.path = filePath;
