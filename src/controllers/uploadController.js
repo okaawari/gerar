@@ -6,13 +6,18 @@ const sharp = require('sharp');
 // Ensure uploads directory exists
 const uploadsDir = path.join(__dirname, '../../public/uploads');
 const bannersSubdir = 'banners'; // Banner images go under uploads/banners/
-if (!fs.existsSync(uploadsDir)) {
-    fs.mkdirSync(uploadsDir, { recursive: true });
-}
-// Ensure banners subfolder exists for banner-desktop / banner-mobile uploads
 const bannersDir = path.join(uploadsDir, bannersSubdir);
-if (!fs.existsSync(bannersDir)) {
-    fs.mkdirSync(bannersDir, { recursive: true });
+
+/** Ensure directory exists with error handling */
+function ensureDir(dir) {
+    if (!fs.existsSync(dir)) {
+        try {
+            fs.mkdirSync(dir, { recursive: true });
+        } catch (err) {
+            console.error(`Failed to create directory ${dir}:`, err.message);
+            // Don't throw here to allow app to start, but it will fail on upload
+        }
+    }
 }
 
 // Max dimension presets for image types (width and height)
@@ -64,6 +69,10 @@ const processImageToWebp = async (req, res, next) => {
         const dimensions = IMAGE_DIMENSIONS[imageType] || IMAGE_DIMENSIONS.product;
         const isBanner = imageType === 'banner-desktop' || imageType === 'banner-mobile';
         const targetDir = isBanner ? bannersDir : uploadsDir;
+        
+        // Ensure directory exists at upload time, not boot time
+        ensureDir(targetDir);
+
         const processOne = async (file) => {
             if (!file.buffer) return;
             const baseFilename = generateProductImageFilename();

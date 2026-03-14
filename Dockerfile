@@ -5,15 +5,16 @@ ENV NODE_ENV=production
 
 WORKDIR /app
 
-# Install build tools (needed for native modules like bcrypt) and libc6-compat for sharp
-RUN apk add --no-cache python3 make g++ libc6-compat
+# Install build tools and vips-dev (required by sharp)
+RUN apk add --no-cache python3 make g++ libc6-compat vips-dev
 
 # Install production dependencies only (cache-friendly)
 COPY package*.json ./
 RUN npm ci --omit=dev --include=optional
 
-# Cleanup build tools but keep libc6-compat
-RUN apk del python3 make g++
+# Remove build-only dependencies, but KEEP 'vips' runtime for sharp
+RUN apk del vips-dev python3 make g++ && \
+    apk add --no-cache vips
 
 # Copy rest of project
 COPY . .
