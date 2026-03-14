@@ -22,10 +22,10 @@ const IMAGE_DIMENSIONS = {
     'banner-mobile': { w: 768, h: 400 }
 };
 
-/** Generate a short, recognizable filename for product images: img-<id>.jpg */
+/** Generate a short, recognizable filename for product images: img-<id>.webp */
 function generateProductImageFilename() {
     const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-    return `img-${id}.jpg`;
+    return `img-${id}.webp`;
 }
 
 // Use memory storage so we can process images (resize + convert) before writing
@@ -53,7 +53,7 @@ const upload = multer({
 
 /**
  * Process uploaded image(s): resize to fit within max dimensions (no enlargement)
- * and save as JPEG.
+ * and save as WebP.
  * Uses sharp which natively supports WebP, JPEG, PNG, GIF, TIFF, AVIF, etc.
  * Sharp ships prebuilt binaries for Linux x64/arm64/musl, macOS, Windows –
  * works on virtually all shared hosting without extra system dependencies.
@@ -84,15 +84,15 @@ const processImageToWebp = async (req, res, next) => {
                 });
             }
 
-            // Convert to JPEG and save
+            // Convert to WebP and save
             await pipeline
-                .jpeg({ quality: 85 })
+                .webp({ quality: 80 })
                 .toFile(filePath);
-
+ 
             // Response URL uses /uploads/<filename>; for banners use subpath so file is in uploads/banners/
             file.filename = isBanner ? path.join(bannersSubdir, baseFilename).split(path.sep).join('/') : baseFilename;
             file.path = filePath;
-            file.mimetype = 'image/jpeg';
+            file.mimetype = 'image/webp';
         };
 
         if (req.file) {
