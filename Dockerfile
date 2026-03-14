@@ -12,9 +12,8 @@ RUN apk add --no-cache python3 make g++ libc6-compat vips-dev
 COPY package*.json ./
 RUN npm ci --omit=dev --include=optional
 
-# Remove build-only dependencies, but KEEP 'vips' runtime for sharp
-RUN apk del vips-dev python3 make g++ && \
-    apk add --no-cache vips
+# Remove build-only dependencies, but KEEP 'vips-dev' runtime for sharp
+RUN apk del python3 make g++
 
 # Copy rest of project
 COPY . .
