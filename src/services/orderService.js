@@ -1685,48 +1685,75 @@ class OrderService {
             }
         });
 
-        // When status changes to DELIVERY_STARTED (e.g. from PAID/COMPLETED), send SMS to contact/user phone
-        const deliveryPhone = order.contactPhoneNumber || order.address?.phoneNumber || order.user?.phoneNumber;
-        if (newStatus.toUpperCase() === STATUS_DELIVERY_STARTED && deliveryPhone) {
-            const message = `Таны #${order.id} дугаартай захиалга хүргэлтэд гарлаа.`;
-            try {
-                const smsResult = await smsService.sendSMS(deliveryPhone, message);
-                if (!smsResult.success) {
-                    console.error(`Failed to send delivery-started SMS to ${deliveryPhone}:`, smsResult.error);
-                } else {
-                    await this.recordOrderActivity(orderId, {
-                        type: 'MESSAGE_SENT',
-                        title: 'Delivery started SMS sent',
-                        description: 'User notified that delivery has started',
-                        channel: 'sms',
-                        toValue: deliveryPhone,
-                        performedBy: performedBy != null && performedBy !== '' ? parseInt(performedBy) : null
-                    });
-                }
-            } catch (smsError) {
-                console.error('Error sending delivery-started SMS:', smsError.message);
-            }
-        }
+        // When status changes, send notifications if applicable
+        const deliveryPhone = updatedOrder.contactPhoneNumber || updatedOrder.address?.phoneNumber || updatedOrder.user?.phoneNumber;
+        const normalizedStatus = newStatus.toUpperCase();
 
-        // When status changes to DELIVERED, send SMS to contact/user phone
-        if (newStatus.toUpperCase() === STATUS_DELIVERED && deliveryPhone) {
-            const deliveredMessage = `Таны #${order.id} дугаартай захиалга амжилттай хүргэгдлээ. Үйлчилгээний талаар санал хүсэлт байвал бидэнд мэдэгдээрэй. Баярлалаа.`;
-            try {
-                const smsResult = await smsService.sendSMS(deliveryPhone, deliveredMessage);
-                if (!smsResult.success) {
-                    console.error(`Failed to send delivered SMS to ${deliveryPhone}:`, smsResult.error);
-                } else {
+        // Status-specific SMS notifications
+        if (deliveryPhone && deliveryPhone.trim().length === 8) {
+            // 1. DELIVERY_STARTED notification
+            if (normalizedStatus === STATUS_DELIVERY_STARTED) {
+                const message = `Таны #${updatedOrder.id} дугаартай захиалга хүргэлтэд гарлаа.`;
+                try {
+                    const smsResult = await smsService.sendSMS(deliveryPhone, message);
+                    if (!smsResult.success) {
+                        console.error(`Failed to send delivery-started SMS to ${deliveryPhone}:`, smsResult.error);
+                        await this.recordOrderActivity(orderId, {
+                            type: 'MESSAGE_FAILED',
+                            title: 'Delivery started SMS failed',
+                            description: `Error: ${smsResult.error || 'Unknown API error'}`,
+                            channel: 'sms',
+                            toValue: deliveryPhone
+                        });
+                    } else {
+                        await this.recordOrderActivity(orderId, {
+                            type: 'MESSAGE_SENT',
+                            title: 'Delivery started SMS sent',
+                            description: 'User notified that delivery has started',
+                            channel: 'sms',
+                            toValue: deliveryPhone,
+                            performedBy: performedBy != null && performedBy !== '' ? parseInt(performedBy) : null
+                        });
+                    }
+                } catch (smsError) {
+                    console.error('Error sending delivery-started SMS:', smsError.message);
+                }
+            }
+
+            // 2. DELIVERED notification
+            if (normalizedStatus === STATUS_DELIVERED) {
+                const deliveredMessage = `Таны #${updatedOrder.id} дугаартай захиалга амжилттай хүргэгдлээ. Үйлчилгээний талаар санал хүсэлт байвал бидэнд мэдэгдээрэй. Баярлалаа.`;
+                try {
+                    const smsResult = await smsService.sendSMS(deliveryPhone, deliveredMessage);
+                    if (!smsResult.success) {
+                        console.error(`Failed to send delivered SMS to ${deliveryPhone}:`, smsResult.error);
+                        await this.recordOrderActivity(orderId, {
+                            type: 'MESSAGE_FAILED',
+                            title: 'Delivered SMS failed',
+                            description: `Error: ${smsResult.error || 'Unknown API error'}`,
+                            channel: 'sms',
+                            toValue: deliveryPhone
+                        });
+                    } else {
+                        await this.recordOrderActivity(orderId, {
+                            type: 'MESSAGE_SENT',
+                            title: 'Delivered SMS sent',
+                            description: 'User notified that order was delivered',
+                            channel: 'sms',
+                            toValue: deliveryPhone,
+                            performedBy: performedBy != null && performedBy !== '' ? parseInt(performedBy) : null
+                        });
+                    }
+                } catch (smsError) {
+                    console.error('Error sending delivered SMS:', smsError.message);
                     await this.recordOrderActivity(orderId, {
-                        type: 'MESSAGE_SENT',
-                        title: 'Delivered SMS sent',
-                        description: 'User notified that order was delivered',
+                        type: 'MESSAGE_FAILED',
+                        title: 'Delivered SMS error',
+                        description: smsError.message,
                         channel: 'sms',
-                        toValue: deliveryPhone,
-                        performedBy: performedBy != null && performedBy !== '' ? parseInt(performedBy) : null
+                        toValue: deliveryPhone
                     });
                 }
-            } catch (smsError) {
-                console.error('Error sending delivered SMS:', smsError.message);
             }
         }
 

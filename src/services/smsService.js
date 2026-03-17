@@ -16,12 +16,12 @@ class SMSService {
     async enforceRateLimit() {
         const now = Date.now();
         const timeSinceLastRequest = now - this.lastRequestTime;
-        
+
         if (timeSinceLastRequest < this.rateLimitDelay) {
             const waitTime = this.rateLimitDelay - timeSinceLastRequest;
             await new Promise(resolve => setTimeout(resolve, waitTime));
         }
-        
+
         this.lastRequestTime = Date.now();
     }
 
@@ -43,9 +43,22 @@ class SMSService {
             }
 
             // Prepend sender name at front: "Gerar.mn: message"
-            const textToSend = this.senderName
-                ? `${this.senderName}: ${text}`.trim()
-                : text;
+            // We check if the text already starts with the sender name to avoid duplication
+            let textToSend = text;
+            if (this.senderName) {
+                const senderNameLower = this.senderName.toLowerCase();
+                const textLower = text.trim().toLowerCase();
+                
+                if (!textLower.startsWith(senderNameLower)) {
+                    // If it doesn't start with sender name, prepend it with a colon
+                    textToSend = `${this.senderName}: ${text}`;
+                } else if (!textLower.startsWith(`${senderNameLower}:`)) {
+                    // If it starts with the name but no colon, ensure correct formatting
+                    const remainingText = text.trim().substring(this.senderName.length).trim();
+                    textToSend = `${this.senderName}: ${remainingText}`;
+                }
+            }
+            textToSend = textToSend.trim();
 
             if (textToSend.length > 160) {
                 throw new Error('SMS text cannot exceed 160 characters');
@@ -55,16 +68,20 @@ class SMSService {
             await this.enforceRateLimit();
 
             // Prepare request
-            const params = new URLSearchParams({
-                from: this.fromNumber,
+            const data = {
+                from: this.senderName || this.fromNumber,
                 to: to,
                 text: textToSend
-            });
+            };
 
-            // Make API request
-            const response = await axios.get(`${this.apiUrl}?${params.toString()}`, {
+            // Enforce rate limit
+            await this.enforceRateLimit();
+
+            // Make API request (using POST for better character/length support)
+            const response = await axios.post(this.apiUrl, data, {
                 headers: {
-                    'x-api-key': this.apiKey
+                    'x-api-key': this.apiKey,
+                    'Content-Type': 'application/json'
                 },
                 timeout: 10000 // 10 second timeout
             });
@@ -72,7 +89,7 @@ class SMSService {
             // Handle success response
             if (response.status === 200 && response.data) {
                 const result = Array.isArray(response.data) ? response.data[0] : response.data;
-                
+
                 if (result.Result === 'SUCCESS') {
                     return {
                         success: true,
@@ -159,15 +176,15 @@ class SMSService {
      */
     async sendOTP(phoneNumber, otpCode, purpose = 'VERIFICATION') {
         const purposeMessages = {
-            'REGISTRATION': 'Таны бүртгэлийн баталгаажуулах код',
-            'LOGIN': 'Таны нэвтрэх баталгаажуулах код',
+            'REGISTRATION': 'Таны бүртгэл баталгаажуулах код',
+            'LOGIN': 'Таны нэвтрэх код',
             'PASSWORD_RESET': 'Таны нууц үг сэргээх код',
             'VERIFICATION': 'Таны баталгаажуулах код',
-            'ORDER_CANCELLATION': 'Таны захиалга цуцлах баталгаажуулах код'
+            'ORDER_CANCELLATION': 'Таны захиалга цуцлах код'
         };
 
         const message = `${purposeMessages[purpose] || purposeMessages.VERIFICATION}: ${otpCode}`;
-        
+
         return this.sendSMS(phoneNumber, message);
     }
 }
