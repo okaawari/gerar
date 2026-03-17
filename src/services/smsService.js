@@ -5,7 +5,7 @@ class SMSService {
         this.apiUrl = process.env.SMS_API_URL || 'https://api.messagepro.mn/send';
         this.apiKey = process.env.SMS_API_KEY || '1d30c7804f88de642bf24b931c6c5fcf';
         this.fromNumber = process.env.SMS_FROM_NUMBER || '72227410';
-        this.senderName = process.env.SMS_SENDER_NAME || 'Gerar.mn'; // Shown at front of message: "Gerar.mn: ..."
+        this.senderName = null; // Always use numeric number as requested
         this.rateLimitDelay = 200; // 200ms delay between requests (5 requests per second)
         this.lastRequestTime = 0;
     }
@@ -29,9 +29,10 @@ class SMSService {
      * Send SMS via MessagePro API
      * @param {string} to - Recipient phone number (8 digits)
      * @param {string} text - SMS text (max 160 characters)
+     * @param {boolean} useFallback - Internal flag to prevent infinite loops during retry
      * @returns {Promise<Object>} - { success: boolean, messageId?: string, error?: string }
      */
-    async sendSMS(to, text) {
+    async sendSMS(to, text, useFallback = false) {
         try {
             // Validate inputs
             if (!to || !text) {
@@ -42,34 +43,48 @@ class SMSService {
                 throw new Error('Invalid phone number format. Must be 8 digits.');
             }
 
-            // Prepend sender name at front: "Gerar.mn: message"
-            // We check if the text already starts with the sender name to avoid duplication
-            let textToSend = text;
-            if (this.senderName) {
-                const senderNameLower = this.senderName.toLowerCase();
-                const textLower = text.trim().toLowerCase();
+            let textToSend = text.trim();
+
+            // Aggressive prefix stripping to prevent duplication if the brand name is added elsewhere
+            const brandName = this.senderName || 'Gerar.mn';
+            const possiblePrefixes = [
+                `${brandName}:`,
+                brandName,
+                'Gerar.mn:',
+                'Gerar.mn'
+            ];
+
+            for (const prefix of possiblePrefixes) {
+                const lowerText = textToSend.toLowerCase();
+                const lowerPrefix = prefix.toLowerCase();
                 
-                if (!textLower.startsWith(senderNameLower)) {
-                    // If it doesn't start with sender name, prepend it with a colon
-                    textToSend = `${this.senderName}: ${text}`;
-                } else if (!textLower.startsWith(`${senderNameLower}:`)) {
-                    // If it starts with the name but no colon, ensure correct formatting
-                    const remainingText = text.trim().substring(this.senderName.length).trim();
-                    textToSend = `${this.senderName}: ${remainingText}`;
+                if (lowerText.startsWith(lowerPrefix)) {
+                    // Remove the prefix and any immediately following colon or whitespace
+                    let newText = textToSend.substring(prefix.length).trim();
+                    if (newText.startsWith(':')) {
+                        newText = newText.substring(1).trim();
+                    }
+                    textToSend = newText;
+                    break; // Only remove once
                 }
             }
-            textToSend = textToSend.trim();
 
             if (textToSend.length > 160) {
                 throw new Error('SMS text cannot exceed 160 characters');
             }
 
-            // Enforce rate limit
-            await this.enforceRateLimit();
+            // Aggressive suffix stripping to prevent duplication if the brand name is added at the end by provider
+            const suffix = 'Gerar.mn';
+            if (textToSend.endsWith(suffix)) {
+                textToSend = textToSend.substring(0, textToSend.length - suffix.length).trim();
+            }
 
             // Prepare request
+            // If useFallback is true, we ONLY use the numeric fromNumber
+            const senderId = (useFallback || !this.senderName) ? this.fromNumber : this.senderName;
+
             const data = {
-                from: this.senderName || this.fromNumber,
+                from: senderId,
                 to: to,
                 text: textToSend
             };
@@ -100,7 +115,7 @@ class SMSService {
                     return {
                         success: false,
                         error: result.Result || 'Unknown error',
-                        message: 'Failed to send SMS'
+                        message: `Failed to send SMS: ${result.Result || 'Unknown error'}`
                     };
                 }
             }
@@ -112,12 +127,18 @@ class SMSService {
             };
 
         } catch (error) {
+
+            // Check for specific "Inactive" error (404) to trigger fallback
+            if (error.response && error.response.status === 404 && !useFallback && this.senderName) {
+                console.warn(`Sender ID "${this.senderName}" is inactive. Retrying with numeric number "${this.fromNumber}"...`);
+                return this.sendSMS(to, text, true);
+            }
+
             // Handle different error scenarios
             if (error.response) {
                 const status = error.response.status;
                 const data = error.response.data;
 
-                // Handle specific status codes from API documentation
                 if (status === 402) {
                     return {
                         success: false,
@@ -162,7 +183,7 @@ class SMSService {
             return {
                 success: false,
                 error: error.message || 'UNKNOWN_ERROR',
-                message: 'Failed to send SMS'
+                message: error.message || 'Failed to send SMS'
             };
         }
     }

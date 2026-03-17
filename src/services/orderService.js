@@ -392,7 +392,7 @@ class OrderService {
             });
         }
 
-        await this.recordOrderActivity(order.id, { type: 'ORDER_CREATED', title: 'Order placed', toValue: 'PENDING' });
+        await this.recordOrderActivity(order.id, { type: 'ORDER_CREATED', title: 'Захиалга хийгдсэн', toValue: 'PENDING' });
         return orderWithDetails;
     }
 
@@ -598,7 +598,7 @@ class OrderService {
             });
         }
 
-        await this.recordOrderActivity(order.id, { type: 'ORDER_CREATED', title: 'Order placed', toValue: 'PENDING' });
+        await this.recordOrderActivity(order.id, { type: 'ORDER_CREATED', title: 'Захиалга хийгдсэн', toValue: 'PENDING' });
         return orderWithDetails;
     }
 
@@ -801,7 +801,7 @@ class OrderService {
             });
         }
 
-        await this.recordOrderActivity(order.id, { type: 'ORDER_CREATED', title: 'Order placed', toValue: 'PENDING' });
+        await this.recordOrderActivity(order.id, { type: 'ORDER_CREATED', title: 'Захиалга хийгдсэн', toValue: 'PENDING' });
         return orderWithDetails;
     }
 
@@ -1423,8 +1423,8 @@ class OrderService {
             } else {
                 await this.recordOrderActivity(order.id, {
                     type: 'MESSAGE_SENT',
-                    title: 'Cancellation code sent to user',
-                    description: '4-digit code sent via SMS',
+                    title: 'Цуцлах код хэрэглэгчид илгээгдсэн',
+                    description: '4 оронтой код SMS-ээр илгээгдсэн',
                     channel: 'sms',
                     toValue: order.user.phoneNumber
                 });
@@ -1568,10 +1568,10 @@ class OrderService {
 
         await this.recordOrderActivity(order.id, {
             type: 'STATUS_CHANGED',
-            title: 'Order cancelled',
+            title: 'Захиалга цуцлагдсан',
             fromValue: order.status,
             toValue: STATUS_CANCELLED_BY_ADMIN,
-            description: 'User confirmed cancellation with code',
+            description: 'Хэрэглэгч кодоор цуцлахыг баталгаажуулсан',
             performedBy: performedBy != null && performedBy !== '' ? parseInt(performedBy) : null
         });
 
@@ -1641,7 +1641,7 @@ class OrderService {
         // Record status change for timeline (before update so we have old status)
         await this.recordOrderActivity(orderId, {
             type: 'STATUS_CHANGED',
-            title: 'Status updated',
+            title: 'Төлөв өөрчлөгдсөн',
             fromValue: order.status,
             toValue: newStatus,
             performedBy: performedBy != null && performedBy !== '' ? parseInt(performedBy) : null
@@ -1687,7 +1687,11 @@ class OrderService {
 
         // When status changes, send notifications if applicable
         const deliveryPhone = updatedOrder.contactPhoneNumber || updatedOrder.address?.phoneNumber || updatedOrder.user?.phoneNumber;
-        const normalizedStatus = newStatus.toUpperCase();
+
+        // Map Mongolian status names to constant keys if they come from the UI in Mongolian
+        let normalizedStatus = newStatus.toUpperCase();
+        if (normalizedStatus === 'ХҮРГЭЛТЭД ГАРСАН') normalizedStatus = STATUS_DELIVERY_STARTED;
+        if (normalizedStatus === 'ХҮРГЭГДСЭН') normalizedStatus = STATUS_DELIVERED;
 
         // Status-specific SMS notifications
         if (deliveryPhone && deliveryPhone.trim().length === 8) {
@@ -1700,7 +1704,7 @@ class OrderService {
                         console.error(`Failed to send delivery-started SMS to ${deliveryPhone}:`, smsResult.error);
                         await this.recordOrderActivity(orderId, {
                             type: 'MESSAGE_FAILED',
-                            title: 'Delivery started SMS failed',
+                            title: 'Хүргэлт SMS илгээхэд алдаа гарлаа',
                             description: `Error: ${smsResult.error || 'Unknown API error'}`,
                             channel: 'sms',
                             toValue: deliveryPhone
@@ -1708,8 +1712,8 @@ class OrderService {
                     } else {
                         await this.recordOrderActivity(orderId, {
                             type: 'MESSAGE_SENT',
-                            title: 'Delivery started SMS sent',
-                            description: 'User notified that delivery has started',
+                            title: 'Хүргэлт SMS илгээгдсэн',
+                            description: 'Захиалга хүргэлтэд гарсан тухай хэрэглэгчид мэдэгдсэн',
                             channel: 'sms',
                             toValue: deliveryPhone,
                             performedBy: performedBy != null && performedBy !== '' ? parseInt(performedBy) : null
@@ -1729,7 +1733,7 @@ class OrderService {
                         console.error(`Failed to send delivered SMS to ${deliveryPhone}:`, smsResult.error);
                         await this.recordOrderActivity(orderId, {
                             type: 'MESSAGE_FAILED',
-                            title: 'Delivered SMS failed',
+                            title: 'Хүргэгдсэн захиалгын SMS илгээхэд алдаа гарлаа',
                             description: `Error: ${smsResult.error || 'Unknown API error'}`,
                             channel: 'sms',
                             toValue: deliveryPhone
@@ -1737,8 +1741,8 @@ class OrderService {
                     } else {
                         await this.recordOrderActivity(orderId, {
                             type: 'MESSAGE_SENT',
-                            title: 'Delivered SMS sent',
-                            description: 'User notified that order was delivered',
+                            title: 'Хүргэгдсэн захиалгын SMS илгээгдсэн',
+                            description: 'Захиалга хүргэгдсэн тухай хэрэглэгчид мэдэгдсэн',
                             channel: 'sms',
                             toValue: deliveryPhone,
                             performedBy: performedBy != null && performedBy !== '' ? parseInt(performedBy) : null
@@ -1748,7 +1752,7 @@ class OrderService {
                     console.error('Error sending delivered SMS:', smsError.message);
                     await this.recordOrderActivity(orderId, {
                         type: 'MESSAGE_FAILED',
-                        title: 'Delivered SMS error',
+                        title: 'Хүргэгдсэн захиалгын SMS илгээхэд системд алдаа гарлаа',
                         description: smsError.message,
                         channel: 'sms',
                         toValue: deliveryPhone

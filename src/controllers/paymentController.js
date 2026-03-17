@@ -827,7 +827,7 @@ class PaymentController {
 
                     await orderService.recordOrderActivity(id, {
                         type: 'PAYMENT_STATUS_CHANGED',
-                        title: 'Payment confirmed',
+                        title: 'Төлбөр баталгаажсан',
                         fromValue: order.paymentStatus || 'PENDING',
                         toValue: 'PAID'
                     });
@@ -885,7 +885,7 @@ class PaymentController {
                             console.log('[QPAY] Payment confirmation email sent to', receiptEmail);
                             await orderService.recordOrderActivity(id, {
                                 type: 'MESSAGE_SENT',
-                                title: 'Payment receipt email sent',
+                                title: 'Төлбөрийн баримт имэйлээр илгээгдсэн',
                                 channel: 'email',
                                 toValue: receiptEmail
                             });
@@ -911,7 +911,7 @@ class PaymentController {
                                     console.log('[QPAY] Payment confirmation SMS sent to', receiptPhone);
                                     await orderService.recordOrderActivity(id, {
                                         type: 'MESSAGE_SENT',
-                                        title: 'Payment confirmation SMS sent',
+                                        title: 'Төлбөрийн баталгаажуулалт SMS илгээгдсэн',
                                         channel: 'sms',
                                         toValue: receiptPhone
                                     });
@@ -1133,7 +1133,7 @@ class PaymentController {
 
                     await orderService.recordOrderActivity(id, {
                         type: 'PAYMENT_STATUS_CHANGED',
-                        title: 'Payment confirmed',
+                        title: 'Төлбөр баталгаажсан',
                         fromValue: order.paymentStatus || 'PENDING',
                         toValue: 'PAID'
                     });
@@ -1187,7 +1187,7 @@ class PaymentController {
                             console.log('[QPAY] Payment confirmation email sent (poll) to', receiptEmailPoll);
                             await orderService.recordOrderActivity(id, {
                                 type: 'MESSAGE_SENT',
-                                title: 'Payment receipt email sent',
+                                title: 'Төлбөрийн баримт имэйлээр илгээгдсэн',
                                 channel: 'email',
                                 toValue: receiptEmailPoll
                             });
@@ -1213,7 +1213,7 @@ class PaymentController {
                                     console.log('[QPAY] Payment confirmation SMS sent (poll) to', receiptPhonePoll);
                                     await orderService.recordOrderActivity(id, {
                                         type: 'MESSAGE_SENT',
-                                        title: 'Payment confirmation SMS sent',
+                                        title: 'Төлбөрийн баталгаажуулалт SMS илгээгдсэн',
                                         channel: 'sms',
                                         toValue: receiptPhonePoll
                                     });
