@@ -1109,23 +1109,23 @@ class PaymentController {
 
                 const paymentsListGps = Array.isArray(paymentCheck.rows) ? paymentCheck.rows : (Array.isArray(paymentCheck.data) ? paymentCheck.data : []);
                 const paymentsGps = (paymentCheck.count > 0 || paymentsListGps.length > 0) ? paymentsListGps : [];
-                const latestPayment = paymentsGps.length > 0 ? paymentsGps[0] : null;
                 const statusOfGps = (p) => p && (p.payment_status ?? p.paymentStatus ?? p.status);
-                const isPaid = latestPayment && (
-                    statusOfGps(latestPayment) === 'PAID' || statusOfGps(latestPayment) === 'SUCCESS' || statusOfGps(latestPayment) === 'COMPLETED'
+                const successfulPayment = paymentsGps.find(p =>
+                    statusOfGps(p) === 'PAID' || statusOfGps(p) === 'SUCCESS' || statusOfGps(p) === 'COMPLETED'
                 );
+                const isPaid = !!successfulPayment;
 
                 // If payment is confirmed, update order status; clear QR code/text to save DB space
                 if (isPaid && order.paymentStatus !== 'PAID') {
-                    const paymentId = latestPayment.payment_id ?? latestPayment.paymentId ?? latestPayment.id;
+                    const paymentId = successfulPayment.payment_id ?? successfulPayment.paymentId ?? successfulPayment.id;
                     await prisma.order.update({
                         where: { id: String(id) },
                         data: {
                             qpayPaymentId: paymentId,
                             paymentStatus: 'PAID',
                             status: 'PAID',
-                            paidAt: new Date(latestPayment.paid_date || latestPayment.created_date || new Date()),
-                            paymentMethod: latestPayment.payment_type ?? latestPayment.paymentType ?? 'QPAY',
+                            paidAt: new Date(successfulPayment.paid_date || successfulPayment.created_date || new Date()),
+                            paymentMethod: successfulPayment.payment_type ?? successfulPayment.paymentType ?? 'QPAY',
                             qpayQrCode: null,
                             qpayQrText: null
                         }
@@ -1236,8 +1236,8 @@ class PaymentController {
                     if (discordClaimPoll.count === 1) {
                         discordService.sendPaymentNotification(order, {
                             paymentId,
-                            paymentMethod: latestPayment.payment_type ?? latestPayment.paymentType ?? 'QPAY',
-                            paidAt: latestPayment.paid_date || latestPayment.created_date || new Date()
+                            paymentMethod: successfulPayment.payment_type ?? successfulPayment.paymentType ?? 'QPAY',
+                            paidAt: successfulPayment.paid_date || successfulPayment.created_date || new Date()
                         }).catch(err => console.error('Discord payment notification failed:', err.message));
                     }
 
@@ -1249,14 +1249,14 @@ class PaymentController {
                     orderId: order.id,
                     paymentStatus: isPaid ? 'PAID' : order.paymentStatus,
                     qpayInvoiceId: order.qpayInvoiceId,
-                    qpayPaymentId: isPaid ? (latestPayment.payment_id ?? latestPayment.paymentId ?? latestPayment.id) : order.qpayPaymentId,
-                    paidAt: isPaid ? (latestPayment.paid_date || latestPayment.created_date || new Date()) : order.paidAt,
+                    qpayPaymentId: isPaid ? (successfulPayment.payment_id ?? successfulPayment.paymentId ?? successfulPayment.id) : order.qpayPaymentId,
+                    paidAt: isPaid ? (successfulPayment.paid_date || successfulPayment.created_date || new Date()) : order.paidAt,
                     paymentMethod: order.paymentMethod,
-                    qpayStatus: latestPayment ? {
-                        paymentId: latestPayment.payment_id ?? latestPayment.paymentId ?? latestPayment.id,
-                        status: statusOfGps(latestPayment) ?? latestPayment.payment_status ?? latestPayment.paymentStatus,
-                        amount: latestPayment.amount,
-                        paidAt: latestPayment.paid_date || latestPayment.created_date
+                    qpayStatus: successfulPayment ? {
+                        paymentId: successfulPayment.payment_id ?? successfulPayment.paymentId ?? successfulPayment.id,
+                        status: statusOfGps(successfulPayment) ?? successfulPayment.payment_status ?? successfulPayment.paymentStatus,
+                        amount: successfulPayment.amount,
+                        paidAt: successfulPayment.paid_date || successfulPayment.created_date
                     } : null,
                     ebarimtId: order.ebarimtId,
                     shouldStopPolling: isPaid, // Signal frontend to stop polling if paid

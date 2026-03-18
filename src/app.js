@@ -255,6 +255,8 @@ app.use('/api/cart', cartRoutes);
 app.use('/api', paymentRoutes); // Payment routes (includes /api/orders/:id/payment-*)
 // Bank/QPay may redirect to /orders/:id/payment-callback (no /api) – handle that path too
 app.get('/orders/:id/payment-callback', paymentController.paymentCallback.bind(paymentController));
+// QPay also posts webhooks to this callback URL – handle POST as well
+app.post('/orders/:id/payment-callback', paymentController.paymentCallback.bind(paymentController));
 app.use('/api/orders', orderRoutes);
 app.use('/api/addresses', addressRoutes);
 app.use('/api/favorites', favoriteRoutes);
