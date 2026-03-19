@@ -139,9 +139,11 @@ class OrderService {
      * @param {string} deliveryTimeSlot - Delivery time slot (optional)
      * @param {string|Date|null} deliveryDate - Delivery date (optional, will calculate if not provided)
      * @param {Object|null} contact - Contact info { fullName, phoneNumber, email } from order create form
+     * @param {string|null} ebarimtReceiverType - Ebarimt receiver type (CITIZEN or COMPANY)
+     * @param {string|null} ebarimtReceiver - Ebarimt receiver register or phone
      * @returns {Object} - Created order with items
      */
-    async createOrderFromCart(userId = null, sessionToken = null, addressId = null, address = null, deliveryTimeSlot = null, deliveryDate = null, contact = null) {
+    async createOrderFromCart(userId = null, sessionToken = null, addressId = null, address = null, deliveryTimeSlot = null, deliveryDate = null, contact = null, ebarimtReceiverType = null, ebarimtReceiver = null) {
         // Validate that either userId or sessionToken is provided
         if (!userId && !sessionToken) {
             const error = new Error('Either userId or sessionToken must be provided');
@@ -250,7 +252,11 @@ class OrderService {
                     contactFullName: contact.fullName,
                     contactPhoneNumber: contact.phoneNumber,
                     contactEmail: contact.email
-                } : {})
+                } : {}),
+                ebarimtReceiverType: ebarimtReceiverType || null,
+                ebarimtReceiver: ebarimtReceiver || null,
+                ebarimtReceiverType: ebarimtReceiverType || null,
+                ebarimtReceiver: ebarimtReceiver || null
             };
 
             let newOrder = await tx.order.create({
@@ -405,9 +411,11 @@ class OrderService {
      * @param {string} deliveryTimeSlot - Delivery time slot (optional)
      * @param {string|Date|null} deliveryDate - Delivery date (optional, will calculate if not provided)
      * @param {Object|null} contact - Contact info { fullName, phoneNumber, email } from order create form
+     * @param {string|null} ebarimtReceiverType - Ebarimt receiver type (CITIZEN or COMPANY)
+     * @param {string|null} ebarimtReceiver - Ebarimt receiver register or phone
      * @returns {Object} - Created order with items
      */
-    async buyNow(userId, productId, quantity, addressId, deliveryTimeSlot = null, deliveryDate = null, contact = null) {
+    async buyNow(userId, productId, quantity, addressId, deliveryTimeSlot = null, deliveryDate = null, contact = null, ebarimtReceiverType = null, ebarimtReceiver = null) {
         const userIdInt = parseInt(userId);
         const prodId = parseInt(productId);
         const qty = parseInt(quantity);
@@ -485,7 +493,9 @@ class OrderService {
                         contactFullName: contact.fullName,
                         contactPhoneNumber: contact.phoneNumber,
                         contactEmail: contact.email
-                    } : {})
+                    } : {}),
+                    ebarimtReceiverType: ebarimtReceiverType || null,
+                    ebarimtReceiver: ebarimtReceiver || null
                 }
             });
 
@@ -611,9 +621,11 @@ class OrderService {
      * @param {string} deliveryTimeSlot - Delivery time slot (optional)
      * @param {string|Date|null} deliveryDate - Delivery date (optional, will calculate if not provided)
      * @param {Object|null} contact - Contact info { fullName, phoneNumber, email } from order create form
+     * @param {string|null} ebarimtReceiverType - Ebarimt receiver type (CITIZEN or COMPANY)
+     * @param {string|null} ebarimtReceiver - Ebarimt receiver register or phone
      * @returns {Object} - Created order with items
      */
-    async finalizeOrderFromDraft(userId, draftOrder, addressId = null, address = null, deliveryTimeSlot = null, deliveryDate = null, contact = null) {
+    async finalizeOrderFromDraft(userId, draftOrder, addressId = null, address = null, deliveryTimeSlot = null, deliveryDate = null, contact = null, ebarimtReceiverType = null, ebarimtReceiver = null) {
         const userIdInt = parseInt(userId);
         const prodId = draftOrder.productId;
         const qty = draftOrder.quantity;
@@ -688,7 +700,9 @@ class OrderService {
                         contactFullName: contact.fullName,
                         contactPhoneNumber: contact.phoneNumber,
                         contactEmail: contact.email
-                    } : {})
+                    } : {}),
+                    ebarimtReceiverType: ebarimtReceiverType || null,
+                    ebarimtReceiver: ebarimtReceiver || null
                 }
             });
 

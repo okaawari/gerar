@@ -179,6 +179,8 @@ model order {
   ebarimtAmount    String? @db.VarChar(50) // Total amount from QPay ebarimt response
   ebarimtVatAmount String? @db.VarChar(50) // VAT amount from QPay ebarimt response
   ebarimtCityTaxAmount String? @db.VarChar(50) // City tax from QPay ebarimt response
+  ebarimtReceiverType String? @db.VarChar(50) // CITIZEN or COMPANY
+  ebarimtReceiver     String? @db.VarChar(50) // Phone for CITIZEN, Register for COMPANY
 
   // Guest orders: session token to allow GET /orders/:id with X-Session-Token
   sessionToken String?   @db.VarChar(255)

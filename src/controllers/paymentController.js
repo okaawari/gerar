@@ -841,10 +841,10 @@ class PaymentController {
                         console.log('[QPAY] Creating ebarimt for order', id, 'paymentId:', paymentId, '(order has line items – ebarimt invoice)');
                         try {
                             ebarimtResponse = await ebarimtTestService.createEbarimtFromPayment(paymentId, {
-                                ebarimtReceiverType: 'CITIZEN',
-                                ebarimtReceiver: order.contactPhoneNumber ?? order.user?.phone ?? order.address?.phoneNumber ?? '80650025',
-                                preferredToken: order.qpayAccessToken ?? undefined,
-                                tokenExpiresAt: order.qpayTokenExpiresAt ?? undefined
+                                ebarimtReceiverType: order.ebarimtReceiverType || 'CITIZEN',
+                                ebarimtReceiver: order.ebarimtReceiver || order.contactPhoneNumber || order.user?.phoneNumber || order.address?.phoneNumber || '80650025',
+                                preferredToken: order.qpayAccessToken || undefined,
+                                tokenExpiresAt: order.qpayTokenExpiresAt || undefined
                             });
 
                             if (ebarimtResponse.ebarimt_id) {
@@ -1146,10 +1146,10 @@ class PaymentController {
                         console.log('[QPAY] Creating ebarimt for order', id, 'paymentId:', paymentId, '(poll – order has line items)');
                         try {
                             ebarimtResponse = await ebarimtTestService.createEbarimtFromPayment(paymentId, {
-                                ebarimtReceiverType: 'CITIZEN',
-                                ebarimtReceiver: order.contactPhoneNumber ?? order.user?.phone ?? order.address?.phoneNumber ?? '80650025',
-                                preferredToken: order.qpayAccessToken ?? undefined,
-                                tokenExpiresAt: order.qpayTokenExpiresAt ?? undefined
+                                ebarimtReceiverType: order.ebarimtReceiverType || 'CITIZEN',
+                                ebarimtReceiver: order.ebarimtReceiver || order.contactPhoneNumber || order.user?.phoneNumber || order.address?.phoneNumber || '80650025',
+                                preferredToken: order.qpayAccessToken || undefined,
+                                tokenExpiresAt: order.qpayTokenExpiresAt || undefined
                             });
                             if (ebarimtResponse.ebarimt_id) {
                                 await prisma.order.update({
