@@ -16,6 +16,8 @@ const cartRoutes = require('./routes/cartRoutes');
 const orderRoutes = require('./routes/orderRoutes');
 const addressRoutes = require('./routes/addressRoutes');
 const favoriteRoutes = require('./routes/favoriteRoutes');
+const pointProductRoutes = require('./routes/pointProductRoutes');
+
 const paymentRoutes = require('./routes/paymentRoutes');
 const paymentController = require('./controllers/paymentController');
 const adminRoutes = require('./routes/admin');
@@ -236,7 +238,9 @@ app.get('/api', (req, res) => {
             orders: '/api/orders',
             addresses: '/api/addresses',
             favorites: '/api/favorites',
+            pointProducts: '/api/point-products',
             payments: '/api/orders/:id/payment-*',
+
             admin: '/api/admin'
         },
         timestamp: getMongoliaTimestampISO()
@@ -260,6 +264,8 @@ app.post('/orders/:id/payment-callback', paymentController.paymentCallback.bind(
 app.use('/api/orders', orderRoutes);
 app.use('/api/addresses', addressRoutes);
 app.use('/api/favorites', favoriteRoutes);
+app.use('/api/point-products', pointProductRoutes);
+
 
 // Admin API routes (requires authentication and admin role)
 app.use('/api/admin', adminRoutes);

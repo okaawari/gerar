@@ -34,8 +34,10 @@ class ProductController {
                 page,
                 limit,
                 onSale,
+                isBuyableWithPoints,
                 randomSeed
             } = req.query;
+
 
             const filters = {};
 
@@ -135,6 +137,15 @@ class ProductController {
             if (onSale !== undefined) {
                 filters.onSale = onSale === true || onSale === 'true';
             }
+            
+            if (isBuyableWithPoints !== undefined) {
+                filters.isBuyableWithPoints = isBuyableWithPoints === true || isBuyableWithPoints === 'true';
+            }
+
+        
+
+
+
 
             // Include userId if user is authenticated (for favorite status)
             if (req.user && req.user.id) {
@@ -250,6 +261,9 @@ class ProductController {
     async createProduct(req, res, next) {
         try {
             const { name, description, price, originalPrice, images, stock, categoryIds, categoryId, categoryOrders, featureIds, featureId, featureOrders, classificationCode, vatAmount } = req.body;
+
+
+
             const adminId = req.user && req.user.id ? req.user.id : null;
             const product = await productService.createProduct({
                 name,
@@ -268,6 +282,9 @@ class ProductController {
                 vatAmount,
                 adminId           // Admin user ID for tracking
             });
+
+
+
 
             res.status(201).json({
                 success: true,
@@ -288,6 +305,9 @@ class ProductController {
         try {
             const { id } = req.params;
             const { name, description, price, originalPrice, images, stock, categoryIds, categoryId, categoryOrders, featureIds, featureId, featureOrders, classificationCode, vatAmount } = req.body;
+
+
+
             const adminId = req.user && req.user.id ? req.user.id : null;
             const product = await productService.updateProduct(id, {
                 name,
@@ -306,6 +326,9 @@ class ProductController {
                 vatAmount,
                 adminId           // Admin user ID for tracking
             });
+
+
+
 
             res.status(200).json({
                 success: true,

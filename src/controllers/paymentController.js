@@ -812,17 +812,34 @@ class PaymentController {
                     const paymentId = successfulPayment.payment_id ?? successfulPayment.paymentId ?? successfulPayment.id;
 
                     // Update order status to PAID; clear QR code/text to save DB space (no longer needed after payment)
-                    const updatedOrder = await prisma.order.update({
-                        where: { id: String(id) },
-                        data: {
-                            qpayPaymentId: paymentId,
-                            paymentStatus: 'PAID',
-                            status: 'PAID',
-                            paidAt: new Date(),
-                            paymentMethod: successfulPayment.payment_type ?? successfulPayment.paymentType ?? 'QPAY',
-                            qpayQrCode: null,
-                            qpayQrText: null
+                    // Use a transaction to award points and update order atomically
+                    const { updatedOrder } = await prisma.$transaction(async (tx) => {
+                        const updatedOrder = await tx.order.update({
+                            where: { id: String(id) },
+                            data: {
+                                qpayPaymentId: paymentId,
+                                paymentStatus: 'PAID',
+                                status: 'PAID',
+                                paidAt: new Date(),
+                                paymentMethod: successfulPayment.payment_type ?? successfulPayment.paymentType ?? 'QPAY',
+                                qpayQrCode: null,
+                                qpayQrText: null
+                            }
+                        });
+
+                        // Award points to user if order has earnedPoints and belongs to a user
+                        if (updatedOrder.earnedPoints > 0 && updatedOrder.userId) {
+                            await tx.user.update({
+                                where: { id: updatedOrder.userId },
+                                data: {
+                                    points: {
+                                        increment: updatedOrder.earnedPoints
+                                    }
+                                }
+                            });
                         }
+
+                        return { updatedOrder };
                     });
 
                     await orderService.recordOrderActivity(id, {
@@ -831,6 +848,7 @@ class PaymentController {
                         fromValue: order.paymentStatus || 'PENDING',
                         toValue: 'PAID'
                     });
+
 
                     // Generate Ebarimt receipt only when invoice was created as ebarimt (order has line items).
                     // QPay ebarimt_v3/create only works for payments from ebarimt-type invoices; simple (amount-only) invoices fail.
@@ -1118,17 +1136,35 @@ class PaymentController {
                 // If payment is confirmed, update order status; clear QR code/text to save DB space
                 if (isPaid && order.paymentStatus !== 'PAID') {
                     const paymentId = successfulPayment.payment_id ?? successfulPayment.paymentId ?? successfulPayment.id;
-                    await prisma.order.update({
-                        where: { id: String(id) },
-                        data: {
-                            qpayPaymentId: paymentId,
-                            paymentStatus: 'PAID',
-                            status: 'PAID',
-                            paidAt: new Date(successfulPayment.paid_date || successfulPayment.created_date || new Date()),
-                            paymentMethod: successfulPayment.payment_type ?? successfulPayment.paymentType ?? 'QPAY',
-                            qpayQrCode: null,
-                            qpayQrText: null
+                    
+                    // Use a transaction to award points and update order atomically
+                    const { updatedOrder } = await prisma.$transaction(async (tx) => {
+                        const updatedOrder = await tx.order.update({
+                            where: { id: String(id) },
+                            data: {
+                                qpayPaymentId: paymentId,
+                                paymentStatus: 'PAID',
+                                status: 'PAID',
+                                paidAt: new Date(successfulPayment.paid_date || successfulPayment.created_date || new Date()),
+                                paymentMethod: successfulPayment.payment_type ?? successfulPayment.paymentType ?? 'QPAY',
+                                qpayQrCode: null,
+                                qpayQrText: null
+                            }
+                        });
+
+                        // Award points to user if order has earnedPoints and belongs to a user
+                        if (updatedOrder.earnedPoints > 0 && updatedOrder.userId) {
+                            await tx.user.update({
+                                where: { id: updatedOrder.userId },
+                                data: {
+                                    points: {
+                                        increment: updatedOrder.earnedPoints
+                                    }
+                                }
+                            });
                         }
+
+                        return { updatedOrder };
                     });
 
                     await orderService.recordOrderActivity(id, {
@@ -1137,6 +1173,7 @@ class PaymentController {
                         fromValue: order.paymentStatus || 'PENDING',
                         toValue: 'PAID'
                     });
+
 
                     // Try to generate Ebarimt only when invoice was ebarimt-type (order has line items)
                     let ebarimtResponse = null;
@@ -1346,14 +1383,31 @@ class PaymentController {
             // Cancel invoice with QPAY
             await qpayService.cancelInvoice(order.qpayInvoiceId);
 
-            // Update order status
-            const updatedOrder = await prisma.order.update({
-                where: { id: String(id) },
-                data: {
-                    status: 'CANCELLED',
-                    paymentStatus: 'CANCELLED'
+            // Update order status and refund points if used
+            const updatedOrder = await prisma.$transaction(async (tx) => {
+                const updated = await tx.order.update({
+                    where: { id: String(id) },
+                    data: {
+                        status: 'CANCELLED',
+                        paymentStatus: 'CANCELLED'
+                    }
+                });
+
+                // Refund points if any were used
+                if (updated.usedPoints > 0 && updated.userId) {
+                    await tx.user.update({
+                        where: { id: updated.userId },
+                        data: {
+                            points: {
+                                increment: updated.usedPoints
+                            }
+                        }
+                    });
                 }
+
+                return updated;
             });
+
 
             res.status(200).json({
                 success: true,
@@ -1412,14 +1466,45 @@ class PaymentController {
             // Refund payment with QPAY
             await qpayService.refundPayment(order.qpayPaymentId);
 
-            // Update order status
-            const updatedOrder = await prisma.order.update({
-                where: { id: String(id) },
-                data: {
-                    status: 'REFUNDED',
-                    paymentStatus: 'REFUNDED'
+            // Update order status and points reversal
+            const updatedOrder = await prisma.$transaction(async (tx) => {
+                const updated = await tx.order.update({
+                    where: { id: String(id) },
+                    data: {
+                        status: 'REFUNDED',
+                        paymentStatus: 'REFUNDED'
+                    }
+                });
+
+                if (updated.userId) {
+                    // Revoke points earned from this order
+                    if (updated.earnedPoints > 0) {
+                        await tx.user.update({
+                            where: { id: updated.userId },
+                            data: {
+                                points: {
+                                    decrement: updated.earnedPoints
+                                }
+                            }
+                        });
+                    }
+
+                    // Refund points used in this order
+                    if (updated.usedPoints > 0) {
+                        await tx.user.update({
+                            where: { id: updated.userId },
+                            data: {
+                                points: {
+                                    increment: updated.usedPoints
+                                }
+                            }
+                        });
+                    }
                 }
+
+                return updated;
             });
+
 
             res.status(200).json({
                 success: true,

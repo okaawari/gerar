@@ -1,5 +1,7 @@
 const prisma = require('../lib/prisma');
 const productService = require('./productService');
+const pointProductService = require('./pointProductService');
+
 const crypto = require('crypto');
 
 class CartService {
@@ -18,6 +20,8 @@ class CartService {
      */
     formatProductCategories(item) {
         const formatted = { ...item };
+        
+        // Format standard product
         if (item.product) {
             formatted.product = { ...item.product };
             if (item.product.categories) {
@@ -34,8 +38,24 @@ class CartService {
                 formatted.product.category = null;
             }
         }
+
+        // Format point product
+        if (item.pointProduct) {
+            formatted.pointProduct = { ...item.pointProduct };
+            // Point products don't have categories in this version, but we normalize URLs
+            if (formatted.pointProduct.images && Array.isArray(formatted.pointProduct.images)) {
+                formatted.pointProduct.images = formatted.pointProduct.images.map(img => 
+                    pointProductService.normalizeImageUrl(img)
+                ).filter(Boolean);
+                formatted.pointProduct.firstImage = formatted.pointProduct.images.length > 0 
+                    ? formatted.pointProduct.images[0] 
+                    : null;
+            }
+        }
+        
         return formatted;
     }
+
 
     /**
      * Validate quantity input
@@ -102,7 +122,9 @@ class CartService {
                             }
                         }
                     }
-                }
+                },
+                pointProduct: true
+
             },
             orderBy: {
                 createdAt: 'desc'
@@ -131,7 +153,8 @@ class CartService {
      * @param {number} quantity - Quantity to add
      * @returns {Object} - Cart item with product information
      */
-    async addToCart(userId = null, sessionToken = null, productId, quantity) {
+    async addToCart(userId = null, sessionToken = null, productId, quantity, isPointProduct = false) {
+
         this.validateCartIdentifier(userId, sessionToken);
 
         // Validate quantity
@@ -143,15 +166,25 @@ class CartService {
         }
 
         const qty = parseInt(quantity);
-        const prodId = parseInt(productId);
+        const targetId = parseInt(productId);
 
         // Check if product exists and has sufficient stock
-        const stockCheck = await productService.checkStockAvailability(prodId, qty);
+        let stockCheck;
+        if (isPointProduct) {
+            stockCheck = await pointProductService.checkPointStock(targetId, qty);
+        } else {
+            stockCheck = await productService.checkStockAvailability(targetId, qty);
+        }
+
         if (!stockCheck.hasStock) {
-            const error = new Error(`Барааны үлдэгдэл хүрэлцэхгүй байна. Байгаа: ${stockCheck.product.stock}, Авах гэсэн: ${qty}`);
+            const error = new Error(`Барааны үлдэгдэл хүрэлцэхгүй байна. Байгаа: ${stockCheck.product?.stock || 0}, Авах гэсэн: ${qty}`);
             error.statusCode = 400;
             throw error;
         }
+
+        const prodId = isPointProduct ? null : targetId;
+        const pointProdId = isPointProduct ? targetId : null;
+
 
         // Check if cart item already exists
         // For authenticated users, use compound unique constraint
@@ -159,42 +192,46 @@ class CartService {
         let existingCartItem;
         if (userId) {
             existingCartItem = await prisma.cartitem.findUnique({
-                where: {
-                    userId_productId: {
-                        userId: parseInt(userId),
-                        productId: prodId
-                    }
-                },
-                include: {
-                    product: true
-                }
+                where: isPointProduct 
+                    ? { userId_pointProductId: { userId: parseInt(userId), pointProductId: pointProdId } }
+                    : { userId_productId: { userId: parseInt(userId), productId: prodId } }
             });
         } else {
             existingCartItem = await prisma.cartitem.findFirst({
                 where: {
                     sessionToken: sessionToken,
-                    productId: prodId
-                },
-                include: {
-                    product: true
+                    productId: prodId,
+                    pointProductId: pointProdId
                 }
             });
         }
 
+
         if (existingCartItem) {
             // Update quantity: check if total quantity (existing + new) exceeds stock
             const totalQuantity = existingCartItem.quantity + qty;
-            const stockCheckForUpdate = await productService.checkStockAvailability(prodId, totalQuantity);
+            
+            let stockCheckForUpdate;
+            if (isPointProduct) {
+                stockCheckForUpdate = await pointProductService.checkPointStock(pointProdId, totalQuantity);
+            } else {
+                stockCheckForUpdate = await productService.checkStockAvailability(prodId, totalQuantity);
+            }
+
             if (!stockCheckForUpdate.hasStock) {
-                const error = new Error(`Барааны үлдэгдэл хүрэлцэхгүй байна. Байгаа: ${stockCheckForUpdate.product.stock}, Авах гэсэн: ${totalQuantity}`);
+                const error = new Error(`Барааны үлдэгдэл хүрэлцэхгүй байна. Байгаа: ${stockCheckForUpdate.product?.stock || 0}, Авах гэсэн: ${totalQuantity}`);
                 error.statusCode = 400;
                 throw error;
             }
 
+
             // Update existing cart item
             const updateWhere = userId
-                ? { userId_productId: { userId: parseInt(userId), productId: prodId } }
-                : { id: existingCartItem.id }; // Use id for guest cart items since we can't use compound unique
+                ? (isPointProduct 
+                    ? { userId_pointProductId: { userId: parseInt(userId), pointProductId: pointProdId } }
+                    : { userId_productId: { userId: parseInt(userId), productId: prodId } })
+                : { id: existingCartItem.id };
+
 
             const updatedCartItem = await prisma.cartitem.update({
                 where: updateWhere,
@@ -207,17 +244,15 @@ class CartService {
                             categories: {
                                 include: {
                                     category: {
-                                        select: {
-                                            id: true,
-                                            name: true,
-                                            description: true
-                                        }
+                                        select: { id: true, name: true, description: true }
                                     }
                                 }
                             }
                         }
-                    }
+                    },
+                    pointProduct: true
                 }
+
             });
 
             return this.formatProductCategories(updatedCartItem);
@@ -225,6 +260,7 @@ class CartService {
             // Create new cart item
             const cartItemData = {
                 productId: prodId,
+                pointProductId: pointProdId,
                 quantity: qty
             };
 
@@ -242,18 +278,16 @@ class CartService {
                             categories: {
                                 include: {
                                     category: {
-                                        select: {
-                                            id: true,
-                                            name: true,
-                                            description: true
-                                        }
+                                        select: { id: true, name: true, description: true }
                                     }
                                 }
                             }
                         }
-                    }
+                    },
+                    pointProduct: true
                 }
             });
+
 
             return this.formatProductCategories(cartItem);
         }
@@ -279,7 +313,8 @@ class CartService {
      * @param {number} quantity - New quantity
      * @returns {Object} - Updated cart item
      */
-    async updateCartItem(userId = null, sessionToken = null, productId, quantity) {
+    async updateCartItem(userId = null, sessionToken = null, productId, quantity, isPointProduct = false) {
+
         this.validateCartIdentifier(userId, sessionToken);
 
         // Validate quantity
@@ -299,21 +334,20 @@ class CartService {
         let existingCartItem;
         if (userId) {
             existingCartItem = await prisma.cartitem.findUnique({
-                where: {
-                    userId_productId: {
-                        userId: parseInt(userId),
-                        productId: prodId
-                    }
-                }
+                where: isPointProduct
+                    ? { userId_pointProductId: { userId: parseInt(userId), pointProductId: parseInt(productId) } }
+                    : { userId_productId: { userId: parseInt(userId), productId: parseInt(productId) } }
             });
         } else {
             existingCartItem = await prisma.cartitem.findFirst({
                 where: {
                     sessionToken: sessionToken,
-                    productId: prodId
+                    productId: isPointProduct ? null : parseInt(productId),
+                    pointProductId: isPointProduct ? parseInt(productId) : null
                 }
             });
         }
+
 
         if (!existingCartItem) {
             const error = new Error('Cart item not found');
@@ -322,17 +356,27 @@ class CartService {
         }
 
         // Check if product has sufficient stock for new quantity
-        const stockCheck = await productService.checkStockAvailability(prodId, qty);
+        let stockCheck;
+        if (isPointProduct) {
+            stockCheck = await pointProductService.checkPointStock(parseInt(productId), qty);
+        } else {
+            stockCheck = await productService.checkStockAvailability(parseInt(productId), qty);
+        }
+
         if (!stockCheck.hasStock) {
-            const error = new Error(`Барааны үлдэгдэл хүрэлцэхгүй байна. Байгаа: ${stockCheck.product.stock}, Авах гэсэн: ${qty}`);
+            const error = new Error(`Барааны үлдэгдэл хүрэлцэхгүй байна. Байгаа: ${stockCheck.product?.stock || 0}, Авах гэсэн: ${qty}`);
             error.statusCode = 400;
             throw error;
         }
 
+
         // Update cart item
         const updateWhere = userId
-            ? { userId_productId: { userId: parseInt(userId), productId: prodId } }
-            : { id: existingCartItem.id }; // Use id for guest cart items since we can't use compound unique
+            ? (isPointProduct
+                ? { userId_pointProductId: { userId: parseInt(userId), pointProductId: parseInt(productId) } }
+                : { userId_productId: { userId: parseInt(userId), productId: parseInt(productId) } })
+            : { id: existingCartItem.id };
+
 
         const updatedCartItem = await prisma.cartitem.update({
             where: updateWhere,
@@ -345,16 +389,14 @@ class CartService {
                         categories: {
                             include: {
                                 category: {
-                                    select: {
-                                        id: true,
-                                        name: true,
-                                        description: true
-                                    }
+                                    select: { id: true, name: true, description: true }
                                 }
                             }
                         }
                     }
-                }
+                },
+                pointProduct: true
+
             }
         });
 
@@ -380,7 +422,8 @@ class CartService {
      * @param {number} productId - Product ID
      * @returns {Object} - Deleted cart item
      */
-    async removeFromCart(userId = null, sessionToken = null, productId) {
+    async removeFromCart(userId = null, sessionToken = null, productId, isPointProduct = false) {
+
         this.validateCartIdentifier(userId, sessionToken);
 
         const prodId = parseInt(productId);
@@ -391,35 +434,30 @@ class CartService {
         let existingCartItem;
         if (userId) {
             existingCartItem = await prisma.cartitem.findUnique({
-                where: {
-                    userId_productId: {
-                        userId: parseInt(userId),
-                        productId: prodId
-                    }
-                },
+                where: isPointProduct
+                    ? { userId_pointProductId: { userId: parseInt(userId), pointProductId: prodId } }
+                    : { userId_productId: { userId: parseInt(userId), productId: prodId } },
                 include: {
                     product: {
                         include: {
                             categories: {
                                 include: {
                                     category: {
-                                        select: {
-                                            id: true,
-                                            name: true,
-                                            description: true
-                                        }
+                                        select: { id: true, name: true, description: true }
                                     }
                                 }
                             }
                         }
-                    }
+                    },
+                    pointProduct: true
                 }
             });
         } else {
             existingCartItem = await prisma.cartitem.findFirst({
                 where: {
                     sessionToken: sessionToken,
-                    productId: prodId
+                    productId: isPointProduct ? null : prodId,
+                    pointProductId: isPointProduct ? prodId : null
                 },
                 include: {
                     product: {
@@ -427,19 +465,17 @@ class CartService {
                             categories: {
                                 include: {
                                     category: {
-                                        select: {
-                                            id: true,
-                                            name: true,
-                                            description: true
-                                        }
+                                        select: { id: true, name: true, description: true }
                                     }
                                 }
                             }
                         }
-                    }
+                    },
+                    pointProduct: true
                 }
             });
         }
+
 
         if (!existingCartItem) {
             const error = new Error('Cart item not found');

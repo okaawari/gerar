@@ -36,8 +36,10 @@ class UserService {
                     email: true,
                     name: true,
                     role: true,
+                    points: true,
                     createdAt: true,
                     updatedAt: true,
+
                     _count: {
                         select: {
                             orders: true,
@@ -89,8 +91,10 @@ class UserService {
                 email: true,
                 name: true,
                 role: true,
+                points: true,
                 createdAt: true,
                 updatedAt: true,
+
                 addresses: {
                     orderBy: {
                         isDefault: 'desc',
@@ -139,7 +143,10 @@ class UserService {
             id: order.id,
             status: order.status,
             totalAmount: order.totalAmount.toString(),
+            earnedPoints: order.earnedPoints,
+            usedPoints: order.usedPoints,
             deliveryTimeSlot: order.deliveryTimeSlot,
+
             address: order.address,
             createdAt: order.createdAt,
             updatedAt: order.updatedAt,
@@ -147,13 +154,19 @@ class UserService {
                 id: item.id,
                 quantity: item.quantity,
                 price: item.price.toString(),
+                paidWithPoints: item.paidWithPoints,
+                pointsUsed: item.pointsUsed,
                 product: {
+
                     id: item.product.id,
                     name: item.product.name,
                     description: item.product.description,
                     price: item.product.price.toString(),
                     originalPrice: item.product.originalPrice?.toString() || null,
+                    isBuyableWithPoints: item.product.isBuyableWithPoints,
+                    pointsPrice: item.product.pointsPrice,
                     images: item.product.images,
+
                     categories: item.product.categories.map((pc) => ({
                         id: pc.category.id,
                         name: pc.category.name,
@@ -327,8 +340,10 @@ class UserService {
                 email: true,
                 name: true,
                 role: true,
+                points: true,
                 createdAt: true,
                 updatedAt: true,
+
             },
         });
 
@@ -357,8 +372,10 @@ class UserService {
                 name: true,
                 email: true,
                 role: true,
+                points: true,
                 createdAt: true,
                 updatedAt: true,
+
             },
         });
 
@@ -461,8 +478,10 @@ class UserService {
                 name: true,
                 email: true,
                 role: true,
+                points: true,
                 createdAt: true,
                 updatedAt: true,
+
             },
         });
 

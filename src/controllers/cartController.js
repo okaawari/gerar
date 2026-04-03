@@ -47,8 +47,8 @@ class CartController {
      */
     async addToCart(req, res, next) {
         try {
-            const { productId, quantity, sessionToken } = req.body;
-
+            const { productId, quantity, sessionToken, isPointProduct } = req.body;
+            
             if (!productId || quantity === undefined) {
                 const error = new Error('Product ID and quantity are required');
                 error.statusCode = 400;
@@ -62,7 +62,8 @@ class CartController {
             // Check if user is authenticated
             if (req.user && req.user.id) {
                 // Authenticated user
-                cartItem = await cartService.addToCart(req.user.id, null, productId, quantity);
+                cartItem = await cartService.addToCart(req.user.id, null, productId, quantity, isPointProduct);
+
             } else {
                 // Guest user
                 const guestSessionToken = sessionToken || req.headers['x-session-token'];
@@ -70,11 +71,12 @@ class CartController {
                 if (!guestSessionToken) {
                     // Generate new session token for first-time guest
                     returnedSessionToken = cartService.generateSessionToken();
-                    cartItem = await cartService.addToCartBySession(returnedSessionToken, productId, quantity);
+                    cartItem = await cartService.addToCart(null, returnedSessionToken, productId, quantity, isPointProduct);
                 } else {
-                    cartItem = await cartService.addToCartBySession(guestSessionToken, productId, quantity);
+                    cartItem = await cartService.addToCart(null, guestSessionToken, productId, quantity, isPointProduct);
                     returnedSessionToken = guestSessionToken;
                 }
+
                 isGuest = true;
             }
 
@@ -97,7 +99,8 @@ class CartController {
     async updateCartItem(req, res, next) {
         try {
             const { productId } = req.params;
-            const { quantity, sessionToken } = req.body;
+            const { quantity, sessionToken, isPointProduct } = req.body;
+
 
             if (quantity === undefined) {
                 const error = new Error('Quantity is required');
@@ -112,7 +115,8 @@ class CartController {
             // Check if user is authenticated
             if (req.user && req.user.id) {
                 // Authenticated user
-                cartItem = await cartService.updateCartItem(req.user.id, null, productId, quantity);
+                cartItem = await cartService.updateCartItem(req.user.id, null, productId, quantity, isPointProduct);
+
             } else {
                 // Guest user
                 const guestSessionToken = sessionToken || req.headers['x-session-token'];
@@ -123,7 +127,8 @@ class CartController {
                     throw error;
                 }
 
-                cartItem = await cartService.updateCartItemBySession(guestSessionToken, productId, quantity);
+                cartItem = await cartService.updateCartItem(null, guestSessionToken, productId, quantity, isPointProduct);
+
                 returnedSessionToken = guestSessionToken;
                 isGuest = true;
             }
@@ -147,7 +152,8 @@ class CartController {
     async removeFromCart(req, res, next) {
         try {
             const { productId } = req.params;
-            const { sessionToken } = req.body;
+            const { sessionToken, isPointProduct } = req.body;
+
 
             let cartItem;
             let isGuest = false;
@@ -156,7 +162,8 @@ class CartController {
             // Check if user is authenticated
             if (req.user && req.user.id) {
                 // Authenticated user
-                cartItem = await cartService.removeFromCart(req.user.id, null, productId);
+                cartItem = await cartService.removeFromCart(req.user.id, null, productId, isPointProduct);
+
             } else {
                 // Guest user
                 const guestSessionToken = sessionToken || req.headers['x-session-token'];
@@ -167,7 +174,8 @@ class CartController {
                     throw error;
                 }
 
-                cartItem = await cartService.removeFromCartBySession(guestSessionToken, productId);
+                cartItem = await cartService.removeFromCart(null, guestSessionToken, productId, isPointProduct);
+
                 returnedSessionToken = guestSessionToken;
                 isGuest = true;
             }

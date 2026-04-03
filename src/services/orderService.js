@@ -1,6 +1,8 @@
 const prisma = require('../lib/prisma');
 const cartService = require('./cartService');
 const productService = require('./productService');
+const pointProductService = require('./pointProductService');
+
 const addressService = require('./addressService');
 const otpService = require('./otpService');
 const smsService = require('./smsService');
@@ -141,9 +143,12 @@ class OrderService {
      * @param {Object|null} contact - Contact info { fullName, phoneNumber, email } from order create form
      * @param {string|null} ebarimtReceiverType - Ebarimt receiver type (CITIZEN or COMPANY)
      * @param {string|null} ebarimtReceiver - Ebarimt receiver register or phone
+     * @param {Array|null} pointProductIds - Array of product IDs to be paid with points
      * @returns {Object} - Created order with items
      */
     async createOrderFromCart(userId = null, sessionToken = null, addressId = null, address = null, deliveryTimeSlot = null, deliveryDate = null, contact = null, ebarimtReceiverType = null, ebarimtReceiver = null) {
+
+
         // Validate that either userId or sessionToken is provided
         if (!userId && !sessionToken) {
             const error = new Error('Either userId or sessionToken must be provided');
@@ -183,26 +188,78 @@ class OrderService {
         }
 
         // Validate stock availability for all items before creating order
-        // This prevents partial order creation
         for (const cartItem of cartItems) {
-            const stockCheck = await productService.checkStockAvailability(
-                cartItem.productId,
-                cartItem.quantity
-            );
+            let stockCheck;
+            if (cartItem.pointProductId) {
+                stockCheck = await pointProductService.checkPointStock(cartItem.pointProductId, cartItem.quantity);
+            } else {
+                stockCheck = await productService.checkStockAvailability(cartItem.productId, cartItem.quantity);
+            }
 
             if (!stockCheck.hasStock) {
+                const productName = cartItem.product ? cartItem.product.name : cartItem.pointProduct.name;
+                const available = cartItem.product ? stockCheck.product.stock : stockCheck.product.stock;
                 const error = new Error(
-                    `Барааны үлдэгдэл хүрэлцэхгүй байна. Барааны нэр: "${cartItem.product.name}". Байгаа: ${stockCheck.product.stock}, Авах гэсэн: ${cartItem.quantity}`
+                    `Барааны үлдэгдэл хүрэлцэхгүй байна. Барааны нэр: "${productName}". Байгаа: ${available}, Авах гэсэн: ${cartItem.quantity}`
                 );
                 error.statusCode = 400;
                 throw error;
             }
         }
 
-        // Calculate total amount: item total + delivery fee
-        const itemTotal = this.calculateOrderTotal(cartItems);
-        const deliveryFee = getDeliveryFee(itemTotal);
-        const totalAmount = itemTotal + deliveryFee;
+
+        // Calculate totals and handle point logic
+        let pointsRequired = 0;
+        let cashPaidItemTotal = 0;
+        let pointsEarningItemTotal = 0;
+
+        const processedCartItems = cartItems.map(item => {
+            const qty = parseInt(item.quantity);
+            
+            if (item.pointProductId) {
+                // Reward product - pay with points
+                const pointsPrice = item.pointProduct.pointsPrice;
+                const itemPointsUsed = pointsPrice * qty;
+                pointsRequired += itemPointsUsed;
+                return { ...item, isPayingWithPoints: true, itemPointsUsed };
+            } else {
+                // Standard product - pay with cash
+                const price = parseFloat(item.product.price);
+                const lineTotal = price * qty;
+                cashPaidItemTotal += lineTotal;
+                
+                // All standard products earn points (1 per 150 MNT)
+                pointsEarningItemTotal += lineTotal;
+                
+                return { ...item, isPayingWithPoints: false, itemPointsUsed: 0 };
+            }
+        });
+
+
+        // Validate point balance
+        if (pointsRequired > 0) {
+            if (!userId) {
+                const error = new Error('Guest users cannot pay with points');
+                error.statusCode = 400;
+                throw error;
+            }
+            const user = await prisma.user.findUnique({ where: { id: parseInt(userId) }, select: { points: true } });
+            if (!user || user.points < pointsRequired) {
+                const error = new Error(`Урамшууллын оноо хүрэлцэхгүй байна. Шаардлагатай: ${pointsRequired}, Танд байгаа: ${user?.points || 0}`);
+                error.statusCode = 400;
+                throw error;
+            }
+        }
+
+        const deliveryFee = getDeliveryFee(cashPaidItemTotal);
+
+        // Total amount reflects the cash portion (cash items + mandatory delivery fee)
+        const totalAmount = cashPaidItemTotal + deliveryFee;
+
+        // Calculate earned points (1 point per 150₮ spent on Products where canEarnPoints is true)
+        const earnedPoints = Math.floor(pointsEarningItemTotal / 150);
+
+
 
         // Handle address for guest orders
         let finalAddressId = addressId;
@@ -247,6 +304,8 @@ class OrderService {
                 deliveryTimeSlot: deliveryTimeSlot || null,
                 deliveryDate: calculatedDeliveryDate,
                 totalAmount: totalAmount,
+                earnedPoints: earnedPoints,
+                usedPoints: pointsRequired,
                 status: 'PENDING',
                 ...(contact ? {
                     contactFullName: contact.fullName,
@@ -254,14 +313,34 @@ class OrderService {
                     contactEmail: contact.email
                 } : {}),
                 ebarimtReceiverType: ebarimtReceiverType || null,
-                ebarimtReceiver: ebarimtReceiver || null,
-                ebarimtReceiverType: ebarimtReceiverType || null,
                 ebarimtReceiver: ebarimtReceiver || null
             };
+
+            // If cash total is 0 (all items paid with points + delivery fee is 0?), set to PAID
+            // Note: delivery fee is always cash, so totalAmount will be at least deliveryFee if deliveryFee > 0
+            if (totalAmount === 0) {
+                orderData.status = 'PAID';
+                orderData.paymentStatus = 'PAID';
+                orderData.paidAt = new Date();
+                orderData.paymentMethod = 'POINTS';
+            }
 
             let newOrder = await tx.order.create({
                 data: orderData
             });
+
+            // Deduct points from user if used
+            if (pointsRequired > 0) {
+                await tx.user.update({
+                    where: { id: parseInt(userId) },
+                    data: {
+                        points: {
+                            decrement: pointsRequired
+                        }
+                    }
+                });
+            }
+
 
             // Set sessionToken for guest orders (separate update in case create input omits it)
             if (sessionToken) {
@@ -273,14 +352,17 @@ class OrderService {
 
             // Create order items and reduce stock
             const orderItems = [];
-            for (const cartItem of cartItems) {
+            for (const item of processedCartItems) {
                 // Create order item
                 const orderItem = await tx.orderitem.create({
                     data: {
                         orderId: newOrder.id,
-                        productId: cartItem.productId,
-                        quantity: cartItem.quantity,
-                        price: cartItem.product.price
+                        productId: item.productId,
+                        pointProductId: item.pointProductId,
+                        quantity: item.quantity,
+                        price: item.pointProductId ? 0 : item.product.price,
+                        paidWithPoints: item.isPayingWithPoints,
+                        pointsUsed: item.itemPointsUsed
                     },
                     include: {
                         product: {
@@ -288,31 +370,32 @@ class OrderService {
                                 categories: {
                                     include: {
                                         category: {
-                                            select: {
-                                                id: true,
-                                                name: true,
-                                                description: true
-                                            }
+                                            select: { id: true, name: true, description: true }
                                         }
                                     }
                                 }
                             }
-                        }
+                        },
+                        pointProduct: true
                     }
                 });
 
                 // Reduce stock
-                await tx.product.update({
-                    where: { id: cartItem.productId },
-                    data: {
-                        stock: {
-                            decrement: cartItem.quantity
-                        }
-                    }
-                });
+                if (item.pointProductId) {
+                    await tx.pointproduct.update({
+                        where: { id: item.pointProductId },
+                        data: { stock: { decrement: item.quantity } }
+                    });
+                } else {
+                    await tx.product.update({
+                        where: { id: item.productId },
+                        data: { stock: { decrement: item.quantity } }
+                    });
+                }
 
                 orderItems.push(orderItem);
             }
+
 
             // Clear cart after successful order creation
             const cartWhereClause = userId
@@ -336,6 +419,10 @@ class OrderService {
                         ? formatted.product.categories[0] 
                         : null;
                 }
+                if (item.pointProduct) {
+                    formatted.pointProduct = { ...item.pointProduct };
+                }
+
                 return formatted;
             });
 
@@ -366,7 +453,8 @@ class OrderService {
                                     }
                                 }
                             }
-                        }
+                        },
+                        pointProduct: true
                     }
                 },
                 address: true,
@@ -394,6 +482,10 @@ class OrderService {
                         ? formatted.product.categories[0] 
                         : null;
                 }
+                if (item.pointProduct) {
+                    formatted.pointProduct = { ...item.pointProduct };
+                }
+
                 return formatted;
             });
         }
@@ -413,19 +505,25 @@ class OrderService {
      * @param {Object|null} contact - Contact info { fullName, phoneNumber, email } from order create form
      * @param {string|null} ebarimtReceiverType - Ebarimt receiver type (CITIZEN or COMPANY)
      * @param {string|null} ebarimtReceiver - Ebarimt receiver register or phone
+     * @param {boolean} usePoints - Whether to pay with points
      * @returns {Object} - Created order with items
      */
-    async buyNow(userId, productId, quantity, addressId, deliveryTimeSlot = null, deliveryDate = null, contact = null, ebarimtReceiverType = null, ebarimtReceiver = null) {
+    async buyNow(userId, id, quantity, addressId, deliveryTimeSlot = null, deliveryDate = null, contact = null, ebarimtReceiverType = null, ebarimtReceiver = null, isPointProduct = false) {
+
+
         const userIdInt = parseInt(userId);
-        const prodId = parseInt(productId);
+        const prodId = isPointProduct ? null : parseInt(id);
+        const pointProdId = isPointProduct ? parseInt(id) : null;
         const qty = parseInt(quantity);
 
+
         // Validate required fields
-        if (!productId) {
-            const error = new Error('Product ID is required');
+        if (!id) {
+            const error = new Error('ID is required');
             error.statusCode = 400;
             throw error;
         }
+
 
         if (!quantity || qty <= 0) {
             const error = new Error('Quantity must be a positive number');
@@ -454,21 +552,50 @@ class OrderService {
             throw error;
         }
 
-        // Validate stock availability (also validates product exists)
-        const stockCheck = await productService.checkStockAvailability(prodId, qty);
+        // Validate stock availability
+        let stockCheck;
+        if (isPointProduct) {
+            stockCheck = await pointProductService.checkPointStock(parseInt(id), qty);
+        } else {
+            stockCheck = await productService.checkStockAvailability(parseInt(id), qty);
+        }
+
         if (!stockCheck.hasStock) {
+            const productName = stockCheck.product.name;
+            const available = stockCheck.product.stock;
             const error = new Error(
-                `Барааны үлдэгдэл хүрэлцэхгүй байна. Барааны нэр: "${stockCheck.product.name}". Байгаа: ${stockCheck.product.stock}, Авах гэсэн: ${qty}`
+                `Барааны үлдэгдэл хүрэлцэхгүй байна. Барааны нэр: "${productName}". Байгаа: ${available}, Авах гэсэн: ${qty}`
             );
             error.statusCode = 400;
             throw error;
         }
 
-        // Calculate total amount: item total + delivery fee
-        const price = parseFloat(stockCheck.product.price);
-        const itemTotal = price * qty;
-        const deliveryFee = getDeliveryFee(itemTotal);
-        const totalAmount = itemTotal + deliveryFee;
+
+        let pointsRequired = 0;
+        let cashPaidItemTotal = 0;
+        let pointsUsed = 0;
+
+        if (isPointProduct) {
+            pointsUsed = stockCheck.product.pointsPrice * qty;
+            pointsRequired = pointsUsed;
+
+            // Validate points
+            const user = await prisma.user.findUnique({ where: { id: userIdInt }, select: { points: true } });
+            if (!user || user.points < pointsRequired) {
+                const error = new Error(`Урамшууллын оноо хүрэлцэхгүй байна. Шаардлагатай: ${pointsRequired}, Танд байгаа: ${user?.points || 0}`);
+                error.statusCode = 400;
+                throw error;
+            }
+        } else {
+            cashPaidItemTotal = parseFloat(stockCheck.product.price) * qty;
+        }
+
+        const deliveryFee = getDeliveryFee(isPointProduct ? 0 : cashPaidItemTotal);
+        const totalAmount = cashPaidItemTotal + deliveryFee;
+        const earnedPoints = !isPointProduct ? Math.floor(cashPaidItemTotal / 150) : 0;
+
+
+
 
         // Generate custom order ID before transaction
         const orderId = await this.generateOrderId();
@@ -488,7 +615,14 @@ class OrderService {
                     deliveryTimeSlot: deliveryTimeSlot || null,
                     deliveryDate: calculatedDeliveryDate,
                     totalAmount: totalAmount,
-                    status: 'PENDING',
+                    earnedPoints: earnedPoints,
+                    usedPoints: pointsRequired,
+                    status: (totalAmount === 0 ? 'PAID' : 'PENDING'),
+                    ...(totalAmount === 0 ? {
+                        paymentStatus: 'PAID',
+                        paidAt: new Date(),
+                        paymentMethod: 'POINTS'
+                    } : {}),
                     ...(contact ? {
                         contactFullName: contact.fullName,
                         contactPhoneNumber: contact.phoneNumber,
@@ -499,13 +633,30 @@ class OrderService {
                 }
             });
 
+
+            // Deduct points from user if used
+            if (pointsRequired > 0) {
+                await tx.user.update({
+                    where: { id: userIdInt },
+                    data: {
+                        points: {
+                            decrement: pointsRequired
+                        }
+                    }
+                });
+            }
+
+
             // Create order item
             const orderItem = await tx.orderitem.create({
                 data: {
                     orderId: newOrder.id,
-                    productId: prodId,
+                    productId: isPointProduct ? null : parseInt(id),
+                    pointProductId: isPointProduct ? parseInt(id) : null,
                     quantity: qty,
-                    price: price
+                    price: isPointProduct ? 0 : parseFloat(stockCheck.product.price),
+                    paidWithPoints: isPointProduct,
+                    pointsUsed: pointsRequired
                 },
                 include: {
                     product: {
@@ -513,28 +664,30 @@ class OrderService {
                             categories: {
                                 include: {
                                     category: {
-                                        select: {
-                                            id: true,
-                                            name: true,
-                                            description: true
-                                        }
+                                        select: { id: true, name: true, description: true }
                                     }
                                 }
                             }
                         }
-                    }
+                    },
+                    pointProduct: true
                 }
             });
 
+
             // Reduce stock
-            await tx.product.update({
-                where: { id: prodId },
-                data: {
-                    stock: {
-                        decrement: qty
-                    }
-                }
-            });
+            if (isPointProduct) {
+                await tx.pointproduct.update({
+                    where: { id: parseInt(id) },
+                    data: { stock: { decrement: qty } }
+                });
+            } else {
+                await tx.product.update({
+                    where: { id: parseInt(id) },
+                    data: { stock: { decrement: qty } }
+                });
+            }
+
 
             // Format order item to extract categories
             const formattedItem = { ...orderItem };
@@ -548,6 +701,10 @@ class OrderService {
                     ? formattedItem.product.categories[0] 
                     : null;
             }
+            if (orderItem.pointProduct) {
+                formattedItem.pointProduct = { ...orderItem.pointProduct };
+            }
+
 
             // Return order with items
             return {
@@ -567,16 +724,14 @@ class OrderService {
                                 categories: {
                                     include: {
                                         category: {
-                                            select: {
-                                                id: true,
-                                                name: true,
-                                                description: true
-                                            }
+                                            select: { id: true, name: true, description: true }
                                         }
                                     }
                                 }
                             }
-                        }
+                        },
+                        pointProduct: true
+
                     }
                 },
                 address: true,
@@ -623,15 +778,19 @@ class OrderService {
      * @param {Object|null} contact - Contact info { fullName, phoneNumber, email } from order create form
      * @param {string|null} ebarimtReceiverType - Ebarimt receiver type (CITIZEN or COMPANY)
      * @param {string|null} ebarimtReceiver - Ebarimt receiver register or phone
+     * @param {boolean} usePoints - Whether to pay with points
      * @returns {Object} - Created order with items
      */
     async finalizeOrderFromDraft(userId, draftOrder, addressId = null, address = null, deliveryTimeSlot = null, deliveryDate = null, contact = null, ebarimtReceiverType = null, ebarimtReceiver = null) {
+
         const userIdInt = parseInt(userId);
         const prodId = draftOrder.productId;
+        const pointProdId = draftOrder.pointProductId;
         const qty = draftOrder.quantity;
 
         // Validate that either addressId or address object is provided
         if (!addressId && !address) {
+
             const error = new Error('Either addressId or address object is required');
             error.statusCode = 400;
             throw error;
@@ -668,15 +827,46 @@ class OrderService {
             throw error;
         }
 
-        // Re-validate stock availability (stock may have changed since draft was created)
-        const stockCheck = await productService.checkStockAvailability(prodId, qty);
+        // Re-validate stock availability
+        let stockCheck;
+        if (pointProdId) {
+            stockCheck = await pointProductService.checkPointStock(pointProdId, qty);
+        } else {
+            stockCheck = await productService.checkStockAvailability(prodId, qty);
+        }
+
         if (!stockCheck.hasStock) {
+            const productName = stockCheck.product.name;
+            const available = stockCheck.product.stock;
             const error = new Error(
-                `Барааны үлдэгдэл хүрэлцэхгүй байна. Барааны нэр: "${stockCheck.product.name}". Байгаа: ${stockCheck.product.stock}, Авах гэсэн: ${qty}`
+                `Барааны үлдэгдэл хүрэлцэхгүй байна. Барааны нэр: "${productName}". Байгаа: ${available}, Авах гэсэн: ${qty}`
             );
             error.statusCode = 400;
             throw error;
         }
+
+        let pointsRequired = 0;
+        let cashPaidItemTotal = 0;
+        
+        if (pointProdId) {
+            pointsRequired = stockCheck.product.pointsPrice * qty;
+            
+            // Validate points
+            const user = await prisma.user.findUnique({ where: { id: userIdInt }, select: { points: true } });
+            if (!user || user.points < pointsRequired) {
+                const error = new Error(`Урамшууллын оноо хүрэлцэхгүй байна. Шаардлагатай: ${pointsRequired}, Танд байгаа: ${user?.points || 0}`);
+                error.statusCode = 400;
+                throw error;
+            }
+        } else {
+            cashPaidItemTotal = parseFloat(stockCheck.product.price) * qty;
+        }
+
+        const deliveryFee = getDeliveryFee(pointProdId ? 0 : cashPaidItemTotal);
+        const totalAmount = cashPaidItemTotal + deliveryFee;
+        const earnedPoints = !pointProdId ? Math.floor(cashPaidItemTotal / 150) : 0;
+
+
 
         // Generate custom order ID before transaction
         const orderId = await this.generateOrderId();
@@ -694,8 +884,15 @@ class OrderService {
                     ...(finalAddressId ? { address: { connect: { id: parseInt(finalAddressId) } } } : {}),
                     deliveryTimeSlot: deliveryTimeSlot || null,
                     deliveryDate: calculatedDeliveryDate,
-                    totalAmount: draftOrder.totalAmount,
-                    status: 'PENDING',
+                    totalAmount: totalAmount,
+                    earnedPoints: earnedPoints,
+                    usedPoints: pointsRequired,
+                    status: (totalAmount === 0 ? 'PAID' : 'PENDING'),
+                    ...(totalAmount === 0 ? {
+                        paymentStatus: 'PAID',
+                        paidAt: new Date(),
+                        paymentMethod: 'POINTS'
+                    } : {}),
                     ...(contact ? {
                         contactFullName: contact.fullName,
                         contactPhoneNumber: contact.phoneNumber,
@@ -706,13 +903,29 @@ class OrderService {
                 }
             });
 
+            // Deduct points from user if used
+            if (pointsRequired > 0) {
+                await tx.user.update({
+                    where: { id: userIdInt },
+                    data: {
+                        points: {
+                            decrement: pointsRequired
+                        }
+                    }
+                });
+            }
+
+
             // Create order item
             const orderItem = await tx.orderitem.create({
                 data: {
                     orderId: newOrder.id,
                     productId: prodId,
+                    pointProductId: pointProdId,
                     quantity: qty,
-                    price: parseFloat(draftOrder.product.price)
+                    price: pointProdId ? 0 : parseFloat(stockCheck.product.price),
+                    paidWithPoints: !!pointProdId,
+                    pointsUsed: pointsRequired
                 },
                 include: {
                     product: {
@@ -720,28 +933,30 @@ class OrderService {
                             categories: {
                                 include: {
                                     category: {
-                                        select: {
-                                            id: true,
-                                            name: true,
-                                            description: true
-                                        }
+                                        select: { id: true, name: true, description: true }
                                     }
                                 }
                             }
                         }
-                    }
+                    },
+                    pointProduct: true
                 }
             });
 
+
             // Reduce stock
-            await tx.product.update({
-                where: { id: prodId },
-                data: {
-                    stock: {
-                        decrement: qty
-                    }
-                }
-            });
+            if (pointProdId) {
+                await tx.pointproduct.update({
+                    where: { id: pointProdId },
+                    data: { stock: { decrement: qty } }
+                });
+            } else {
+                await tx.product.update({
+                    where: { id: prodId },
+                    data: { stock: { decrement: qty } }
+                });
+            }
+
 
             // Format order item to extract categories
             const formattedItem = { ...orderItem };
@@ -755,6 +970,10 @@ class OrderService {
                     ? formattedItem.product.categories[0] 
                     : null;
             }
+            if (orderItem.pointProduct) {
+                formattedItem.pointProduct = { ...orderItem.pointProduct };
+            }
+
 
             // Return order with items
             return {
@@ -783,7 +1002,8 @@ class OrderService {
                                     }
                                 }
                             }
-                        }
+                        },
+                        pointProduct: true
                     }
                 },
                 address: true,
@@ -838,18 +1058,16 @@ class OrderService {
                                 categories: {
                                     include: {
                                         category: {
-                                            select: {
-                                                id: true,
-                                                name: true,
-                                                description: true
-                                            }
+                                            select: { id: true, name: true, description: true }
                                         }
                                     }
                                 }
                             }
-                        }
+                        },
+                        pointProduct: true
                     }
                 },
+
                 address: true,
                 user: {
                     select: {
@@ -906,9 +1124,13 @@ class OrderService {
                         ? formatted.product.categories[0] 
                         : null;
                 }
+                if (item.pointProduct) {
+                    formatted.pointProduct = { ...item.pointProduct };
+                }
                 return formatted;
             });
         }
+
 
         return order;
     }
@@ -929,18 +1151,16 @@ class OrderService {
                                 categories: {
                                     include: {
                                         category: {
-                                            select: {
-                                                id: true,
-                                                name: true,
-                                                description: true
-                                            }
+                                            select: { id: true, name: true, description: true }
                                         }
                                     }
                                 }
                             }
-                        }
+                        },
+                        pointProduct: true
                     }
                 },
+
                 address: true
             },
             orderBy: {
@@ -992,12 +1212,16 @@ class OrderService {
                             ? formattedItem.product.categories[0] 
                             : null;
                     }
+                    if (item.pointProduct) {
+                        formattedItem.pointProduct = { ...item.pointProduct };
+                    }
                     return formattedItem;
                 });
             }
             return formatted;
         });
     }
+
 
     /**
      * Get all orders (admin only)
@@ -1013,18 +1237,16 @@ class OrderService {
                                 categories: {
                                     include: {
                                         category: {
-                                            select: {
-                                                id: true,
-                                                name: true,
-                                                description: true
-                                            }
+                                            select: { id: true, name: true, description: true }
                                         }
                                     }
                                 }
                             }
-                        }
+                        },
+                        pointProduct: true
                     }
                 },
+
                 address: true,
                 user: {
                     select: {
@@ -1158,18 +1380,16 @@ class OrderService {
                                     categories: {
                                         include: {
                                             category: {
-                                                select: {
-                                                    id: true,
-                                                    name: true,
-                                                    description: true
-                                                }
+                                                select: { id: true, name: true, description: true }
                                             }
                                         }
                                     }
                                 }
-                            }
-                        }
-                    },
+                            },
+                        pointProduct: true
+                    }
+                },
+
                 address: true,
                 user: {
                     select: {
@@ -1240,9 +1460,11 @@ class OrderService {
             include: {
                 items: {
                     include: {
-                        product: true
+                        product: true,
+                        pointProduct: true
                     }
                 },
+
                 address: true,
                 user: {
                     select: {
@@ -1278,9 +1500,11 @@ class OrderService {
             include: {
                 items: {
                     include: {
-                        product: true
+                        product: true,
+                        pointProduct: true
                     }
                 }
+
             }
         });
 
@@ -1313,24 +1537,41 @@ class OrderService {
 
                     // Restore stock for all items in the order
                     for (const item of order.items) {
-                        await tx.product.update({
-                            where: { id: item.productId },
-                            data: {
-                                stock: {
-                                    increment: item.quantity
-                                }
-                            }
-                        });
+                        if (item.pointProductId) {
+                            await tx.pointproduct.update({
+                                where: { id: item.pointProductId },
+                                data: { stock: { increment: item.quantity } }
+                            });
+                        } else {
+                            await tx.product.update({
+                                where: { id: item.productId },
+                                data: { stock: { increment: item.quantity } }
+                            });
+                        }
                     }
 
+
                     // Update order status to CANCELLED
-                    await tx.order.update({
+                    const updated = await tx.order.update({
                         where: { id: order.id },
                         data: {
                             status: 'CANCELLED',
                             paymentStatus: 'CANCELLED'
                         }
                     });
+
+                    // Refund points if any were used
+                    if (updated.usedPoints > 0 && updated.userId) {
+                        await tx.user.update({
+                            where: { id: updated.userId },
+                            data: {
+                                points: {
+                                    increment: updated.usedPoints
+                                }
+                            }
+                        });
+                    }
+
                 });
 
                 cancelledOrders.push({
@@ -1478,14 +1719,11 @@ class OrderService {
                 },
                 items: {
                     include: {
-                        product: {
-                            select: {
-                                id: true,
-                                stock: true
-                            }
-                        }
+                        product: { select: { id: true, stock: true } },
+                        pointproduct: { select: { id: true, stock: true } }
                     }
                 }
+
             }
         });
 
@@ -1538,15 +1776,19 @@ class OrderService {
 
             // Restore stock for all items in the order
             for (const item of order.items) {
-                await tx.product.update({
-                    where: { id: item.productId },
-                    data: {
-                        stock: {
-                            increment: item.quantity
-                        }
-                    }
-                });
+                if (item.pointProductId) {
+                    await tx.pointproduct.update({
+                        where: { id: item.pointProductId },
+                        data: { stock: { increment: item.quantity } }
+                    });
+                } else {
+                    await tx.product.update({
+                        where: { id: item.productId },
+                        data: { stock: { increment: item.quantity } }
+                    });
+                }
             }
+
 
             // Update order status to CANCELLED_BY_ADMIN (user confirmed via admin SMS code)
             const updatedOrder = await tx.order.update({
@@ -1569,16 +1811,47 @@ class OrderService {
                                 select: {
                                     id: true,
                                     name: true,
+                                    images: true,
                                     price: true
                                 }
-                            }
+                            },
+                            pointProduct: true
                         }
                     }
+
                 }
             });
 
+            // Point reversal logic
+            if (updatedOrder.userId) {
+                // Revoke points earned from this order
+                if (updatedOrder.earnedPoints > 0) {
+                    await tx.user.update({
+                        where: { id: updatedOrder.userId },
+                        data: {
+                            points: {
+                                decrement: updatedOrder.earnedPoints
+                            }
+                        }
+                    });
+                }
+
+                // Refund points used in this order
+                if (updatedOrder.usedPoints > 0) {
+                    await tx.user.update({
+                        where: { id: updatedOrder.userId },
+                        data: {
+                            points: {
+                                increment: updatedOrder.usedPoints
+                            }
+                        }
+                    });
+                }
+            }
+
             return updatedOrder;
         });
+
 
         await this.recordOrderActivity(order.id, {
             type: 'STATUS_CHANGED',
@@ -1623,7 +1896,8 @@ class OrderService {
                                     }
                                 }
                             }
-                        }
+                        },
+                        pointProduct: true
                     }
                 },
                 address: true,
@@ -1684,7 +1958,8 @@ class OrderService {
                                     }
                                 }
                             }
-                        }
+                        },
+                        pointProduct: true
                     }
                 },
                 address: true,

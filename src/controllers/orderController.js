@@ -13,6 +13,8 @@ class OrderController {
         try {
             const { addressId, address, deliveryTimeSlot, deliveryDate, sessionToken, fullName, phoneNumber, email, ebarimtReceiverType, ebarimtReceiver } = req.body;
 
+
+
             const contactValidation = validateOrderContact(req.body);
             if (!contactValidation.isValid) {
                 const error = new Error(contactValidation.errors.join('; '));
@@ -42,6 +44,8 @@ class OrderController {
                     throw error;
                 }
                 order = await orderService.createOrderFromCart(req.user.id, null, addressId, null, deliveryTimeSlot, deliveryDate, contact, ebarimtReceiverType, ebarimtReceiver);
+
+
             } else {
                 // Guest user - use address object and sessionToken
                 guestSessionToken = sessionToken || req.headers['x-session-token'];
@@ -59,6 +63,8 @@ class OrderController {
                 }
 
                 order = await orderService.createOrderFromCart(null, guestSessionToken, null, address, deliveryTimeSlot, deliveryDate, contact, ebarimtReceiverType, ebarimtReceiver);
+
+
                 isGuest = true;
             }
 
@@ -86,7 +92,9 @@ class OrderController {
      */
     async buyNow(req, res, next) {
         try {
-            const { productId, quantity, sessionToken, addressId, deliveryTimeSlot, deliveryDate, fullName, phoneNumber, email, ebarimtReceiverType, ebarimtReceiver } = req.body;
+            const { productId, quantity, sessionToken, addressId, deliveryTimeSlot, deliveryDate, fullName, phoneNumber, email, ebarimtReceiverType, ebarimtReceiver, isPointProduct } = req.body;
+
+
 
             // Validate required fields
             if (!productId || !quantity) {
@@ -116,11 +124,15 @@ class OrderController {
                     productId,
                     quantity,
                     addressId,
+                    deliveryTimeSlot,
                     deliveryDate,
                     contactValidation.contact,
                     ebarimtReceiverType,
-                    ebarimtReceiver
+                    ebarimtReceiver,
+                    isPointProduct
                 );
+
+
                 
                 return res.status(201).json({
                     success: true,
@@ -159,6 +171,8 @@ class OrderController {
             const userId = req.user.id;
             const { sessionToken, addressId, deliveryTimeSlot, deliveryDate, address, ebarimtReceiverType, ebarimtReceiver } = req.body;
 
+
+
             if (!sessionToken) {
                 const error = new Error('Session token is required');
                 error.statusCode = 400;
@@ -195,6 +209,8 @@ class OrderController {
                 ebarimtReceiverType,
                 ebarimtReceiver
             );
+
+
 
             // Delete draft order after successful conversion
             await draftOrderService.deleteDraftOrder(sessionToken);

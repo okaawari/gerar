@@ -127,6 +127,12 @@ class ProductService {
             }
         }
 
+        
+
+
+
+
+
         // Validate categoryIds (array) - at least one category is required
         if (data.categoryIds !== undefined && data.categoryIds !== null) {
             if (!Array.isArray(data.categoryIds)) {
@@ -219,6 +225,11 @@ class ProductService {
         // Ensure price is a string for consistency
         formatted.price = price.toString();
 
+        
+
+
+
+
         return formatted;
     }
 
@@ -253,6 +264,10 @@ class ProductService {
         if (filters.onSale === true || filters.onSale === 'true') {
             where.originalPrice = { not: null };
         }
+
+        
+
+
 
         // Filter by single category or multiple categories
         if (filters.categoryIds && Array.isArray(filters.categoryIds)) {
@@ -877,6 +892,9 @@ class ProductService {
             stock: parseInt(data.stock)
         };
 
+
+
+
         // Add originalPrice if provided
         if (data.originalPrice !== undefined && data.originalPrice !== null) {
             productData.originalPrice = parseFloat(data.originalPrice);
@@ -1144,6 +1162,11 @@ class ProductService {
             // Allow boolean or string 'true'/'false'
             updateData.isHidden = data.isHidden === true || data.isHidden === 'true';
         }
+
+        
+
+
+
 
         // Add admin tracking if provided
         if (data.adminId !== undefined && data.adminId !== null) {

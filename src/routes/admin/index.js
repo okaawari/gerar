@@ -9,6 +9,8 @@ const analyticsRoutes = require('./analyticsRoutes');
 const bannerRoutes = require('./bannerRoutes');
 const featureRoutes = require('./featureRoutes');
 const profileRoutes = require('./profileRoutes');
+const pointProductRoutes = require('./pointProductRoutes');
+
 
 const router = express.Router();
 
@@ -23,5 +25,7 @@ router.use('/constants', constantsRoutes);
 router.use('/analytics', analyticsRoutes);
 router.use('/banners', bannerRoutes);
 router.use('/features', featureRoutes);
+router.use('/point-products', pointProductRoutes);
+
 
 module.exports = router;

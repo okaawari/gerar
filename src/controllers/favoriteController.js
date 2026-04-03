@@ -31,7 +31,7 @@ class FavoriteController {
     async addFavorite(req, res, next) {
         try {
             const userId = req.user.id;
-            const { productId } = req.body;
+            const { productId, isPointProduct } = req.body;
 
             if (!productId) {
                 const error = new Error('Product ID is required');
@@ -39,13 +39,14 @@ class FavoriteController {
                 throw error;
             }
 
-            const product = await favoriteService.addFavorite(userId, productId);
+            const item = await favoriteService.addFavorite(userId, productId, isPointProduct);
 
             res.status(200).json({
                 success: true,
-                message: 'Product added to favorites successfully',
-                data: product,
+                message: 'Item added to favorites successfully',
+                data: item,
             });
+
         } catch (error) {
             next(error);
         }
@@ -59,14 +60,16 @@ class FavoriteController {
         try {
             const userId = req.user.id;
             const { productId } = req.params;
+            const { isPointProduct } = req.body;
 
-            const product = await favoriteService.removeFavorite(userId, productId);
+            const item = await favoriteService.removeFavorite(userId, productId, isPointProduct);
 
             res.status(200).json({
                 success: true,
-                message: 'Product removed from favorites successfully',
-                data: product,
+                message: 'Item removed from favorites successfully',
+                data: item,
             });
+
         } catch (error) {
             next(error);
         }
@@ -80,17 +83,24 @@ class FavoriteController {
         try {
             const userId = req.user.id;
             const { productId } = req.params;
+            const { isPointProduct } = req.query;
 
-            const isFavorited = await favoriteService.isFavorited(userId, productId);
+            const isFavorited = await favoriteService.isFavorited(
+                userId, 
+                productId, 
+                isPointProduct === 'true' || isPointProduct === true
+            );
 
             res.status(200).json({
                 success: true,
                 message: 'Favorite status retrieved successfully',
                 data: {
                     productId: parseInt(productId),
+                    isPointProduct: isPointProduct === 'true' || isPointProduct === true,
                     isFavorited
                 },
             });
+
         } catch (error) {
             next(error);
         }

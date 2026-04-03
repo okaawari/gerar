@@ -25,6 +25,7 @@ model user {
   pin         String // Hashed 4-digit PIN
   name        String
   role        Role     @default(USER)
+  points      Int      @default(0)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -102,6 +103,25 @@ model product {
   @@map("product")
 }
 
+model pointproduct {
+  id          Int      @id @default(autoincrement())
+  name        String
+  description String   @db.Text
+  pointsPrice Int
+  images      Json? // JSON array of image URLs
+  stock       Int      @default(0)
+  isHidden    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  cartItems   cartitem[]
+  orderItems  orderitem[]
+  favorites   favorite[]
+  draftOrders draftorder[]
+
+  @@map("pointproduct")
+}
+
 model feature {
   id          Int      @id @default(autoincrement())
   name        String
@@ -124,19 +144,23 @@ model feature {
 }
 
 model cartitem {
-  id           Int      @id @default(autoincrement())
-  userId       Int? // Nullable for guest carts
-  sessionToken String? // Session token for guest carts (multiple items per session via @@unique([sessionToken, productId]))
-  productId    Int
-  quantity     Int
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id             Int      @id @default(autoincrement())
+  userId         Int? // Nullable for guest carts
+  sessionToken   String? // Session token for guest carts
+  productId      Int?
+  pointProductId Int?
+  quantity       Int
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
-  user    user?   @relation(fields: [userId], references: [id])
-  product product @relation(fields: [productId], references: [id])
+  user         user?         @relation(fields: [userId], references: [id])
+  product      product?      @relation(fields: [productId], references: [id])
+  pointProduct pointproduct? @relation(fields: [pointProductId], references: [id])
 
   @@unique([userId, productId])
+  @@unique([userId, pointProductId])
   @@unique([sessionToken, productId])
+  @@unique([sessionToken, pointProductId])
   @@index([sessionToken])
   @@index([userId])
   @@map("cartitem")
@@ -154,6 +178,8 @@ model order {
   contactFullName    String?  @db.VarChar(255)
   contactPhoneNumber String?  @db.VarChar(8)
   contactEmail       String?  @db.VarChar(255)
+  earnedPoints       Int      @default(0)
+  usedPoints         Int      @default(0)
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
@@ -250,32 +276,40 @@ model address {
 }
 
 model orderitem {
-  id        Int      @id @default(autoincrement())
-  orderId   String   @db.VarChar(9) // References order.id (custom format: YYMMDDNNN)
-  productId Int
-  quantity  Int
-  price     Decimal  @db.Decimal(10, 2)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id             Int      @id @default(autoincrement())
+  orderId        String   @db.VarChar(9) // References order.id (custom format: YYMMDDNNN)
+  productId      Int?
+  pointProductId Int?
+  quantity       Int
+  price          Decimal  @db.Decimal(10, 2)
+  paidWithPoints Boolean  @default(false)
+  pointsUsed     Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
-  order   order   @relation(fields: [orderId], references: [id])
-  product product @relation(fields: [productId], references: [id])
+  order        order         @relation(fields: [orderId], references: [id])
+  product      product?      @relation(fields: [productId], references: [id])
+  pointProduct pointproduct? @relation(fields: [pointProductId], references: [id])
 
   @@map("orderitem")
 }
 
 model favorite {
-  id        Int      @id @default(autoincrement())
-  userId    Int
-  productId Int
-  createdAt DateTime @default(now())
+  id             Int      @id @default(autoincrement())
+  userId         Int
+  productId      Int?
+  pointProductId Int?
+  createdAt      DateTime @default(now())
 
-  user    user    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  product product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  user         user          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product      product?      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  pointProduct pointproduct? @relation(fields: [pointProductId], references: [id], onDelete: Cascade)
 
   @@unique([userId, productId])
+  @@unique([userId, pointProductId])
   @@index([userId])
   @@index([productId])
+  @@index([pointProductId])
   @@map("favorite")
 }
 
@@ -339,16 +373,18 @@ model banner {
 }
 
 model draftorder {
-  id           Int      @id @default(autoincrement())
-  sessionToken String   @unique // Unique token to identify guest session
-  productId    Int
-  quantity     Int
-  totalAmount  Decimal  @db.Decimal(10, 2)
-  expiresAt    DateTime // Auto-expire draft orders after 24 hours
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id             Int      @id @default(autoincrement())
+  sessionToken   String   @unique // Unique token to identify guest session
+  productId      Int?
+  pointProductId Int?
+  quantity       Int
+  totalAmount    Decimal  @db.Decimal(10, 2)
+  expiresAt      DateTime // Auto-expire draft orders after 24 hours
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
-  product product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  product      product?      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  pointProduct pointproduct? @relation(fields: [pointProductId], references: [id], onDelete: Cascade)
 
   @@index([sessionToken])
   @@index([expiresAt]) // For cleanup of expired drafts

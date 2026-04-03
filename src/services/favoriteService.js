@@ -30,17 +30,15 @@ class FavoriteService {
                         categories: {
                             include: {
                                 category: {
-                                    select: {
-                                        id: true,
-                                        name: true,
-                                        description: true
-                                    }
+                                    select: { id: true, name: true, description: true }
                                 }
                             }
                         }
                     }
-                }
+                },
+                pointProduct: true
             },
+
             orderBy: {
                 createdAt: 'desc'
             },
@@ -48,22 +46,30 @@ class FavoriteService {
             take: validLimit
         });
 
-        // Format products with discount information and categories
+        // Format items
         const products = favorites.map(favorite => {
-            const formatted = productService.formatProductWithDiscount(favorite.product);
-            formatted.favoritedAt = favorite.createdAt;
-            // Extract categories from ProductCategory junction table
-            if (favorite.product.categories && favorite.product.categories.length > 0) {
-                formatted.categories = favorite.product.categories.map(pc => pc.category);
-                formatted.categoryId = formatted.categories.length > 0 ? formatted.categories[0].id : null;
-                formatted.category = formatted.categories.length > 0 ? formatted.categories[0] : null;
+            let formatted;
+            if (favorite.pointProductId) {
+                formatted = { ...favorite.pointProduct };
+                formatted.isPointProduct = true;
             } else {
-                formatted.categories = [];
-                formatted.categoryId = null;
-                formatted.category = null;
+                formatted = productService.formatProductWithDiscount(favorite.product);
+                formatted.isPointProduct = false;
+                // Extract categories from ProductCategory junction table
+                if (favorite.product && favorite.product.categories && favorite.product.categories.length > 0) {
+                    formatted.categories = favorite.product.categories.map(pc => pc.category);
+                    formatted.categoryId = formatted.categories.length > 0 ? formatted.categories[0].id : null;
+                    formatted.category = formatted.categories.length > 0 ? formatted.categories[0] : null;
+                } else {
+                    formatted.categories = [];
+                    formatted.categoryId = null;
+                    formatted.category = null;
+                }
             }
+            formatted.favoritedAt = favorite.createdAt;
             return formatted;
         });
+
 
         const totalPages = Math.ceil(total / validLimit);
 
@@ -84,55 +90,77 @@ class FavoriteService {
      * @param {number} productId - Product ID
      * @returns {Object} - Favorite with product information
      */
-    async addFavorite(userId, productId) {
+    async addFavorite(userId, productId, isPointProduct = false) {
         const prodId = parseInt(productId);
         const uid = parseInt(userId);
 
-        // Verify product exists
-        await productService.getProductById(prodId);
+        if (isPointProduct) {
+            const pointProductService = require('./pointProductService');
+            await pointProductService.getPointProductById(prodId);
+        } else {
+            await productService.getProductById(prodId);
+        }
 
         // Check if already favorited
+        const where = isPointProduct 
+            ? { userId_pointProductId: { userId: uid, pointProductId: prodId } }
+            : { userId_productId: { userId: uid, productId: prodId } };
+
         const existingFavorite = await prisma.favorite.findUnique({
-            where: {
-                userId_productId: {
-                    userId: uid,
-                    productId: prodId
-                }
-            }
+            where: where
         });
 
         if (existingFavorite) {
-            // Already favorited, return existing favorite
-            const favorite = await prisma.favorite.findUnique({
-                where: {
-                    userId_productId: {
-                        userId: uid,
-                        productId: prodId
-                    }
-                },
-                include: {
-                    product: {
-                        include: {
-                            categories: {
-                                include: {
-                                    category: {
-                                        select: {
-                                            id: true,
-                                            name: true,
-                                            description: true
-                                        }
-                                    }
+            return this._getFormattedFavorite(uid, prodId, isPointProduct);
+        }
+
+        // Create new favorite
+        await prisma.favorite.create({
+            data: {
+                userId: uid,
+                [isPointProduct ? 'pointProductId' : 'productId']: prodId
+            }
+        });
+
+        return this._getFormattedFavorite(uid, prodId, isPointProduct);
+    }
+
+    /**
+     * Internal helper to fetch and format a single favorite
+     */
+    async _getFormattedFavorite(userId, productId, isPointProduct) {
+        const where = isPointProduct 
+            ? { userId_pointProductId: { userId, pointProductId: productId } }
+            : { userId_productId: { userId, productId } };
+
+        const favorite = await prisma.favorite.findUnique({
+            where: where,
+            include: {
+                product: {
+                    include: {
+                        categories: {
+                            include: {
+                                category: {
+                                    select: { id: true, name: true, description: true }
                                 }
                             }
                         }
                     }
-                }
-            });
+                },
+                pointProduct: true
+            }
+        });
 
-            const formatted = productService.formatProductWithDiscount(favorite.product);
-            formatted.favoritedAt = favorite.createdAt;
-            // Extract categories from ProductCategory junction table
-            if (favorite.product.categories && favorite.product.categories.length > 0) {
+        if (!favorite) return null;
+
+        let formatted;
+        if (isPointProduct) {
+            formatted = { ...favorite.pointProduct };
+            formatted.isPointProduct = true;
+        } else {
+            formatted = productService.formatProductWithDiscount(favorite.product);
+            formatted.isPointProduct = false;
+            if (favorite.product && favorite.product.categories && favorite.product.categories.length > 0) {
                 formatted.categories = favorite.product.categories.map(pc => pc.category);
                 formatted.categoryId = formatted.categories.length > 0 ? formatted.categories[0].id : null;
                 formatted.category = formatted.categories.length > 0 ? formatted.categories[0] : null;
@@ -141,48 +169,11 @@ class FavoriteService {
                 formatted.categoryId = null;
                 formatted.category = null;
             }
-            return formatted;
         }
-
-        // Create new favorite
-        const favorite = await prisma.favorite.create({
-            data: {
-                userId: uid,
-                productId: prodId
-            },
-            include: {
-                product: {
-                    include: {
-                        categories: {
-                            include: {
-                                category: {
-                                    select: {
-                                        id: true,
-                                        name: true,
-                                        description: true
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        });
-
-        const formatted = productService.formatProductWithDiscount(favorite.product);
         formatted.favoritedAt = favorite.createdAt;
-        // Extract categories from ProductCategory junction table
-        if (favorite.product.categories && favorite.product.categories.length > 0) {
-            formatted.categories = favorite.product.categories.map(pc => pc.category);
-            formatted.categoryId = formatted.categories.length > 0 ? formatted.categories[0].id : null;
-            formatted.category = formatted.categories.length > 0 ? formatted.categories[0] : null;
-        } else {
-            formatted.categories = [];
-            formatted.categoryId = null;
-            formatted.category = null;
-        }
         return formatted;
     }
+
 
     /**
      * Remove product from favorites
@@ -190,67 +181,30 @@ class FavoriteService {
      * @param {number} productId - Product ID
      * @returns {Object} - Removed favorite with product information
      */
-    async removeFavorite(userId, productId) {
+    async removeFavorite(userId, productId, isPointProduct = false) {
         const prodId = parseInt(productId);
         const uid = parseInt(userId);
 
-        // Check if favorite exists
-        const existingFavorite = await prisma.favorite.findUnique({
-            where: {
-                userId_productId: {
-                    userId: uid,
-                    productId: prodId
-                }
-            },
-            include: {
-                product: {
-                    include: {
-                        categories: {
-                            include: {
-                                category: {
-                                    select: {
-                                        id: true,
-                                        name: true,
-                                        description: true
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        });
+        const where = isPointProduct 
+            ? { userId_pointProductId: { userId: uid, pointProductId: prodId } }
+            : { userId_productId: { userId: uid, productId: prodId } };
 
-        if (!existingFavorite) {
-            const error = new Error('Product is not in favorites');
+        const formatted = await this._getFormattedFavorite(uid, prodId, isPointProduct);
+
+        if (!formatted) {
+            const error = new Error('Item is not in favorites');
             error.statusCode = 404;
             throw error;
         }
 
         // Delete favorite
         await prisma.favorite.delete({
-            where: {
-                userId_productId: {
-                    userId: uid,
-                    productId: prodId
-                }
-            }
+            where: where
         });
 
-        const formatted = productService.formatProductWithDiscount(existingFavorite.product);
-        formatted.favoritedAt = existingFavorite.createdAt;
-        // Extract categories from ProductCategory junction table
-        if (existingFavorite.product.categories && existingFavorite.product.categories.length > 0) {
-            formatted.categories = existingFavorite.product.categories.map(pc => pc.category);
-            formatted.categoryId = formatted.categories.length > 0 ? formatted.categories[0].id : null;
-            formatted.category = formatted.categories.length > 0 ? formatted.categories[0] : null;
-        } else {
-            formatted.categories = [];
-            formatted.categoryId = null;
-            formatted.category = null;
-        }
         return formatted;
     }
+
 
     /**
      * Check if a product is favorited by user
@@ -258,18 +212,18 @@ class FavoriteService {
      * @param {number} productId - Product ID
      * @returns {boolean} - True if favorited, false otherwise
      */
-    async isFavorited(userId, productId) {
+    async isFavorited(userId, productId, isPointProduct = false) {
+        const where = isPointProduct 
+            ? { userId_pointProductId: { userId: parseInt(userId), pointProductId: parseInt(productId) } }
+            : { userId_productId: { userId: parseInt(userId), productId: parseInt(productId) } };
+
         const favorite = await prisma.favorite.findUnique({
-            where: {
-                userId_productId: {
-                    userId: parseInt(userId),
-                    productId: parseInt(productId)
-                }
-            }
+            where: where
         });
 
         return !!favorite;
     }
+
 
     /**
      * Get favorite status for multiple products
