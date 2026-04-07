@@ -26,7 +26,7 @@ This API uses **only GET and POST**. All create/update/delete actions must be do
 - [Data Models](#data-models)
 - [Examples](#examples)
 
----
+----
 
 ## Base Information
 
