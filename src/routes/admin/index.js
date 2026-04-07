@@ -10,6 +10,7 @@ const bannerRoutes = require('./bannerRoutes');
 const featureRoutes = require('./featureRoutes');
 const profileRoutes = require('./profileRoutes');
 const pointProductRoutes = require('./pointProductRoutes');
+const simpleOrderRoutes = require('./simpleOrderRoutes');
 
 
 const router = express.Router();
@@ -26,6 +27,7 @@ router.use('/analytics', analyticsRoutes);
 router.use('/banners', bannerRoutes);
 router.use('/features', featureRoutes);
 router.use('/point-products', pointProductRoutes);
+router.use('/simple-orders', simpleOrderRoutes);
 
 
 module.exports = router;

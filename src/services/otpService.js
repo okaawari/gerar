@@ -17,8 +17,8 @@ class OTPService {
      * @returns {string} - OTP code (4 or 6 digits)
      */
     generateOTPCode(purpose = 'VERIFICATION') {
-        // REGISTRATION uses 4-digit code, others use 6-digit
-        if (purpose === 'REGISTRATION') {
+        // REGISTRATION and SIMPLE_ORDER use 4-digit code, others use 6-digit
+        if (purpose === 'REGISTRATION' || purpose === 'SIMPLE_ORDER') {
             return crypto.randomInt(1000, 9999).toString();
         }
         return crypto.randomInt(100000, 999999).toString();
@@ -228,8 +228,8 @@ class OTPService {
             }
 
             // Validate OTP code format based on purpose
-            const expectedLength = purpose === 'REGISTRATION' ? 4 : 6;
-            const codePattern = purpose === 'REGISTRATION' ? /^\d{4}$/ : /^\d{6}$/;
+            const expectedLength = (purpose === 'REGISTRATION' || purpose === 'SIMPLE_ORDER') ? 4 : 6;
+            const codePattern = (purpose === 'REGISTRATION' || purpose === 'SIMPLE_ORDER') ? /^\d{4}$/ : /^\d{6}$/;
             
             if (!codePattern.test(code)) {
                 const error = new Error(`Нэг удаагийн кодын формат буруу байна. ${expectedLength} оронтой байх ёстой.`);
@@ -315,9 +315,9 @@ class OTPService {
             }
 
             // Validate OTP code format based on purpose
-            // REGISTRATION uses 4-digit, others use 6-digit
-            const expectedLength = purpose === 'REGISTRATION' ? 4 : 6;
-            const codePattern = purpose === 'REGISTRATION' ? /^\d{4}$/ : /^\d{6}$/;
+            // REGISTRATION and SIMPLE_ORDER use 4-digit, others use 6-digit
+            const expectedLength = (purpose === 'REGISTRATION' || purpose === 'SIMPLE_ORDER') ? 4 : 6;
+            const codePattern = (purpose === 'REGISTRATION' || purpose === 'SIMPLE_ORDER') ? /^\d{4}$/ : /^\d{6}$/;
             
             if (!codePattern.test(code)) {
                 const error = new Error(`Нэг удаагийн кодын формат буруу байна. ${expectedLength} оронтой байх ёстой.`);

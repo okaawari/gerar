@@ -17,6 +17,7 @@ const orderRoutes = require('./routes/orderRoutes');
 const addressRoutes = require('./routes/addressRoutes');
 const favoriteRoutes = require('./routes/favoriteRoutes');
 const pointProductRoutes = require('./routes/pointProductRoutes');
+const simpleOrderRoutes = require('./routes/simpleOrderRoutes');
 
 const paymentRoutes = require('./routes/paymentRoutes');
 const paymentController = require('./controllers/paymentController');
@@ -265,6 +266,7 @@ app.use('/api/orders', orderRoutes);
 app.use('/api/addresses', addressRoutes);
 app.use('/api/favorites', favoriteRoutes);
 app.use('/api/point-products', pointProductRoutes);
+app.use('/api/simple-orders', simpleOrderRoutes);
 
 
 // Admin API routes (requires authentication and admin role)

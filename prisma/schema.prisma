@@ -94,6 +94,7 @@ model product {
   orderItems  orderitem[]
   favorites   favorite[]
   draftOrders draftorder[]
+  simpleOrderItems simpleorderitem[]
   creator     user?             @relation("ProductCreatedBy", fields: [createdBy], references: [id], onDelete: SetNull)
   updater     user?             @relation("ProductUpdatedBy", fields: [updatedBy], references: [id], onDelete: SetNull)
 
@@ -432,4 +433,35 @@ model offdeliveryconfig {
   offTimeSlotsByDate  Json  @map("off_time_slots_by_date") // {"2025-12-25": ["10-14", "18-21"], ...}
 
   @@map("offdeliveryconfig")
+}
+
+model simpleorder {
+  id               Int      @id @default(autoincrement())
+  userId           Int?
+  phoneNumber      String   @db.VarChar(8)
+  address          String   @db.Text
+  addressNote      String?  @db.Text
+  totalAmount      Decimal  @db.Decimal(10, 2)
+  status           String   @default("PENDING")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  items   simpleorderitem[]
+
+  @@map("simpleorder")
+}
+
+model simpleorderitem {
+  id             Int      @id @default(autoincrement())
+  simpleOrderId  Int
+  productId      Int
+  quantity       Int
+  price          Decimal  @db.Decimal(10, 2)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  simpleOrder    simpleorder @relation(fields: [simpleOrderId], references: [id], onDelete: Cascade)
+  product        product     @relation(fields: [productId], references: [id])
+
+  @@map("simpleorderitem")
 }
