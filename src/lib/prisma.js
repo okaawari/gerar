@@ -1,30 +1,52 @@
 require('dotenv').config();
-const { PrismaClient } = require("@prisma/client");
-const { PrismaMariaDb } = require("@prisma/adapter-mariadb");
+const { PrismaClient } = require('@prisma/client');
+const { PrismaMariaDb } = require('@prisma/adapter-mariadb');
+const mariadb = require('mariadb');
 
-// Parse DATABASE_URL: mysql://user:password@host:port/database
-const dbUrl = process.env.DATABASE_URL;
+/**
+ * Prisma Client initialization with MariaDB Driver Adapter
+ * 
+ * Using a manual connection pool bypasses DATABASE_URL parsing issues 
+ * and allows explicit configuration like allowPublicKeyRetrieval: true
+ * which is often required for MariaDB/MySQL 8+ connections.
+ */
 
-if (!dbUrl) {
-  throw new Error('DATABASE_URL environment variable is not set');
+const config = {
+  host: process.env.DB_HOST || 'localhost',
+  port: parseInt(process.env.DB_PORT, 10) || 3306,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  database: process.env.DB_NAME,
+  // This is the fix for the RSA/PublicKey error
+  allowPublicKeyRetrieval: true,
+  connectionLimit: 10
+};
+
+// Fallback: If individual variables are missing, parse DATABASE_URL
+// This ensures local development works with existing .env files
+if (!process.env.DB_USER || !process.env.DB_NAME) {
+  const dbUrl = process.env.DATABASE_URL;
+  if (dbUrl) {
+    // Parse DATABASE_URL: mysql://user:password@host:port/database
+    const urlMatch = dbUrl.match(/^mysql:\/\/([^:]+):([^@]*)@([^:]+):(\d+)\/(.+)$/);
+    if (urlMatch) {
+      const [, user, password, host, port, database] = urlMatch;
+      config.user = config.user || user;
+      config.password = config.password || (password === '' ? undefined : password);
+      config.host = config.host || host;
+      config.port = config.port || parseInt(port, 10);
+      config.database = config.database || database;
+    }
+  }
 }
 
-const urlMatch = dbUrl.match(/^mysql:\/\/([^:]+):([^@]*)@([^:]+):(\d+)\/(.+)$/);
+// 1. Setup the MariaDB connection pool manually
+const pool = mariadb.createPool(config);
 
-if (!urlMatch) {
-  throw new Error('Invalid DATABASE_URL format. Expected: mysql://user:password@host:port/database');
-}
+// 2. Initialize the adapter with that pool
+const adapter = new PrismaMariaDb(pool);
 
-const [, user, password, host, port, database] = urlMatch;
-
-const adapter = new PrismaMariaDb({
-  host: host,
-  port: parseInt(port, 10),
-  user: user || undefined,
-  password: password || undefined,
-  database: database,
-});
-
+// 3. Create the Prisma instance using the adapter
 const prisma = new PrismaClient({ adapter });
 
 module.exports = prisma;
