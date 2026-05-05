@@ -1,5 +1,13 @@
 const path = require('path');
-require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
+const fs = require('fs');
+
+// Trust Coolify/System environment variables first
+if (!process.env.DB_HOST) {
+    const envPath = path.join(__dirname, '..', '.env');
+    if (fs.existsSync(envPath)) {
+        require('dotenv').config({ path: envPath });
+    }
+}
 const app = require('./app');
 const { connectDatabase, disconnectDatabase } = require('./config/database');
 const orderService = require('./services/orderService');

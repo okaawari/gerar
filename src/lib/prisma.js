@@ -1,4 +1,14 @@
-require('dotenv').config();
+const path = require('path');
+const fs = require('fs');
+
+// ONLY load dotenv if the environment variables are missing (likely local dev)
+// If you are on Coolify, it should already have these in process.env
+if (!process.env.DB_HOST) {
+    const envPath = path.join(__dirname, '..', '..', '.env');
+    if (fs.existsSync(envPath)) {
+        require('dotenv').config({ path: envPath });
+    }
+}
 const { PrismaClient } = require('@prisma/client');
 const { PrismaMariaDb } = require('@prisma/adapter-mariadb');
 const mariadb = require('mariadb');
@@ -12,8 +22,8 @@ const mariadb = require('mariadb');
  */
 
 const config = {
-  host: process.env.DB_HOST || 'localhost',
-  port: parseInt(process.env.DB_PORT, 10) || 3306,
+  host: process.env.DB_HOST,
+  port: parseInt(process.env.DB_PORT, 10),
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME,
@@ -21,6 +31,14 @@ const config = {
   allowPublicKeyRetrieval: true,
   connectionLimit: 10
 };
+
+// Debug logging for server troubleshooting
+if (process.env.NODE_ENV !== 'test') {
+  console.log(`[Database Config] Host: ${config.host}, Port: ${config.port}, User: ${config.user}, DB: ${config.database}`);
+  if (!config.host || config.host === 'localhost') {
+    console.warn('⚠️ WARNING: DB_HOST is "localhost" or undefined. If you are on a server, check your environment variables!');
+  }
+}
 
 // Fallback: If individual variables are missing, parse DATABASE_URL
 // This ensures local development works with existing .env files
