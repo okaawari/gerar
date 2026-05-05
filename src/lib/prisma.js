@@ -22,21 +22,28 @@ const mariadb = require('mariadb');
  */
 
 const config = {
-  host: process.env.DB_HOST,
-  port: parseInt(process.env.DB_PORT, 10),
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME,
+  host: process.env.DB_HOST ? process.env.DB_HOST.trim() : undefined,
+  port: process.env.DB_PORT ? parseInt(process.env.DB_PORT.trim(), 10) : 3306,
+  user: process.env.DB_USER ? process.env.DB_USER.trim() : undefined,
+  password: process.env.DB_PASSWORD ? process.env.DB_PASSWORD.trim() : undefined,
+  database: process.env.DB_NAME ? process.env.DB_NAME.trim() : undefined,
   // This is the fix for the RSA/PublicKey error
   allowPublicKeyRetrieval: true,
-  connectionLimit: 10
+  connectionLimit: 10,
+  connectTimeout: 10000 // 10 seconds
 };
 
 // Debug logging for server troubleshooting
 if (process.env.NODE_ENV !== 'test') {
-  console.log(`[Database Config] Host: ${config.host}, Port: ${config.port}, User: ${config.user}, DB: ${config.database}`);
-  if (!config.host || config.host === 'localhost') {
-    console.warn('⚠️ WARNING: DB_HOST is "localhost" or undefined. If you are on a server, check your environment variables!');
+  console.log('--- Database Connection Attempt ---');
+  console.log(`Host: "${config.host}"`);
+  console.log(`Port: ${config.port}`);
+  console.log(`User: "${config.user}"`);
+  console.log(`Database: "${config.database}"`);
+  console.log('---------------------------------');
+  
+  if (!config.host) {
+    console.error('❌ CRITICAL ERROR: DB_HOST is missing!');
   }
 }
 
