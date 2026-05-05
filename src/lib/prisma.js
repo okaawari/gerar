@@ -65,8 +65,8 @@ if (!process.env.DB_USER || !process.env.DB_NAME) {
   }
 }
 
-// 1. Setup the MariaDB connection pool manually
-const pool = mariadb.createPool({
+// 1. Setup the MariaDB connection pool manually via the adapter
+const poolConfig = {
   host: config.host,
   port: config.port,
   user: config.user,
@@ -75,27 +75,13 @@ const pool = mariadb.createPool({
   allowPublicKeyRetrieval: config.allowPublicKeyRetrieval,
   connectionLimit: config.connectionLimit,
   connectTimeout: config.connectTimeout
-});
+};
 
-// 2. RAW CONNECTION TEST (Before Prisma starts)
-if (process.env.NODE_ENV !== 'test') {
-  pool.getConnection()
-    .then(conn => {
-      console.log('✅ RAW CONNECTION TEST: SUCCESS!');
-      conn.release();
-    })
-    .catch(err => {
-      console.error('❌ RAW CONNECTION TEST: FAILED');
-      console.error('Error Code:', err.code);
-      console.error('Error Message:', err.message);
-      console.error('Raw Error:', err);
-    });
-}
+// 2. Initialize the adapter with a fresh config object
+// The PrismaMariaDb adapter takes a config object and creates its own pool internally
+const adapter = new PrismaMariaDb(poolConfig);
 
-// 3. Initialize the adapter with that pool
-const adapter = new PrismaMariaDb(pool);
-
-// 4. Create the Prisma instance using the adapter
+// 3. Create the Prisma instance using the adapter
 const prisma = new PrismaClient({ adapter });
 
 module.exports = prisma;
